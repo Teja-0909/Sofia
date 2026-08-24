@@ -1,0 +1,12 @@
+version: '3.8'
+
+services:
+  sofia:
+    build: .
+    container_name: sofia_companion
+    restart: always
+    volumes:
+      - ./alisa.db:/app/alisa.db
+      - ./backups:/app/backups
+    env_file:
+      - .env

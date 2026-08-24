@@ -1,0 +1,16 @@
+[Unit]
+Description=Sofia Telegram Companion Bot
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/Alya
+ExecStart=/home/ubuntu/Alya/venv/bin/python run.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

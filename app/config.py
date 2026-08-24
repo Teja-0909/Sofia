@@ -1,0 +1,38 @@
+import os
+import pathlib
+
+from dotenv import load_dotenv
+
+load_dotenv()
+
+BASE_DIR = pathlib.Path(__file__).resolve().parent.parent
+
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
+ALLOWED_USER_ID = int(os.environ.get("ALLOWED_TELEGRAM_USER_ID", "0") or 0)
+DB_PATH = os.environ.get("DB_PATH", str(BASE_DIR / "alisa.db"))
+TIMEZONE = os.environ.get("TIMEZONE", "Asia/Kolkata")
+QUIET_START_HOUR = int(os.environ.get("QUIET_START_HOUR", "23"))
+QUIET_END_HOUR = int(os.environ.get("QUIET_END_HOUR", "7"))
+JUSTBECAUSE_CHANCE = float(os.environ.get("JUSTBECAUSE_CHANCE", "0.15"))
+SCHEMA_PATH = os.environ.get("SCHEMA_PATH", str(BASE_DIR / "alisa-schema.sql"))
+SYSTEM_PROMPT_PATH = os.environ.get("SYSTEM_PROMPT_PATH", str(BASE_DIR / "system_prompt.txt"))
+
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
+GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
+OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "meta-llama/llama-3.3-70b-instruct:free")
+
+PORT = int(os.environ.get("PORT", "10000"))
+TURSO_DATABASE_URL = os.environ.get("TURSO_DATABASE_URL", "")
+TURSO_AUTH_TOKEN = os.environ.get("TURSO_AUTH_TOKEN", "")
+
+DEFAULT_CONFIG = {
+    "memory_top_k": "12",
+    "diary_context_days": "5",
+    "history_window": "20",
+    "justbecause_max_per_day": "2",
+    "daily_summary_hour": "22",
+    "max_reminder_pings": "4",
+}
