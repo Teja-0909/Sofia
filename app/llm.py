@@ -1,6 +1,9 @@
+import logging
 import httpx
 
 from . import config, db, timeutil
+
+logger = logging.getLogger(__name__)
 
 
 class AllProvidersFailed(Exception):
@@ -19,33 +22,31 @@ def _provider_chain() -> list[tuple[str, str, str]]:
 
 
 async def _log_usage(provider: str, model: str, usage: dict) -> None:
-    prompt_tokens = int(usage.get("prompt_tokens") or usage.get("promptTokenCount") or 0)
-    completion_tokens = int(usage.get("completion_tokens") or usage.get("candidatesTokenCount") or 0)
-    await execute_usage_upsert(
-        provider,
-        model,
-        prompt_tokens,
-        completion_tokens,
-    )
+    try:
+        prompt_tokens = int(usage.get("prompt_tokens") or usage.get("promptTokenCount") or 0)
+        completion_tokens = int(usage.get("completion_tokens") or usage.get("candidatesTokenCount") or 0)
+        await execute_usage_upsert(
+            provider,
+            model,
+            prompt_tokens,
+            completion_tokens,
+        )
+    except Exception as exc:
+        logger.debug("Usage logging note: %s", exc)
 
 
 async def execute_usage_upsert(provider: str, model: str, prompt_tokens: int, completion_tokens: int) -> None:
-    conn = await db.connect()
-    try:
-        await conn.execute(
-            """
-            INSERT INTO api_usage_log (day, provider, model, requests, input_tokens, output_tokens)
-            VALUES (?, ?, ?, 1, ?, ?)
-            ON CONFLICT(day, provider) DO UPDATE SET
-                requests = requests + 1,
-                input_tokens = input_tokens + excluded.input_tokens,
-                output_tokens = output_tokens + excluded.output_tokens
-            """,
-            (timeutil.ist_day(), provider, model, prompt_tokens, completion_tokens),
-        )
-        await conn.commit()
-    finally:
-        await conn.close()
+    await db.execute(
+        """
+        INSERT INTO api_usage_log (day, provider, model, requests, input_tokens, output_tokens)
+        VALUES (?, ?, ?, 1, ?, ?)
+        ON CONFLICT(day, provider) DO UPDATE SET
+            requests = requests + 1,
+            input_tokens = input_tokens + excluded.input_tokens,
+            output_tokens = output_tokens + excluded.output_tokens
+        """,
+        (timeutil.ist_day(), provider, model, prompt_tokens, completion_tokens),
+    )
 
 
 async def _call_gemini(system: str, messages: list[dict], model: str) -> tuple[str, dict]:
@@ -73,18 +74,20 @@ async def _call_gemini(system: str, messages: list[dict], model: str) -> tuple[s
             {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
             {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
             {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
-            {"category": "HARM_CATEGORY_CIVIC_INTEGRITY", "threshold": "BLOCK_NONE"},
         ],
     }
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
     async with httpx.AsyncClient(timeout=45) as client:
         resp = await client.post(
             url,
-            params={"key": config.GEMINI_API_KEY},
+            params={"key": config.GEMINI_API_KEY.strip()},
             json=body,
         )
+        if resp.status_code != 200:
+            logger.error("Gemini API error (HTTP %s): %s", resp.status_code, resp.text)
         resp.raise_for_status()
         data = resp.json()
+
     candidates = data.get("candidates", [])
     if not candidates or "content" not in candidates[0] or "parts" not in candidates[0]["content"]:
         raise ValueError(f"Gemini returned invalid or blocked candidate structure: {data}")
@@ -119,13 +122,15 @@ async def _call_openai_compatible(
     async with httpx.AsyncClient(timeout=45) as client:
         resp = await client.post(
             f"{base_url}/chat/completions",
-            headers={"Authorization": f"Bearer {api_key}"},
+            headers={"Authorization": f"Bearer {api_key.strip()}"},
             json={
                 "model": model,
                 "messages": payload_messages,
                 "max_tokens": 1024,
             },
         )
+        if resp.status_code != 200:
+            logger.error("OpenAI-compatible provider error (HTTP %s): %s", resp.status_code, resp.text)
         resp.raise_for_status()
         data = resp.json()
     text = data["choices"][0]["message"]["content"]
@@ -133,8 +138,13 @@ async def _call_openai_compatible(
 
 
 async def chat(system: str, messages: list[dict]) -> str:
+    chain = _provider_chain()
+    if not chain:
+        logger.error("No LLM API keys configured! Set GEMINI_API_KEY, GROQ_API_KEY, or OPENROUTER_API_KEY")
+        raise AllProvidersFailed("No LLM API keys configured in environment")
+
     errors = []
-    for provider, model, kind in _provider_chain():
+    for provider, model, kind in chain:
         try:
             if kind == "gemini":
                 text, usage = await _call_gemini(system, messages, model)
@@ -150,5 +160,6 @@ async def chat(system: str, messages: list[dict]) -> str:
             await _log_usage(provider, model, usage)
             return text
         except Exception as exc:
+            logger.error("Provider '%s' (%s) failed: %s", provider, model, exc)
             errors.append(f"{provider}: {exc}")
     raise AllProvidersFailed("; ".join(errors))

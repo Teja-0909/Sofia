@@ -58,21 +58,17 @@ async def add_memory(category: str, content: str, reasoning: str, weight: float 
             logger.info("Reinforced existing memory #%s (%s): %s", row["id"], category, content)
             return row["id"]
 
-    conn = await db.connect()
-    try:
-        cursor = await conn.execute(
-            """
-            INSERT INTO relationship_memory (category, content, reasoning, weight, is_active, created_at, last_reinforced_at)
-            VALUES (?, ?, ?, ?, 1, ?, ?)
-            """,
-            (category, content, reasoning, weight, now_iso, now_iso),
-        )
-        await conn.commit()
-        mem_id = cursor.lastrowid
-        logger.info("Created new memory #%s (%s): %s", mem_id, category, content)
-        return mem_id
-    finally:
-        await conn.close()
+    await db.execute(
+        """
+        INSERT INTO relationship_memory (category, content, reasoning, weight, is_active, created_at, last_reinforced_at)
+        VALUES (?, ?, ?, ?, 1, ?, ?)
+        """,
+        (category, content, reasoning, weight, now_iso, now_iso),
+    )
+    last_row = await db.fetch_one("SELECT MAX(id) AS id FROM relationship_memory")
+    mem_id = last_row["id"] if last_row and last_row.get("id") else 1
+    logger.info("Created new memory #%s (%s): %s", mem_id, category, content)
+    return mem_id
 
 
 async def curate_recent_conversations(lookback: int = 12) -> int:
