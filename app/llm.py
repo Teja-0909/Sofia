@@ -1,5 +1,6 @@
 import logging
 import base64
+import re
 import httpx
 
 from . import config, db, timeutil
@@ -48,28 +49,35 @@ async def _get_best_groq_model(api_key: str, has_image: bool = False) -> str:
                 ]
 
                 if has_image:
+                    vision_preferred = [
+                        "qwen/qwen3.6-27b",
+                        "llama-3.2-11b-vision-preview",
+                        "llama-3.2-90b-vision-preview",
+                    ]
+                    for vp in vision_preferred:
+                        if vp in chat_ids:
+                            return vp
                     for m in chat_ids:
-                        if "vision" in m.lower():
+                        if "vision" in m.lower() or "qwen" in m.lower():
                             return m
 
-                preferred = [
-                    "llama-3.1-8b-instant",
+                text_preferred = [
+                    "openai/gpt-oss-120b",
+                    "qwen/qwen3.6-27b",
+                    "openai/gpt-oss-20b",
                     "llama-3.3-70b-versatile",
+                    "llama-3.1-8b-instant",
                     "llama-3.1-70b-versatile",
-                    "llama3-70b-8192",
-                    "llama3-8b-8192",
+                    "allam-2-7b",
                     "gemma2-9b-it",
-                    "mixtral-8x7b-32768",
-                    "deepseek-r1-distill-llama-70b",
-                    "qwen-2.5-32b",
                 ]
-                for p in preferred:
+                for p in text_preferred:
                     if p in chat_ids:
                         _cached_groq_model = p
                         return p
 
                 for m in chat_ids:
-                    if "instant" in m.lower() or "versatile" in m.lower() or "it" in m.lower():
+                    if "gpt-oss" in m.lower() or "instant" in m.lower() or "qwen" in m.lower() or "it" in m.lower():
                         _cached_groq_model = m
                         return m
 
@@ -78,7 +86,7 @@ async def _get_best_groq_model(api_key: str, has_image: bool = False) -> str:
                     return chat_ids[0]
     except Exception as exc:
         logger.debug("Failed to query Groq model list: %s", exc)
-    return config.GROQ_VISION_MODEL if has_image else "llama-3.1-8b-instant"
+    return config.GROQ_VISION_MODEL if has_image else config.GROQ_MODEL
 
 
 async def _log_usage(provider: str, model: str, usage: dict) -> None:
@@ -150,7 +158,8 @@ async def _call_gemini(system: str, messages: list[dict], model: str) -> tuple[s
     candidates = data.get("candidates", [])
     if not candidates or "content" not in candidates[0] or "parts" not in candidates[0]["content"]:
         raise ValueError(f"Gemini returned invalid or blocked candidate structure: {data}")
-    text = candidates[0]["content"]["parts"][0].get("text", "")
+    raw_text = candidates[0]["content"]["parts"][0].get("text", "")
+    text = re.sub(r"<think>.*?</think>", "", raw_text, flags=re.DOTALL).strip() or raw_text.strip()
     usage_raw = data.get("usageMetadata", {})
     usage = {
         "prompt_tokens": usage_raw.get("promptTokenCount", 0),
@@ -196,7 +205,8 @@ async def _call_openai_compatible(
             logger.error("Provider '%s' (model %s) error (HTTP %s): %s", provider, target_model, resp.status_code, resp.text)
         resp.raise_for_status()
         data = resp.json()
-    text = data["choices"][0]["message"]["content"]
+    raw_text = data["choices"][0]["message"]["content"]
+    text = re.sub(r"<think>.*?</think>", "", raw_text, flags=re.DOTALL).strip() or raw_text.strip()
     return text, data.get("usage", {})
 
 
