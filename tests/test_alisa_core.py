@@ -117,7 +117,7 @@ class TestAlisaCore(unittest.IsolatedAsyncioTestCase):
 
         with patch("app.llm.chat", new_callable=AsyncMock) as mock_chat:
             mock_chat.return_value = mock_curate_response
-            count = await memory.curate_recent_conversations(lookback=5)
+            count = await memory.curate_recent_conversations(lookback=5, min_batch=2)
             self.assertEqual(count, 1)
 
         mem = await db.fetch_one("SELECT * FROM relationship_memory WHERE category = 'moment'")

@@ -71,7 +71,7 @@ async def add_memory(category: str, content: str, reasoning: str, weight: float 
     return mem_id
 
 
-async def curate_recent_conversations(lookback: int = 12) -> int:
+async def curate_recent_conversations(lookback: int = 12, min_batch: int = 4) -> int:
     """Inspects recent un-curated messages and extracts relationship memories."""
     # Find last curated message id from app_config
     last_curated_id_str = await db.get_config("last_curated_msg_id", "0")
@@ -86,7 +86,7 @@ async def curate_recent_conversations(lookback: int = 12) -> int:
         """,
         (last_curated_id, lookback),
     )
-    if not rows or len(rows) < 2:
+    if not rows or len(rows) < min_batch:
         return 0
 
     transcript = "\n".join(f"{r['role']}: {r['content']}" for r in rows)

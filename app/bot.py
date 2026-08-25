@@ -170,9 +170,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     await _log_message("sofia", reply)
     await update.message.reply_text(reply)
 
-    # Schedule memory curation in the background
-    asyncio.create_task(memory.curate_recent_conversations())
-
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not _allowed(update) or not update.message or not update.message.photo:
@@ -195,7 +192,6 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         reply = orchestrator.FALLBACK_MESSAGE
     await _log_message("sofia", reply)
     await update.message.reply_text(reply)
-    asyncio.create_task(memory.curate_recent_conversations())
 
 
 def build_application() -> Application:
