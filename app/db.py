@@ -24,7 +24,12 @@ async def get_turso_client():
         url = config.TURSO_DATABASE_URL.strip()
         if not (url.startswith("libsql://") or url.startswith("https://") or url.startswith("http://")):
             url = f"libsql://{url}"
-        _turso_client = libsql_client.create_client_async(
+
+        create_fn = getattr(libsql_client, "create_client", None) or getattr(libsql_client, "create_client_async", None)
+        if create_fn is None:
+            raise AttributeError("libsql_client module has no create_client function")
+
+        _turso_client = create_fn(
             url=url,
             auth_token=config.TURSO_AUTH_TOKEN.strip(),
         )
