@@ -202,8 +202,6 @@ def build_application() -> Application:
     app = (
         Application.builder()
         .token(config.BOT_TOKEN)
-        .post_init(_on_startup)
-        .post_shutdown(_on_shutdown)
         .build()
     )
     app.add_handler(CommandHandler("start", cmd_start))
@@ -214,30 +212,4 @@ def build_application() -> Application:
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     return app
 
-
-async def _on_startup(app: Application) -> None:
-    global _bot_instance
-    _bot_instance = app.bot
-    from . import scheduler, web
-
-    sched = await scheduler.create_scheduler()
-    sched.start()
-    app.bot_data["scheduler"] = sched
-    logger.info("Scheduler started successfully")
-
-    # Start HTTP keep-alive and health check server (for Render & UptimeRobot)
-    runner = await web.start_web_server()
-    app.bot_data["web_runner"] = runner
-
-
-async def _on_shutdown(app: Application) -> None:
-    sched = app.bot_data.get("scheduler")
-    if sched and sched.running:
-        sched.shutdown(wait=False)
-        logger.info("Scheduler shutdown cleanly")
-
-    runner = app.bot_data.get("web_runner")
-    if runner:
-        await runner.cleanup()
-        logger.info("HTTP web server shutdown cleanly")
 

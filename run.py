@@ -1,23 +1,33 @@
 import asyncio
 import logging
 
-from app import bot, config, db
+from app import bot, config, db, scheduler, web
 
 logger = logging.getLogger(__name__)
 
 
 async def run_bot() -> None:
-    # 1. Initialize database (Turso or local SQLite)
+    # 1. Start HTTP web server IMMEDIATELY so Render port scanner detects it right away
+    runner = await web.start_web_server(config.PORT)
+    logger.info("HTTP server bound on port %s for Render & UptimeRobot", config.PORT)
+
+    # 2. Initialize database (Turso Cloud SQLite or local)
     await db.init()
 
-    # 2. Build Telegram Application
-    app = bot.build_application()
+    # 3. Start background APScheduler
+    sched = await scheduler.create_scheduler()
+    sched.start()
+    logger.info("Background scheduler started successfully")
 
-    # 3. Start Application & background services in single unified event loop
+    # 4. Build Telegram Application
+    app = bot.build_application()
+    bot._bot_instance = app.bot
+
+    # 5. Run Telegram bot polling
     async with app:
         await app.start()
         await app.updater.start_polling(allowed_updates=["message"])
-        logger.info("Sofia bot is running and listening for Telegram messages...")
+        logger.info("Sofia bot is online, listening for Telegram messages...")
 
         stop_event = asyncio.Event()
         try:
@@ -27,6 +37,8 @@ async def run_bot() -> None:
         finally:
             await app.updater.stop()
             await app.stop()
+            sched.shutdown(wait=False)
+            await runner.cleanup()
 
 
 def main() -> None:
