@@ -10,7 +10,25 @@ BASE_DIR = pathlib.Path(__file__).resolve().parent.parent
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
 ALLOWED_USER_ID = int(os.environ.get("ALLOWED_TELEGRAM_USER_ID", "0") or 0)
 DB_PATH = os.environ.get("DB_PATH", str(BASE_DIR / "alisa.db"))
-TIMEZONE = os.environ.get("TIMEZONE", "Asia/Kolkata")
+def _normalize_tz(tz_name: str) -> str:
+    raw = (tz_name or "Asia/Kolkata").strip()
+    mapping = {
+        "asia/kolkata": "Asia/Kolkata",
+        "asia/calcutta": "Asia/Calcutta",
+        "utc": "UTC",
+        "america/new_york": "America/New_York",
+        "america/los_angeles": "America/Los_Angeles",
+        "europe/london": "Europe/London",
+    }
+    low = raw.lower()
+    if low in mapping:
+        return mapping[low]
+    if "/" in raw:
+        return "/".join(p.capitalize() for p in raw.split("/"))
+    return raw
+
+
+TIMEZONE = _normalize_tz(os.environ.get("TIMEZONE", "Asia/Kolkata"))
 QUIET_START_HOUR = int(os.environ.get("QUIET_START_HOUR", "23"))
 QUIET_END_HOUR = int(os.environ.get("QUIET_END_HOUR", "7"))
 JUSTBECAUSE_CHANCE = float(os.environ.get("JUSTBECAUSE_CHANCE", "0.15"))

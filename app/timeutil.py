@@ -5,7 +5,10 @@ from . import config
 
 
 def tz() -> dt.tzinfo:
-    return zoneinfo.ZoneInfo(config.TIMEZONE)
+    try:
+        return zoneinfo.ZoneInfo(config.TIMEZONE)
+    except Exception:
+        return zoneinfo.ZoneInfo("Asia/Kolkata")
 
 
 def now_local() -> dt.datetime:
