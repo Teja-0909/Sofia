@@ -16,12 +16,12 @@ class AllProvidersFailed(Exception):
 
 def _provider_chain() -> list[tuple[str, str, str]]:
     chain = []
-    # Primary: Gemini (for calm, relaxed, natural conversational rhythm)
+    # Primary: Gemini 3.5 Flash Lite (500 free requests/day, relaxed human voice)
     if config.GEMINI_API_KEY:
         chain.append(("gemini", config.GEMINI_MODEL, "gemini"))
-        if config.GEMINI_MODEL != "gemini-3.5-flash-lite":
-            chain.append(("gemini", "gemini-3.5-flash-lite", "gemini"))
-    # Seamless Fallback: Groq (14,400 free requests/day when Gemini is rate-limited)
+        if config.GEMINI_MODEL != "gemini-3.5-flash":
+            chain.append(("gemini", "gemini-3.5-flash", "gemini"))
+    # Seamless Fallback: Groq (14,400 free requests/day)
     if config.GROQ_API_KEY:
         chain.append(("groq", config.GROQ_MODEL, "openai"))
     # Fallback 2: OpenRouter
