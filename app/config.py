@@ -35,8 +35,15 @@ JUSTBECAUSE_CHANCE = float(os.environ.get("JUSTBECAUSE_CHANCE", "0.15"))
 SCHEMA_PATH = os.environ.get("SCHEMA_PATH", str(BASE_DIR / "alisa-schema.sql"))
 SYSTEM_PROMPT_PATH = os.environ.get("SYSTEM_PROMPT_PATH", str(BASE_DIR / "system_prompt.txt"))
 
+def _normalize_gemini_model(model_name: str | None) -> str:
+    raw = (model_name or "").strip().lower()
+    if not raw or raw in ("gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"):
+        return "gemini-3.6-flash"
+    return raw
+
+
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+GEMINI_MODEL = _normalize_gemini_model(os.environ.get("GEMINI_MODEL"))
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
