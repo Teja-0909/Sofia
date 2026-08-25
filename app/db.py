@@ -4,6 +4,7 @@ import pathlib
 import sqlite3
 
 import aiosqlite
+import httpx
 
 from . import config
 
@@ -16,23 +17,93 @@ def is_turso() -> bool:
     return bool(config.TURSO_DATABASE_URL and config.TURSO_AUTH_TOKEN)
 
 
+class TursoHttpFallback:
+    """Direct Turso HTTP Pipeline client over standard HTTPS (no WebSockets needed)."""
+
+    def __init__(self, url: str, token: str):
+        clean_url = url.strip().replace("libsql://", "https://").replace("wss://", "https://").replace("ws://", "http://")
+        if not (clean_url.startswith("https://") or clean_url.startswith("http://")):
+            clean_url = f"https://{clean_url}"
+        self.endpoint = clean_url.rstrip("/") + "/v2/pipeline"
+        self.token = token.strip()
+
+    async def execute(self, sql: str, params: list | None = None):
+        params = params or []
+        args = []
+        for p in params:
+            if p is None:
+                args.append({"type": "null"})
+            elif isinstance(p, int):
+                args.append({"type": "integer", "value": str(p)})
+            elif isinstance(p, float):
+                args.append({"type": "float", "value": p})
+            else:
+                args.append({"type": "text", "value": str(p)})
+
+        body = {
+            "requests": [
+                {
+                    "type": "execute",
+                    "stmt": {
+                        "sql": sql,
+                        "args": args,
+                    },
+                },
+                {"type": "close"},
+            ]
+        }
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                self.endpoint,
+                headers={"Authorization": f"Bearer {self.token}"},
+                json=body,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            results = data.get("results", [])
+            if results and results[0].get("type") == "ok":
+                res = results[0]["response"]["result"]
+                cols = [c["name"] for c in res.get("cols", [])]
+                rows = []
+                for row_data in res.get("rows", []):
+                    row_vals = [c.get("value") for c in row_data]
+                    rows.append(row_vals)
+
+                class SimpleResultSet:
+                    def __init__(self, columns, rows):
+                        self.columns = columns
+                        self.rows = rows
+
+                return SimpleResultSet(cols, rows)
+            elif results and results[0].get("type") == "error":
+                err_msg = results[0].get("error", {}).get("message", "Turso error")
+                raise ValueError(f"Turso query error: {err_msg}")
+            return None
+
+
 async def get_turso_client():
     global _turso_client
     if _turso_client is None:
-        import libsql_client
-
         url = config.TURSO_DATABASE_URL.strip()
-        if not (url.startswith("libsql://") or url.startswith("https://") or url.startswith("http://")):
-            url = f"libsql://{url}"
+        # Normalize to HTTPS to avoid WSS handshake errors across cloud proxies
+        https_url = url.replace("libsql://", "https://").replace("wss://", "https://")
+        if not (https_url.startswith("https://") or https_url.startswith("http://")):
+            https_url = f"https://{https_url}"
 
-        create_fn = getattr(libsql_client, "create_client", None) or getattr(libsql_client, "create_client_async", None)
-        if create_fn is None:
-            raise AttributeError("libsql_client module has no create_client function")
+        try:
+            import libsql_client
 
-        _turso_client = create_fn(
-            url=url,
-            auth_token=config.TURSO_AUTH_TOKEN.strip(),
-        )
+            create_fn = getattr(libsql_client, "create_client", None) or getattr(libsql_client, "create_client_async", None)
+            if create_fn:
+                _turso_client = create_fn(
+                    url=https_url,
+                    auth_token=config.TURSO_AUTH_TOKEN.strip(),
+                )
+            else:
+                _turso_client = TursoHttpFallback(https_url, config.TURSO_AUTH_TOKEN)
+        except Exception:
+            _turso_client = TursoHttpFallback(https_url, config.TURSO_AUTH_TOKEN)
+
     return _turso_client
 
 
@@ -50,7 +121,6 @@ async def init() -> None:
         client = await get_turso_client()
         statements = [s.strip() for s in sql.split(";") if s.strip()]
         for stmt in statements:
-            # Filter comments-only statements
             cleaned = "\n".join(l for l in stmt.splitlines() if not l.strip().startswith("--")).strip()
             if cleaned:
                 try:
@@ -82,8 +152,9 @@ async def fetch_all(query: str, params: tuple = ()) -> list[dict]:
     if is_turso():
         client = await get_turso_client()
         rs = await client.execute(query, list(params))
-        cols = rs.columns
-        return [dict(zip(cols, row)) for row in rs.rows]
+        cols = rs.columns if rs else []
+        rows = rs.rows if rs else []
+        return [dict(zip(cols, row)) for row in rows]
     conn = await connect()
     try:
         cursor = await conn.execute(query, params)
@@ -97,7 +168,7 @@ async def fetch_one(query: str, params: tuple = ()) -> dict | None:
     if is_turso():
         client = await get_turso_client()
         rs = await client.execute(query, list(params))
-        if not rs.rows:
+        if not rs or not rs.rows:
             return None
         return dict(zip(rs.columns, rs.rows[0]))
     conn = await connect()
