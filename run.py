@@ -1,6 +1,32 @@
+import asyncio
 import logging
 
 from app import bot, config, db
+
+logger = logging.getLogger(__name__)
+
+
+async def run_bot() -> None:
+    # 1. Initialize database (Turso or local SQLite)
+    await db.init()
+
+    # 2. Build Telegram Application
+    app = bot.build_application()
+
+    # 3. Start Application & background services in single unified event loop
+    async with app:
+        await app.start()
+        await app.updater.start_polling(allowed_updates=["message"])
+        logger.info("Sofia bot is running and listening for Telegram messages...")
+
+        stop_event = asyncio.Event()
+        try:
+            await stop_event.wait()
+        except (asyncio.CancelledError, KeyboardInterrupt):
+            pass
+        finally:
+            await app.updater.stop()
+            await app.stop()
 
 
 def main() -> None:
@@ -15,12 +41,10 @@ def main() -> None:
             "(spec Section 9) and refuses to start without it"
         )
 
-    import asyncio
-
-    asyncio.run(db.init())
-
-    app = bot.build_application()
-    app.run_polling(allowed_updates=["message"])
+    try:
+        asyncio.run(run_bot())
+    except (KeyboardInterrupt, SystemExit):
+        logger.info("Sofia bot stopped.")
 
 
 if __name__ == "__main__":
