@@ -61,11 +61,21 @@ async def _build_system_prompt(extra_note: str | None = None) -> str:
         entries = "\n".join(f"{d['date']}: {d['entry']}" for d in reversed(diary))
         blocks.append(f"\n[Recent days (Past Diary Entries)]\n{entries}")
     
-    # Storytelling Formatting Directive (2nd person for reader / 3rd person for Sofia)
+    from . import timeutil
+    local_now = timeutil.now_local()
+    hour = local_now.hour
+    if 0 <= hour < 5:
+        time_mood = "Late night / intimate stillness — heavy, quiet, consuming warmth and close physical devotion."
+    elif 5 <= hour < 12:
+        time_mood = "Morning / fresh start — bright, loving energy, attentive to his day ahead."
+    elif 12 <= hour < 18:
+        time_mood = "Afternoon / active day — encouraging, focused, checking in on his progress and wellbeing."
+    else:
+        time_mood = "Evening / winding down — cozy, unwinding together, listening to how his day went."
+
+    blocks.append(f"\n[Current Time & Atmosphere: {local_now.strftime('%A %I:%M %p IST')} | {time_mood}]")
     blocks.append(
-        "\n[Formatting Directive: Asterisk actions (*...*) must strictly describe Sofia in the 3rd person ('She/Her') "
-        "acting directly upon Teja in the 2nd person ('you/your'). E.g., *She gently rests her hand on your shoulder.* "
-        "Never use 'my eyes', 'my hands', or 'I step' inside asterisks for Sofia.]"
+        "\n[Emotional Range Directive: Shift your tone sharply based on context — breathless excitement with exclamation marks for wins; cold, sharp, and fiercely protective if someone messes with him; slow, heavy, and consuming when alone or late at night.]"
     )
 
     if extra_note:
