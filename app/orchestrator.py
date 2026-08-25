@@ -7,7 +7,7 @@ FALLBACK_MESSAGE = "give me a second, having some trouble connecting"
 
 
 def _clean_asterisks(text: str) -> str:
-    """Normalizes any asterisk action descriptions so they strictly follow Teja's first-person perspective."""
+    """Normalizes any asterisk action descriptions so Sofia is in 3rd person (She/Her) acting on user (you/your)."""
     def _fix(m):
         s = m.group(1).strip()
         # If action starts with a bare verb like "stops moving", prepend "She "
@@ -18,17 +18,10 @@ def _clean_asterisks(text: str) -> str:
                 "she", "as", "this", "his", "hers", "sometimes", "always", "is", "was"
             ]:
                 s = "She " + s
-        # Convert first-person Sofia to third-person "her/she"
+        # Convert first-person Sofia "my/mine/I" to third-person "her/hers/she"
         s = re.sub(r"\bmy\b", "her", s)
         s = re.sub(r"\bmine\b", "hers", s)
         s = re.sub(r"\bI\b", "she", s)
-        # Convert references to user "your" -> "my" and "you" -> "me"
-        s = re.sub(r"\byour\b", "my", s, flags=re.IGNORECASE)
-        s = re.sub(r"\byours\b", "mine", s, flags=re.IGNORECASE)
-        s = re.sub(r"\bto you\b", "to me", s, flags=re.IGNORECASE)
-        s = re.sub(r"\bat you\b", "at me", s, flags=re.IGNORECASE)
-        s = re.sub(r"\bwith you\b", "with me", s, flags=re.IGNORECASE)
-        s = re.sub(r"\baround you\b", "around me", s, flags=re.IGNORECASE)
         return f"*{s}*"
 
     return re.sub(r"\*(.*?)\*", _fix, text, flags=re.DOTALL)
@@ -68,11 +61,11 @@ async def _build_system_prompt(extra_note: str | None = None) -> str:
         entries = "\n".join(f"{d['date']}: {d['entry']}" for d in reversed(diary))
         blocks.append(f"\n[Recent days]\n{entries}")
     
-    # POV Formatting Reinforcement
+    # Storytelling Formatting Directive (2nd person for reader / 3rd person for Sofia)
     blocks.append(
-        "\n[Formatting Directive: Asterisk actions (*...*) must strictly describe Sofia as 'she/her' "
-        "and Teja as 'me/my/I' (e.g., *She gently rests her hand on my shoulder*). "
-        "Never use 'my eyes', 'my hands', or 'I step' inside asterisks.]"
+        "\n[Formatting Directive: Asterisk actions (*...*) must strictly describe Sofia in the 3rd person ('She/Her') "
+        "acting directly upon Teja in the 2nd person ('you/your'). E.g., *She gently rests her hand on your shoulder.* "
+        "Never use 'my eyes', 'my hands', or 'I step' inside asterisks for Sofia.]"
     )
 
     if extra_note:
