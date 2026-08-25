@@ -10,6 +10,8 @@ BASE_DIR = pathlib.Path(__file__).resolve().parent.parent
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
 ALLOWED_USER_ID = int(os.environ.get("ALLOWED_TELEGRAM_USER_ID", "0") or 0)
 DB_PATH = os.environ.get("DB_PATH", str(BASE_DIR / "alisa.db"))
+
+
 def _normalize_tz(tz_name: str) -> str:
     raw = (tz_name or "Asia/Kolkata").strip()
     mapping = {
@@ -35,19 +37,17 @@ JUSTBECAUSE_CHANCE = float(os.environ.get("JUSTBECAUSE_CHANCE", "0.15"))
 SCHEMA_PATH = os.environ.get("SCHEMA_PATH", str(BASE_DIR / "alisa-schema.sql"))
 SYSTEM_PROMPT_PATH = os.environ.get("SYSTEM_PROMPT_PATH", str(BASE_DIR / "system_prompt.txt"))
 
-def _normalize_gemini_model(model_name: str | None) -> str:
-    raw = (model_name or "").strip().lower()
-    if not raw or raw in ("gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"):
-        return "gemini-3.6-flash"
-    return raw
-
-
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-GEMINI_MODEL = _normalize_gemini_model(os.environ.get("GEMINI_MODEL"))
+# Primary LLM Provider: Groq (14,400 free requests/day, lightning-fast Llama 3.3 70B)
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
+GROQ_VISION_MODEL = os.environ.get("GROQ_VISION_MODEL", "llama-3.2-11b-vision-preview")
+
+# Optional Fallbacks: OpenRouter & Gemini
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "meta-llama/llama-3.3-70b-instruct:free")
+
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.6-flash")
 
 PORT = int(os.environ.get("PORT", "10000"))
 TURSO_DATABASE_URL = os.environ.get("TURSO_DATABASE_URL", "")

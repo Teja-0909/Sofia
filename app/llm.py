@@ -1,4 +1,5 @@
 import logging
+import base64
 import httpx
 
 from . import config, db, timeutil
@@ -12,12 +13,15 @@ class AllProvidersFailed(Exception):
 
 def _provider_chain() -> list[tuple[str, str, str]]:
     chain = []
-    if config.GEMINI_API_KEY:
-        chain.append(("gemini", config.GEMINI_MODEL, "gemini"))
+    # Primary: Groq (Ultra-fast, 14,400 free requests/day)
     if config.GROQ_API_KEY:
         chain.append(("groq", config.GROQ_MODEL, "openai"))
+    # Fallback 1: OpenRouter
     if config.OPENROUTER_API_KEY:
         chain.append(("openrouter", config.OPENROUTER_MODEL, "openai"))
+    # Fallback 2: Gemini (if configured)
+    if config.GEMINI_API_KEY:
+        chain.append(("gemini", config.GEMINI_MODEL, "gemini"))
     return chain
 
 
@@ -50,7 +54,6 @@ async def execute_usage_upsert(provider: str, model: str, prompt_tokens: int, co
 
 
 async def _call_gemini(system: str, messages: list[dict], model: str) -> tuple[str, dict]:
-    import base64
     contents = []
     for m in messages:
         role = "model" if m["role"] == "assistant" else "user"
@@ -101,9 +104,13 @@ async def _call_gemini(system: str, messages: list[dict], model: str) -> tuple[s
 
 
 async def _call_openai_compatible(
-    base_url: str, api_key: str, system: str, messages: list[dict], model: str
+    provider: str, base_url: str, api_key: str, system: str, messages: list[dict], model: str
 ) -> tuple[str, dict]:
-    import base64
+    has_image = any(m.get("image_bytes") for m in messages)
+    target_model = model
+    if provider == "groq" and has_image:
+        target_model = config.GROQ_VISION_MODEL
+
     payload_messages = [{"role": "system", "content": system}]
     for m in messages:
         if m.get("image_bytes"):
@@ -113,8 +120,8 @@ async def _call_openai_compatible(
                 "role": m["role"],
                 "content": [
                     {"type": "text", "text": m["content"]},
-                    {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64_str}"}}
-                ]
+                    {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64_str}"}},
+                ],
             })
         else:
             payload_messages.append({"role": m["role"], "content": m["content"]})
@@ -124,13 +131,13 @@ async def _call_openai_compatible(
             f"{base_url}/chat/completions",
             headers={"Authorization": f"Bearer {api_key.strip()}"},
             json={
-                "model": model,
+                "model": target_model,
                 "messages": payload_messages,
                 "max_tokens": 1024,
             },
         )
         if resp.status_code != 200:
-            logger.error("OpenAI-compatible provider error (HTTP %s): %s", resp.status_code, resp.text)
+            logger.error("Provider '%s' error (HTTP %s): %s", provider, resp.status_code, resp.text)
         resp.raise_for_status()
         data = resp.json()
     text = data["choices"][0]["message"]["content"]
@@ -140,7 +147,7 @@ async def _call_openai_compatible(
 async def chat(system: str, messages: list[dict]) -> str:
     chain = _provider_chain()
     if not chain:
-        logger.error("No LLM API keys configured! Set GEMINI_API_KEY, GROQ_API_KEY, or OPENROUTER_API_KEY")
+        logger.error("No LLM API keys configured! Set GROQ_API_KEY, OPENROUTER_API_KEY, or GEMINI_API_KEY")
         raise AllProvidersFailed("No LLM API keys configured in environment")
 
     errors = []
@@ -155,7 +162,12 @@ async def chat(system: str, messages: list[dict]) -> str:
                     else "https://openrouter.ai/api/v1"
                 )
                 text, usage = await _call_openai_compatible(
-                    base_url, getattr(config, f"{provider.upper()}_API_KEY"), system, messages, model
+                    provider,
+                    base_url,
+                    getattr(config, f"{provider.upper()}_API_KEY"),
+                    system,
+                    messages,
+                    model,
                 )
             await _log_usage(provider, model, usage)
             return text
