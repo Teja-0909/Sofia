@@ -39,33 +39,46 @@ async def _get_best_groq_model(api_key: str, has_image: bool = False) -> str:
             )
             if resp.status_code == 200:
                 data = resp.json()
-                model_ids = [m["id"] for m in data.get("data", []) if m.get("active", True)]
+                raw_ids = [m["id"] for m in data.get("data", []) if m.get("active", True)]
+
+                # Filter out safety guards, audio transcription, and embeddings
+                chat_ids = [
+                    m for m in raw_ids
+                    if not any(bad in m.lower() for bad in ["guard", "whisper", "embed", "safeguard", "moderation"])
+                ]
+
                 if has_image:
-                    for m in model_ids:
+                    for m in chat_ids:
                         if "vision" in m.lower():
                             return m
+
                 preferred = [
+                    "llama-3.1-8b-instant",
                     "llama-3.3-70b-versatile",
                     "llama-3.1-70b-versatile",
-                    "llama-3.1-8b-instant",
                     "llama3-70b-8192",
                     "llama3-8b-8192",
                     "gemma2-9b-it",
                     "mixtral-8x7b-32768",
+                    "deepseek-r1-distill-llama-70b",
+                    "qwen-2.5-32b",
                 ]
                 for p in preferred:
-                    if p in model_ids:
+                    if p in chat_ids:
                         _cached_groq_model = p
                         return p
-                for m in model_ids:
-                    if "llama" in m.lower() or "gemma" in m.lower():
+
+                for m in chat_ids:
+                    if "instant" in m.lower() or "versatile" in m.lower() or "it" in m.lower():
                         _cached_groq_model = m
                         return m
-                if model_ids:
-                    return model_ids[0]
+
+                if chat_ids:
+                    _cached_groq_model = chat_ids[0]
+                    return chat_ids[0]
     except Exception as exc:
         logger.debug("Failed to query Groq model list: %s", exc)
-    return config.GROQ_VISION_MODEL if has_image else config.GROQ_MODEL
+    return config.GROQ_VISION_MODEL if has_image else "llama-3.1-8b-instant"
 
 
 async def _log_usage(provider: str, model: str, usage: dict) -> None:
