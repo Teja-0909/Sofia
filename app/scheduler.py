@@ -77,6 +77,7 @@ async def create_scheduler() -> AsyncIOScheduler:
 
     # 3. Proactive check-ins & memory curation
     scheduler.add_job(run_memory_curation, "interval", minutes=15)
+    scheduler.add_job(triggers.hourly_checkin, "interval", minutes=60)
     scheduler.add_job(triggers.maybe_just_because, "interval", minutes=45)
 
     # 4. End-of-day summary and nightly diary
