@@ -1,8 +1,37 @@
 import pathlib
+import re
 
 from . import config, db, llm
 
 FALLBACK_MESSAGE = "give me a second, having some trouble connecting"
+
+
+def _clean_asterisks(text: str) -> str:
+    """Normalizes any asterisk action descriptions so they strictly follow Teja's first-person perspective."""
+    def _fix(m):
+        s = m.group(1).strip()
+        # If action starts with a bare verb like "stops moving", prepend "She "
+        words = s.split()
+        if words:
+            first_word = words[0].lower()
+            if first_word.endswith("s") and first_word not in [
+                "she", "as", "this", "his", "hers", "sometimes", "always", "is", "was"
+            ]:
+                s = "She " + s
+        # Convert first-person Sofia to third-person "her/she"
+        s = re.sub(r"\bmy\b", "her", s)
+        s = re.sub(r"\bmine\b", "hers", s)
+        s = re.sub(r"\bI\b", "she", s)
+        # Convert references to user "your" -> "my" and "you" -> "me"
+        s = re.sub(r"\byour\b", "my", s, flags=re.IGNORECASE)
+        s = re.sub(r"\byours\b", "mine", s, flags=re.IGNORECASE)
+        s = re.sub(r"\bto you\b", "to me", s, flags=re.IGNORECASE)
+        s = re.sub(r"\bat you\b", "at me", s, flags=re.IGNORECASE)
+        s = re.sub(r"\bwith you\b", "with me", s, flags=re.IGNORECASE)
+        s = re.sub(r"\baround you\b", "around me", s, flags=re.IGNORECASE)
+        return f"*{s}*"
+
+    return re.sub(r"\*(.*?)\*", _fix, text, flags=re.DOTALL)
 
 
 async def _build_system_prompt(extra_note: str | None = None) -> str:
@@ -38,6 +67,14 @@ async def _build_system_prompt(extra_note: str | None = None) -> str:
     if diary:
         entries = "\n".join(f"{d['date']}: {d['entry']}" for d in reversed(diary))
         blocks.append(f"\n[Recent days]\n{entries}")
+    
+    # POV Formatting Reinforcement
+    blocks.append(
+        "\n[Formatting Directive: Asterisk actions (*...*) must strictly describe Sofia as 'she/her' "
+        "and Teja as 'me/my/I' (e.g., *She gently rests her hand on my shoulder*). "
+        "Never use 'my eyes', 'my hands', or 'I step' inside asterisks.]"
+    )
+
     if extra_note:
         blocks.append(f"\n{extra_note}")
     return "\n".join(blocks)
@@ -55,7 +92,8 @@ async def _history(limit: int) -> list[dict]:
 
 
 async def _generate(system: str, messages: list[dict]) -> str:
-    return await llm.chat(system, messages)
+    raw = await llm.chat(system, messages)
+    return _clean_asterisks(raw)
 
 
 async def reply(
