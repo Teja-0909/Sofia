@@ -6,6 +6,8 @@ from . import config, db, timeutil
 
 logger = logging.getLogger(__name__)
 
+_cached_groq_model = None
+
 
 class AllProvidersFailed(Exception):
     pass
@@ -23,6 +25,47 @@ def _provider_chain() -> list[tuple[str, str, str]]:
     if config.GEMINI_API_KEY:
         chain.append(("gemini", config.GEMINI_MODEL, "gemini"))
     return chain
+
+
+async def _get_best_groq_model(api_key: str, has_image: bool = False) -> str:
+    global _cached_groq_model
+    if _cached_groq_model and not has_image:
+        return _cached_groq_model
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(
+                "https://api.groq.com/openai/v1/models",
+                headers={"Authorization": f"Bearer {api_key.strip()}"},
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                model_ids = [m["id"] for m in data.get("data", []) if m.get("active", True)]
+                if has_image:
+                    for m in model_ids:
+                        if "vision" in m.lower():
+                            return m
+                preferred = [
+                    "llama-3.3-70b-versatile",
+                    "llama-3.1-70b-versatile",
+                    "llama-3.1-8b-instant",
+                    "llama3-70b-8192",
+                    "llama3-8b-8192",
+                    "gemma2-9b-it",
+                    "mixtral-8x7b-32768",
+                ]
+                for p in preferred:
+                    if p in model_ids:
+                        _cached_groq_model = p
+                        return p
+                for m in model_ids:
+                    if "llama" in m.lower() or "gemma" in m.lower():
+                        _cached_groq_model = m
+                        return m
+                if model_ids:
+                    return model_ids[0]
+    except Exception as exc:
+        logger.debug("Failed to query Groq model list: %s", exc)
+    return config.GROQ_VISION_MODEL if has_image else config.GROQ_MODEL
 
 
 async def _log_usage(provider: str, model: str, usage: dict) -> None:
@@ -108,8 +151,8 @@ async def _call_openai_compatible(
 ) -> tuple[str, dict]:
     has_image = any(m.get("image_bytes") for m in messages)
     target_model = model
-    if provider == "groq" and has_image:
-        target_model = config.GROQ_VISION_MODEL
+    if provider == "groq":
+        target_model = await _get_best_groq_model(api_key, has_image=has_image)
 
     payload_messages = [{"role": "system", "content": system}]
     for m in messages:
@@ -137,7 +180,7 @@ async def _call_openai_compatible(
             },
         )
         if resp.status_code != 200:
-            logger.error("Provider '%s' error (HTTP %s): %s", provider, resp.status_code, resp.text)
+            logger.error("Provider '%s' (model %s) error (HTTP %s): %s", provider, target_model, resp.status_code, resp.text)
         resp.raise_for_status()
         data = resp.json()
     text = data["choices"][0]["message"]["content"]
