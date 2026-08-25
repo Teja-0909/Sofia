@@ -25,7 +25,7 @@ class TestAlisaCore(unittest.IsolatedAsyncioTestCase):
 
     async def test_db_init_and_config(self):
         val = await db.get_config("memory_top_k", "0")
-        self.assertEqual(val, "12")
+        self.assertEqual(val, "30")
         val2 = await db.get_config("nonexistent", "fallback")
         self.assertEqual(val2, "fallback")
 

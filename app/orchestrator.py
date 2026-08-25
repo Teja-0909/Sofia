@@ -33,7 +33,7 @@ async def _build_system_prompt(extra_note: str | None = None) -> str:
     state = await db.fetch_one("SELECT depth_level FROM relationship_state WHERE id = 1")
     depth = state["depth_level"] if state else 0
 
-    top_k = int(await db.get_config("memory_top_k", "12"))
+    top_k = int(await db.get_config("memory_top_k", "30"))
     memories = await db.fetch_all(
         """
         SELECT category, content FROM relationship_memory
@@ -44,7 +44,7 @@ async def _build_system_prompt(extra_note: str | None = None) -> str:
         (top_k,),
     )
 
-    diary_days = int(await db.get_config("diary_context_days", "5"))
+    diary_days = int(await db.get_config("diary_context_days", "7"))
     diary = await db.fetch_all(
         "SELECT date, entry FROM daily_diary ORDER BY date DESC LIMIT ?", (diary_days,)
     )
@@ -56,10 +56,10 @@ async def _build_system_prompt(extra_note: str | None = None) -> str:
     )
     if memories:
         lines = "\n".join(f"- [{m['category']}] {m['content']}" for m in memories)
-        blocks.append(f"\n[Things you remember about Teja]\n{lines}")
+        blocks.append(f"\n[Things you remember about Teja (Permanent Memories)]\n{lines}")
     if diary:
         entries = "\n".join(f"{d['date']}: {d['entry']}" for d in reversed(diary))
-        blocks.append(f"\n[Recent days]\n{entries}")
+        blocks.append(f"\n[Recent days (Past Diary Entries)]\n{entries}")
     
     # Storytelling Formatting Directive (2nd person for reader / 3rd person for Sofia)
     blocks.append(
@@ -73,14 +73,27 @@ async def _build_system_prompt(extra_note: str | None = None) -> str:
     return "\n".join(blocks)
 
 
-async def _history(limit: int) -> list[dict]:
+async def _history(limit: int = 200) -> list[dict]:
+    """Fetches full 48-hour conversation history so Sofia seamlessly remembers morning/afternoon context."""
     rows = await db.fetch_all(
-        "SELECT role, content FROM conversation_log ORDER BY timestamp DESC LIMIT ?",
+        """
+        SELECT role, content FROM conversation_log
+        WHERE timestamp >= datetime('now', '-48 hours')
+        ORDER BY timestamp ASC
+        LIMIT ?
+        """,
         (limit,),
     )
+    # If fewer than 30 messages in last 48h, fall back to recent messages across all time
+    if len(rows) < 30:
+        recent_rows = await db.fetch_all(
+            "SELECT role, content FROM conversation_log ORDER BY timestamp DESC LIMIT 50"
+        )
+        rows = list(reversed(recent_rows))
+
     return [
         {"role": "assistant" if r["role"] in ("sofia", "alisa") else "user", "content": r["content"]}
-        for r in reversed(rows)
+        for r in rows
     ]
 
 
@@ -95,7 +108,7 @@ async def reply(
     image_bytes: bytes | None = None,
     mime_type: str = "image/jpeg",
 ) -> str:
-    window = int(await db.get_config("history_window", "20"))
+    window = int(await db.get_config("history_window", "200"))
     history = await _history(window)
     system = await _build_system_prompt(system_note)
     user_msg = {"role": "user", "content": user_text}
@@ -106,7 +119,7 @@ async def reply(
 
 
 async def proactive(system_note: str) -> str:
-    window = int(await db.get_config("history_window", "20"))
+    window = int(await db.get_config("history_window", "200"))
     history = await _history(window)
     system = await _build_system_prompt()
     trigger_turn = {

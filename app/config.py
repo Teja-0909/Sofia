@@ -54,10 +54,10 @@ TURSO_DATABASE_URL = os.environ.get("TURSO_DATABASE_URL", "")
 TURSO_AUTH_TOKEN = os.environ.get("TURSO_AUTH_TOKEN", "")
 
 DEFAULT_CONFIG = {
-    "memory_top_k": "12",
-    "diary_context_days": "5",
-    "history_window": "20",
-    "justbecause_max_per_day": "2",
+    "memory_top_k": "30",
+    "diary_context_days": "7",
+    "history_window": "200",
+    "justbecause_max_per_day": "4",
     "daily_summary_hour": "22",
     "max_reminder_pings": "4",
 }
