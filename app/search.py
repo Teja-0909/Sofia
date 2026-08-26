@@ -109,29 +109,38 @@ def extract_clean_article_text(html: str, max_chars: int = 4000) -> str:
 
 
 async def fetch_page_content(url: str, max_chars: int = 4000) -> str:
-    """Fetches a live webpage, strips clutter (scripts/nav/ads), and extracts clean text and tables."""
+    """Fetches a live webpage using a cloud headless browser (renders JS & Markdown tables) with direct HTML fallback."""
     if not url or not url.startswith(("http://", "https://")):
         return ""
 
+    # Primary: Headless Browser (Jina Reader - renders JS, React SPAs, and Markdown tables)
+    jina_url = f"https://r.jina.ai/{url}"
     headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/124.0.0.0 Safari/537.36"
-        ),
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept": "text/plain",
+        "X-No-Cache": "true",
     }
 
     try:
-        async with httpx.AsyncClient(timeout=12, follow_redirects=True) as client:
-            resp = await client.get(url, headers=headers)
-            if resp.status_code != 200:
-                logger.debug("Page fetch failed for %s: HTTP %s", url, resp.status_code)
-                return ""
-            return extract_clean_article_text(resp.text, max_chars=max_chars)
+        async with httpx.AsyncClient(timeout=14, follow_redirects=True) as client:
+            resp = await client.get(jina_url, headers=headers)
+            if resp.status_code == 200 and len(resp.text.strip()) > 80:
+                clean_md = re.sub(r'\[Skip to content\]\(.*?\)', '', resp.text).strip()
+                logger.info("Headless browser successfully scraped %s chars from %s", len(clean_md), url)
+                return clean_md[:max_chars]
     except Exception as exc:
-        logger.debug("Error fetching webpage %s: %s", url, exc)
-        return ""
+        logger.debug("Headless browser fallback note for %s: %s", url, exc)
+
+    # Fallback: Direct HTML DOM Scraper
+    try:
+        async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
+            resp = await client.get(url, headers=headers)
+            if resp.status_code == 200:
+                return extract_clean_article_text(resp.text, max_chars=max_chars)
+    except Exception as exc:
+        logger.debug("Direct HTML scrape note for %s: %s", url, exc)
+
+    return ""
 
 
 def _sync_ddgs_search(query: str, max_results: int = 5) -> list[dict]:
