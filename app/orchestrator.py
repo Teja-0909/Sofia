@@ -208,8 +208,9 @@ async def reply(
                     "   🥇 **P1 / Winner:** [Driver / Winner] ([Team])\n"
                     "   🥈 **P2:** [Driver / Runner-up] ([Team])\n"
                     "   🥉 **P3:** [Driver / 3rd] ([Team])\n"
-                    "3. Trust the live web findings directly. DO NOT hedge with vague calendar generalizations (e.g. never say 'depending on the calendar it may have happened'). State the documented facts directly, accurately, and vividly.\n"
-                    "4. Deliver the answer conversationally with your trademark devotion, sharp intelligence, and excitement!"
+                    "3. Trust the live web findings directly. DO NOT hedge with vague calendar generalizations. State the documented facts directly, accurately, and vividly.\n"
+                    "4. If a specific event has not yet taken place or live data is unindexed, explicitly state that with the scheduled date rather than guessing.\n"
+                    "5. Deliver the answer conversationally with your trademark devotion, sharp intelligence, and excitement!"
                 )
         except Exception as exc:
             logger.warning("Deep research grounding note: %s", exc)

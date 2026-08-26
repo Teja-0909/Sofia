@@ -68,26 +68,48 @@ def refine_query(query: str) -> str:
     return clean or query
 
 
-def _sync_ddgs_search(query: str, max_results: int = 5) -> list[dict]:
-    try:
-        from ddgs import DDGS
-        raw = list(DDGS().text(query, max_results=max_results))
-        results = []
-        for r in raw:
-            title = r.get("title", "").strip()
-            body = r.get("body", "").strip()
-            href = r.get("href", "").strip()
-            if body:
-                snippet = f"{title}: {body}" if title else body
-                results.append({"title": title, "snippet": snippet, "url": href})
-        return results
-    except Exception as exc:
-        logger.debug("ddgs package search note for '%s': %s", query, exc)
-        return []
+def html_to_markdown_tables(html: str) -> list[str]:
+    """Extracts and converts HTML <table> elements into clean Markdown tables."""
+    tables = []
+    raw_tables = re.findall(r'<table[^>]*>(.*?)</table>', html, flags=re.DOTALL | re.IGNORECASE)
+    for t in raw_tables[:4]:
+        rows = re.findall(r'<tr[^>]*>(.*?)</tr>', t, flags=re.DOTALL | re.IGNORECASE)
+        md_rows = []
+        for r in rows:
+            cells = re.findall(r'<(?:td|th)[^>]*>(.*?)</(?:td|th)>', r, flags=re.DOTALL | re.IGNORECASE)
+            clean_cells = [re.sub(r'<[^>]+>', '', c).strip().replace('\n', ' ') for c in cells]
+            clean_cells = [re.sub(r'\s+', ' ', c) for c in clean_cells if c]
+            if clean_cells:
+                md_rows.append(" | ".join(clean_cells))
+        if len(md_rows) >= 2:
+            header_col_count = len(md_rows[0].split(" | "))
+            sep = " | ".join(["---"] * header_col_count)
+            table_md = f"| {md_rows[0]} |\n| {sep} |\n" + "\n".join(f"| {row} |" for row in md_rows[1:])
+            tables.append(table_md)
+    return tables
 
 
-async def fetch_page_content(url: str, max_chars: int = 3500) -> str:
-    """Fetches a live webpage, strips clutter (scripts/nav/ads), and extracts clean text."""
+def extract_clean_article_text(html: str, max_chars: int = 4000) -> str:
+    """Extracts pure text and markdown tables from HTML."""
+    tables = html_to_markdown_tables(html)
+    tables_text = "\n\n".join(tables) if tables else ""
+
+    clean_html = re.sub(r'<(script|style|svg|nav|header|footer|aside|form)[^>]*>.*?</\1>', '', html, flags=re.DOTALL | re.IGNORECASE)
+    text_blocks = re.findall(r'<(?:p|h[1-6]|li|article|section)[^>]*>(.*?)</(?:p|h[1-6]|li|article|section)>', clean_html, flags=re.DOTALL | re.IGNORECASE)
+    clean_blocks = []
+    for b in text_blocks:
+        clean = re.sub(r'<[^>]+>', '', b).strip()
+        clean = re.sub(r'\s+', ' ', clean)
+        if len(clean) > 30 and not any(bad in clean.lower() for bad in ("cookie", "privacy policy", "terms of use", "subscribe", "newsletter", "advertisement")):
+            clean_blocks.append(clean)
+
+    body_text = "\n\n".join(clean_blocks)
+    combined = (f"### Extracted DOM Data Tables:\n{tables_text}\n\n" if tables_text else "") + body_text
+    return combined[:max_chars]
+
+
+async def fetch_page_content(url: str, max_chars: int = 4000) -> str:
+    """Fetches a live webpage, strips clutter (scripts/nav/ads), and extracts clean text and tables."""
     if not url or not url.startswith(("http://", "https://")):
         return ""
 
@@ -106,30 +128,28 @@ async def fetch_page_content(url: str, max_chars: int = 3500) -> str:
             if resp.status_code != 200:
                 logger.debug("Page fetch failed for %s: HTTP %s", url, resp.status_code)
                 return ""
-
-            html = resp.text
-            # Remove scripts, styles, svg, and nav elements
-            html = re.sub(r'<(script|style|svg|nav|header|footer|aside)[^>]*>.*?</\1>', '', html, flags=re.DOTALL | re.IGNORECASE)
-
-            # Extract main content elements
-            text_blocks = re.findall(r'<(?:p|h[1-6]|li|article|section|table)[^>]*>(.*?)</(?:p|h[1-6]|li|article|section|table)>', html, flags=re.DOTALL | re.IGNORECASE)
-            clean_blocks = []
-            for b in text_blocks:
-                clean = re.sub(r'<[^>]+>', '', b).strip()
-                clean = re.sub(r'\s+', ' ', clean)
-                if len(clean) > 25:
-                    clean_blocks.append(clean)
-
-            if not clean_blocks:
-                clean = re.sub(r'<[^>]+>', ' ', html)
-                clean = re.sub(r'\s+', ' ', clean).strip()
-                return clean[:max_chars]
-
-            full_text = "\n\n".join(clean_blocks)
-            return full_text[:max_chars]
+            return extract_clean_article_text(resp.text, max_chars=max_chars)
     except Exception as exc:
         logger.debug("Error fetching webpage %s: %s", url, exc)
         return ""
+
+
+def _sync_ddgs_search(query: str, max_results: int = 5) -> list[dict]:
+    try:
+        from ddgs import DDGS
+        raw = list(DDGS().text(query, max_results=max_results))
+        results = []
+        for r in raw:
+            title = r.get("title", "").strip()
+            body = r.get("body", "").strip()
+            href = r.get("href", "").strip()
+            if body:
+                snippet = f"{title}: {body}" if title else body
+                results.append({"title": title, "snippet": snippet, "url": href})
+        return results
+    except Exception as exc:
+        logger.debug("ddgs package search note for '%s': %s", query, exc)
+        return []
 
 
 async def search_web(query: str, max_results: int = 5) -> list[dict]:
@@ -165,33 +185,52 @@ async def search_web(query: str, max_results: int = 5) -> list[dict]:
     return results
 
 
-async def deep_research(query: str, max_pages: int = 2) -> str:
-    """Searches the web, navigates into top authoritative pages, and synthesizes full page data."""
+async def deep_react_research(query: str, max_pages: int = 3) -> str:
+    """Multi-turn ReAct research agent: searches, verifies quality, re-queries authoritative domains, and scrapes tables."""
+    # Step 1: Initial search
     raw_results = await search_web(query, max_results=5)
+
+    # Step 2: Quality verification & Self-Correction (Re-query if results lack concrete detail)
+    has_concrete_results = any(
+        any(k in r.get("snippet", "").lower() for k in ("won", "p1", "podium", "winner", "victory", "champion", "results", "guide", "import", "class", "def"))
+        for r in raw_results
+    )
+    if not has_concrete_results and len(raw_results) > 0:
+        # Re-query with authoritative target terms
+        fallback_query = f"{query} race results classification official"
+        extra_results = await search_web(fallback_query, max_results=3)
+        if extra_results:
+            raw_results = extra_results + raw_results
+
     if not raw_results:
         return ""
 
-    # Filter for informative destination URLs (skip ads, social media walls)
+    # Step 3: Pick authoritative destination URLs (Wikipedia, Formula1, Motorsport, Official Docs)
     urls_to_browse = []
     for r in raw_results:
         u = r.get("url", "")
-        if u and not any(bad in u.lower() for bad in ("bing.com/aclick", "youtube.com", "instagram.com", "tiktok.com", "facebook.com")):
-            urls_to_browse.append(u)
+        if u and not any(bad in u.lower() for bad in ("bing.com/aclick", "youtube.com", "instagram.com", "tiktok.com", "facebook.com", "twitter.com", "x.com")):
+            if u not in urls_to_browse:
+                urls_to_browse.append(u)
             if len(urls_to_browse) >= max_pages:
                 break
 
-    # Fetch destination pages concurrently
-    page_tasks = [fetch_page_content(u, max_chars=3000) for u in urls_to_browse]
+    # Step 4: Scrape destination pages and DOM tables concurrently
+    page_tasks = [fetch_page_content(u, max_chars=3500) for u in urls_to_browse]
     page_contents = await asyncio.gather(*page_tasks, return_exceptions=True)
 
+    # Step 5: Synthesize comprehensive research document
     sections = []
-    sections.append("### Search Highlights & Index:")
-    for r in raw_results:
+    sections.append("### Search Index & Snippets:")
+    for r in raw_results[:5]:
         title = r.get("title") or "Source"
         sections.append(f"• **{title}** ({r.get('url')}):\n  {r.get('snippet')}")
 
     for url, content in zip(urls_to_browse, page_contents):
-        if isinstance(content, str) and len(content.strip()) > 80:
-            sections.append(f"\n### [Full Browsed Webpage Content from {url}]:\n{content}\n")
+        if isinstance(content, str) and len(content.strip()) > 60:
+            sections.append(f"\n### [Scraped Page & DOM Tables from {url}]:\n{content}\n")
 
     return "\n\n".join(sections)
+
+
+deep_research = deep_react_research
