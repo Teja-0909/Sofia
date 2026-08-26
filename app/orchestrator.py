@@ -177,12 +177,37 @@ async def reply(
 ) -> str:
     window = int(await db.get_config("history_window", "200"))
     history = await _history(window)
-    system = await _build_system_prompt(system_note)
+
+    from . import search as search_module
+    search_query = search_module.extract_search_query(user_text)
+    search_block = None
+    if search_query:
+        try:
+            results = await search_module.search_web(search_query)
+            if results:
+                lines = "\n".join(f"- {r['snippet']} (Source: {r['url']})" for r in results)
+                search_block = f"[Live Real-Time Web Search Results for: '{search_query}']\n{lines}\n(Instruction: Use the fresh web search findings above to answer Teja accurately and conversationally in your own devoted voice!)"
+        except Exception as exc:
+            logger.warning("Search grounding note: %s", exc)
+
+    extra_notes = [n for n in (system_note, search_block) if n]
+    combined_extra = "\n\n".join(extra_notes) if extra_notes else None
+
+    system = await _build_system_prompt(combined_extra)
     user_msg = {"role": "user", "content": user_text}
     if image_bytes:
         user_msg["image_bytes"] = image_bytes
         user_msg["mime_type"] = mime_type
-    return await _generate(system, history + [user_msg])
+
+    if history and history[-1]["role"] == "user" and history[-1]["content"] == user_text:
+        messages = history
+        if image_bytes:
+            messages[-1]["image_bytes"] = image_bytes
+            messages[-1]["mime_type"] = mime_type
+    else:
+        messages = history + [user_msg]
+
+    return await _generate(system, messages)
 
 
 async def proactive(system_note: str) -> str:
