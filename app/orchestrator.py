@@ -86,6 +86,16 @@ async def _build_system_prompt(extra_note: str | None = None) -> str:
         )
         blocks.append(f"\n[Active Commitments & Scheduled Reminders for Teja]\n{task_lines}")
 
+    recent_done = await db.fetch_all(
+        "SELECT description, completed_at FROM tasks WHERE status = 'done' AND completed_at >= datetime('now', '-7 days') ORDER BY completed_at DESC LIMIT 5"
+    )
+    if recent_done:
+        done_lines = "\n".join(
+            f"- [DONE] '{t['description']}' (completed {timeutil.format_local(t['completed_at'])})"
+            for t in recent_done
+        )
+        blocks.append(f"\n[Recently Completed Tasks (Past 7 Days)]\n{done_lines}")
+
     temp_rows = await db.fetch_all(
         "SELECT content, mentioned_at FROM temp_reminders WHERE status = 'active' ORDER BY id DESC LIMIT 5"
     )
