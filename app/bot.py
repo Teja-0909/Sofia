@@ -128,6 +128,23 @@ async def cmd_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     await update.message.reply_text(reply)
 
 
+async def cmd_read(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not _allowed(update):
+        return
+    url = " ".join(context.args or []).strip()
+    if not url:
+        await update.message.reply_text("send me the link to read! e.g. /read https://example.com")
+        return
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+    try:
+        reply = await orchestrator.reply(f"Please browse this URL and explain it to me: {url}")
+    except Exception as exc:
+        logger.error("Read command error: %s", exc)
+        reply = orchestrator.FALLBACK_MESSAGE
+    await _log_message("sofia", reply)
+    await update.message.reply_text(reply)
+
+
 async def _detect_task_completion(user_text: str) -> str | None:
     lower = user_text.lower().strip()
     if not any(w in lower for w in DONE_WORDS):
@@ -264,6 +281,7 @@ def build_application() -> Application:
     app.add_handler(CommandHandler("done", cmd_done))
     app.add_handler(CommandHandler("win", cmd_win))
     app.add_handler(CommandHandler("search", cmd_search))
+    app.add_handler(CommandHandler("read", cmd_read))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     return app

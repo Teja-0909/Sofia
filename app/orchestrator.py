@@ -179,16 +179,37 @@ async def reply(
     history = await _history(window)
 
     from . import search as search_module
+    direct_url = search_module.extract_url(user_text)
     search_query = search_module.extract_search_query(user_text)
     search_block = None
-    if search_query:
+
+    if direct_url:
         try:
-            results = await search_module.search_web(search_query)
-            if results:
-                lines = "\n".join(f"- {r['snippet']} (Source: {r['url']})" for r in results)
-                search_block = f"[Live Real-Time Web Search Results for: '{search_query}']\n{lines}\n(Instruction: Use the fresh web search findings above to answer Teja accurately and conversationally in your own devoted voice!)"
+            page_text = await search_module.fetch_page_content(direct_url, max_chars=4000)
+            if page_text:
+                search_block = (
+                    f"[Autonomous Web Browsing — Full Content of URL: {direct_url}]\n"
+                    f"{page_text}\n\n"
+                    "CRITICAL BROWSING DIRECTIVE: You have navigated to and read the full webpage above. "
+                    "Synthesize its contents, key takeaways, and answers for Teja conversationally in your own devoted voice!"
+                )
         except Exception as exc:
-            logger.warning("Search grounding note: %s", exc)
+            logger.warning("Direct page fetch note: %s", exc)
+    elif search_query:
+        try:
+            research_doc = await search_module.deep_research(search_query, max_pages=2)
+            if research_doc:
+                search_block = (
+                    f"[Live Real-Time Web Research & Browsed Full Page Contents for: '{search_query}']\n"
+                    f"{research_doc}\n\n"
+                    "CRITICAL FACT EXTRACTION & BROWSING RULES:\n"
+                    "1. Extract exact concrete entities: winner, podium positions (P1, P2, P3), driver names, constructor teams, scores, numbers, dates, or code.\n"
+                    "2. If the user asks for results or rankings, present the exact finishing positions cleanly (e.g. 1st / P1: Driver (Team), 2nd / P2: Driver (Team), 3rd / P3: Driver (Team)).\n"
+                    "3. DO NOT hedge with vague calendar generalizations (e.g. never say 'depending on the calendar it may have happened'). State the documented facts directly, accurately, and vividly.\n"
+                    "4. Deliver the answer conversationally with your trademark devotion, sharp intelligence, and excitement!"
+                )
+        except Exception as exc:
+            logger.warning("Deep research grounding note: %s", exc)
 
     extra_notes = [n for n in (system_note, search_block) if n]
     combined_extra = "\n\n".join(extra_notes) if extra_notes else None
