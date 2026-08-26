@@ -187,6 +187,62 @@ Output ONLY raw JSON with no markdown formatting."""
         return {}
 
 
+async def detect_completion(text: str, pending_tasks: list[dict]) -> int | None:
+    """Intelligently detects if the user's message indicates completion of an active pending task."""
+    if not pending_tasks:
+        return None
+
+    lower = text.lower().strip()
+
+    # 1. Quick heuristic match if single task and direct completion phrase
+    if len(pending_tasks) == 1 and lower in ("done", "finished", "completed", "did it", "done with it", "its done", "it's done", "wrapped up"):
+        return pending_tasks[0]["id"]
+
+    # 2. Semantic matching via LLM
+    tasks_text = "\n".join(f"- ID #{t['id']}: '{t['description']}' (due {timeutil.format_local(t['due_time'])})" for t in pending_tasks)
+    prompt = f"""You are an intelligent task completion detector for Sofia AI companion.
+Teja's active pending tasks:
+{tasks_text}
+
+Teja just said: "{text}"
+
+Determine if Teja is stating that he completed or finished any of his active tasks (e.g. "the task is finished", "I have completed my dinner", "I ate dinner", "called mom", "finished the practice", "done with it").
+- If he completed a specific task or a general "done/finished" for the pending task, pick the completed task ID.
+- If he is NOT indicating completion of any task (e.g. setting a reminder, asking a question, casual talk), set completed_task_id to null.
+
+Output strictly JSON:
+{{"completed_task_id": <int or null>}}"""
+
+    try:
+        raw = await llm.chat(
+            "You are a task completion matcher. Output valid JSON only.",
+            [{"role": "user", "content": prompt}],
+        )
+        match = re.search(r"\{.*\}", raw, re.DOTALL)
+        if match:
+            data = json.loads(match.group(0))
+            val = data.get("completed_task_id")
+            if val is not None:
+                # Ensure the returned ID actually exists in pending_tasks
+                valid_ids = {t["id"] for t in pending_tasks}
+                if int(val) in valid_ids:
+                    return int(val)
+    except Exception:
+        pass
+
+    # 3. Fallback word overlap heuristic
+    for t in pending_tasks:
+        desc_words = set(t["description"].lower().split()) - {
+            "the", "a", "an", "to", "at", "me", "my", "and", "if", "i", "for"
+        }
+        msg_words = set(lower.split())
+        overlap = desc_words & msg_words
+        if len(overlap) >= max(1, len(desc_words) // 2) and any(w in lower for w in ("done", "did", "finish", "complete", "ate", "had")):
+            return t["id"]
+
+    return None
+
+
 async def parse_mention(text: str) -> dict | None:
     result = await parse(text)
     if result and result.get("due_utc"):

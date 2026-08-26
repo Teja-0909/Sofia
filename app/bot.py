@@ -153,12 +153,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             )
         else:
             # 2. Check for task completion
-            done_id = await _detect_task_completion(user_text)
+            pending = await tasks.list_pending()
+            done_id = await parser.detect_completion(user_text, pending) if pending else None
             if done_id is not None:
                 await tasks.mark_done(int(done_id))
+                row = await db.fetch_one("SELECT description FROM tasks WHERE id = ?", (done_id,))
+                desc = row["description"] if row else f"task #{done_id}"
+                logger.info("Task #%s ('%s') marked done by user message: '%s'", done_id, desc, user_text)
                 system_note = (
-                    f"[Internal event: Teja just told you he finished his task #{done_id}. "
-                    "Acknowledge naturally in your own voice — proud of him, warm.]"
+                    f"[Internal event: Teja just finished his task: '{desc}'. "
+                    "Acknowledge naturally in your own voice — proud of him, warm, affectionate.]"
                 )
             else:
                 # 3. Check for task creation / temp reminder
