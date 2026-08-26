@@ -2,29 +2,37 @@ import datetime as dt
 import json
 import re
 
-from . import llm, timeutil
+from . import db, llm, timeutil
 
-INTENT_WORDS = ("remind me", "reminder", "nudge me", "ping me", "wake me", "remember that i")
+FUTURE_INTENT_WORDS = (
+    "remind me", "reminder", "nudge me", "ping me", "wake me", "text me",
+    "message me", "check on me", "ask me at", "alert me", "tell me at",
+    "call me at", "call me in", "warn me", "make sure i", "make sure to"
+)
 
-RELATIVE_RE = re.compile(r"\bin\s+(\d+)\s*(minute|min|minutes|mins|hour|hr|hours|hrs)\b")
+PAST_TENSE_RE = re.compile(
+    r"\b(?:i|we|already)?\s*(?:have\s+|had\s+|was\s+|were\s+)?(?:completed|finished|ate|had|did|went|reached|came|saw|woke\s+up|slept|got|talked|watched|bought|drank|done|arrived)\b",
+    re.IGNORECASE
+)
+
+RELATIVE_RE = re.compile(r"\bin\s+(\d+)\s*(minute|min|minutes|mins|hour|hr|hours|hrs)\b", re.IGNORECASE)
 ABSOLUTE_RE = re.compile(
-    r"\b(?:at|by)\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)?\b"
+    r"\b(?:at|by)\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)?\b", re.IGNORECASE
 )
 DAY_WORDS = {"today": 0, "tonight": 0, "tomorrow": 1}
 
 PREFIX_RES = [
-    re.compile(r"^\s*(?:please\s+)?(?:remind\s+me|nudge\s+me|ping\s+me|wake\s+me(?:\s+up)?)\s+(?:to|about|for|that|if\s+i\s+haven'?t|at|by|in)?\s*", re.IGNORECASE),
+    re.compile(r"^\s*(?:please\s+)?(?:remind\s+me|nudge\s+me|ping\s+me|wake\s+me(?:\s+up)?|text\s+me|message\s+me|check\s+on\s+me)\s+(?:to|about|for|that|if\s+i\s+haven'?t|at|by|in)?\s*", re.IGNORECASE),
     re.compile(r"^\s*reminder\s+(?:to|about|for)?\s*", re.IGNORECASE),
     re.compile(r"^\s*remember\s+that\s+i\s+", re.IGNORECASE),
 ]
 
-EXTRACT_PROMPT = (
-    'Extract one scheduled reminder from this message. Reply with ONLY a JSON object: '
-    '{"description": "<what to remind>", "iso_time": "<YYYY-MM-DDTHH:MM:SSZ in UTC>"} '
-    "Assume the user's local timezone is Asia/Kolkata for ambiguous times like "
-    '"6pm" or "tonight". If no explicit or strongly implied time exists, set iso_time '
-    "to null and put the commitment in description anyway."
-)
+
+def _is_past_event(text: str) -> bool:
+    lower = text.lower()
+    if any(k in lower for k in ("remind me", "nudge me", "ping me", "text me", "check on me", "wake me", "make sure")):
+        return False
+    return bool(PAST_TENSE_RE.search(lower))
 
 
 def _clean_description(text: str, matched_spans: list[tuple[int, int]]) -> str:
@@ -57,16 +65,20 @@ def _resolve_absolute(base_day_offset: int | None, hour: int, minute: int, merid
 
 
 def heuristic_parse(text: str) -> dict | None:
-    lower = text.lower()
-    if not any(k in lower for k in INTENT_WORDS):
+    if _is_past_event(text):
         return None
+
+    lower = text.lower()
+    if not any(k in lower for k in FUTURE_INTENT_WORDS):
+        return None
+
     spans: list[tuple[int, int]] = []
     due: dt.datetime | None = None
 
     m = RELATIVE_RE.search(lower)
     if m:
         amount = int(m.group(1))
-        unit = m.group(2)
+        unit = m.group(2).lower()
         delta = dt.timedelta(minutes=amount) if unit.startswith(("m", "mi")) else dt.timedelta(hours=amount)
         due = timeutil.now_local() + delta
         spans.append(m.span())
@@ -105,28 +117,68 @@ def heuristic_parse(text: str) -> dict | None:
 
 
 async def parse(text: str) -> dict:
+    if _is_past_event(text):
+        return {}
+
+    # 1. Try instant heuristic parse first
     result = heuristic_parse(text)
     if result:
         return result
 
+    # 2. Check if message has potential future reminder signals
     lower = text.lower()
-    if not any(k in lower for k in INTENT_WORDS):
+    intent_signal = any(k in lower for k in FUTURE_INTENT_WORDS)
+    future_time_signal = any(k in lower for k in ("tomorrow", "tonight", "later", "morning", "evening"))
+
+    if not (intent_signal or future_time_signal):
         return {}
 
-    system = "You are a precise information extractor. Output only valid JSON."
+    curr_time_str = timeutil.format_local(timeutil.utc_iso())
+    curr_iso = timeutil.utc_iso()
+
+    extract_prompt = f"""You are a precise task and scheduled reminder extraction engine.
+Current Local Time: {curr_time_str} (Asia/Kolkata timezone). Current UTC: {curr_iso}.
+
+Analyze the user's message.
+CRITICAL RULES:
+- If the user is describing a PAST or COMPLETED event (e.g. "I completed my dinner at 8 PM", "I reached home at 8", "I finished my exam"), output: {{"is_reminder": false}}.
+- ONLY extract FUTURE requests where the user explicitly asks to be reminded, texted, nudged, or checked on at a future time.
+
+If it is a future scheduled reminder:
+Output ONLY a JSON object:
+{{
+  "description": "<concise description of the reminder or task>",
+  "iso_time": "<YYYY-MM-DDTHH:MM:SSZ in UTC>",
+  "is_reminder": true
+}}
+
+If the message is casual chatting or a past event, output:
+{{"is_reminder": false}}
+
+Output ONLY raw JSON with no markdown formatting."""
+
     try:
         raw = await llm.chat(
-            system, [{"role": "user", "content": f"{EXTRACT_PROMPT}\n\nMessage: {text}"}]
+            "You are a raw JSON extractor. Output valid JSON only.",
+            [{"role": "user", "content": f"{extract_prompt}\n\nUser Message: \"{text}\""}],
         )
         match = re.search(r"\{.*\}", raw, re.DOTALL)
-        data = json.loads(match.group(0)) if match else {}
+        if not match:
+            return {}
+        data = json.loads(match.group(0))
+        if not data.get("is_reminder", True):
+            return {}
+
         description = (data.get("description") or "").strip()
-        iso_time = (data.get("iso_time") or "").strip().lower()
+        iso_time = (data.get("iso_time") or "").strip()
         if not description:
             return {}
-        if not iso_time or iso_time == "null":
+        if not iso_time or iso_time.lower() == "null":
             return {"description": description, "due_utc": None, "source": "llm"}
-        normalized = iso_time.replace("z", "").replace("t", "T")
+
+        normalized = iso_time.replace("z", "Z").replace("t", "T")
+        if not normalized.endswith("Z"):
+            normalized += "Z"
         parsed = dt.datetime.strptime(normalized[:19], "%Y-%m-%dT%H:%M:%S").replace(
             tzinfo=dt.timezone.utc
         )

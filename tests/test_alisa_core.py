@@ -79,6 +79,22 @@ class TestAlisaCore(unittest.IsolatedAsyncioTestCase):
         res_none = parser.heuristic_parse("just casual chatting about the weather")
         self.assertIsNone(res_none)
 
+    async def test_parser_llm_flow(self):
+        mock_llm_json = '{"description": "Review slides before presentation", "iso_time": "2026-08-26T15:30:00Z", "is_reminder": true}'
+        with patch("app.llm.chat", new_callable=AsyncMock) as mock_chat:
+            mock_chat.return_value = mock_llm_json
+            res = await parser.parse("make sure I review slides before the presentation tomorrow")
+            self.assertIsNotNone(res)
+            self.assertEqual(res["description"], "Review slides before presentation")
+            self.assertEqual(res["due_utc"], "2026-08-26T15:30:00Z")
+
+    async def test_orchestrator_prompt_contains_pending_tasks(self):
+        due = timeutil.utc_iso(timeutil.utc_now() + dt.timedelta(hours=1))
+        await tasks.create_task("Finish system design document", due)
+        prompt = await orchestrator._build_system_prompt()
+        self.assertIn("Finish system design document", prompt)
+        self.assertIn("Active Commitments & Scheduled Reminders", prompt)
+
     async def test_memory_add_and_reinforce(self):
         # Insert new memory
         mem_id1 = await memory.add_memory(
