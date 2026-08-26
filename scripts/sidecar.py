@@ -13,10 +13,14 @@ import sys
 import time
 import urllib.request
 
+LOG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "sidecar.log")
+
 logging.basicConfig(
+    filename=LOG_FILE,
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
-    datefmt="%H:%M:%S"
+    datefmt="%H:%M:%S",
+    encoding="utf-8"
 )
 logger = logging.getLogger("sofia_sidecar")
 
@@ -114,7 +118,7 @@ def send_presence(app_name: str, window_title: str, idle_min: int) -> bool:
 
 
 def main():
-    logger.info("Sofia Desktop Presence Sidecar started ✨")
+    logger.info("Sofia Desktop Presence Sidecar started")
     logger.info("Syncing with: %s", SOFIA_PRESENCE_URL)
     last_sent_app = ""
     last_sent_title = ""
