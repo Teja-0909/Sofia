@@ -103,6 +103,29 @@ async def _build_system_prompt(extra_note: str | None = None) -> str:
         temp_lines = "\n".join(f"- {r['content']}" for r in temp_rows)
         blocks.append(f"\n[Open Threads & Casual Mentions]\n{temp_lines}")
 
+    # Live PC Presence Context
+    presence_app = await db.get_config("last_presence_app", "")
+    presence_title = await db.get_config("last_presence_title", "")
+    presence_idle = await db.get_config("last_presence_idle", "0")
+    presence_media = await db.get_config("last_presence_media", "")
+    presence_time = await db.get_config("last_presence_updated_at", "")
+
+    if (presence_app or presence_title) and presence_time:
+        try:
+            import datetime as dt_mod
+            p_time = dt_mod.datetime.fromisoformat(presence_time.replace("Z", "+00:00"))
+            if (dt_mod.datetime.now(dt_mod.timezone.utc) - p_time).total_seconds() < 900:
+                idle_int = int(presence_idle) if presence_idle.isdigit() else 0
+                if idle_int >= 15:
+                    status_desc = f"Away from PC (idle for {idle_int} minutes)"
+                else:
+                    status_desc = f"Actively on PC: {presence_app}" + (f" (Window: '{presence_title}')" if presence_title else "")
+                if presence_media:
+                    status_desc += f" | Listening/Watching: {presence_media}"
+                blocks.append(f"\n[Teja's Live PC Presence: {status_desc}]")
+        except Exception:
+            pass
+
     if extra_note:
         blocks.append(f"\n{extra_note}")
     return "\n".join(blocks)

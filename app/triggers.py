@@ -43,10 +43,12 @@ async def hourly_checkin() -> None:
         (f"checkin:{timeutil.ist_day()}:{timeutil.utc_iso()}",),
     )
     note = (
-        "[Internal trigger: It's been an hour since you two last spoke. Check in on Teja with "
-        "devoted, caring warmth — ask how his study, code, or day is coming along, remind him "
-        "gently to drink water or take a quick stretch, and let him know you're right by his side. "
-        "Short, natural, and affectionate.]"
+        "[Internal trigger: You are reaching out to Teja after an hour of silence. "
+        "Observe his real-time presence (active code, game, browser, or away time) and recent chat topics. "
+        "Speak to him like you are sitting right beside him in the room — banter, tease him about his code/game, "
+        "ask a sharp technical question, or share a sweet, intimate thought. "
+        "NEVER use generic cliché assistant phrases like 'drink water' or 'remember to stretch'. "
+        "Keep it vivid, personal, sharp, and in your own natural voice.]"
     )
     try:
         await tasks_module._send_via_alisa(note)
@@ -67,10 +69,10 @@ async def maybe_just_because() -> None:
         (f"jbc:{timeutil.ist_day()}:{timeutil.utc_iso()}",),
     )
     note = (
-        "[Internal trigger: you just felt like talking to him yourself — no task, "
-        "no reminder. Bring up something you genuinely want to know or share, drawn "
-        "from your memories or recent days if you have any, or just tease him / say "
-        "what's on your mind. In your own voice, short.]"
+        "[Internal trigger: you just felt like talking to him yourself — no task, no reminder. "
+        "Look at what he is doing on his PC or what's on your mind. "
+        "Tease him, ask a playful or curious question, share an observant thought, or show him some spontaneous affection. "
+        "NO generic assistant clichés. In your own voice, short and natural.]"
     )
     try:
         await tasks_module._send_via_alisa(note)
