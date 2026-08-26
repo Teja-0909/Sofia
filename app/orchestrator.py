@@ -204,8 +204,11 @@ async def reply(
                     f"{research_doc}\n\n"
                     "CRITICAL FACT EXTRACTION & BROWSING RULES:\n"
                     "1. Extract exact concrete entities: winner, podium positions (P1, P2, P3), driver names, constructor teams, scores, numbers, dates, or code.\n"
-                    "2. If the user asks for results or rankings, present the exact finishing positions cleanly (e.g. 1st / P1: Driver (Team), 2nd / P2: Driver (Team), 3rd / P3: Driver (Team)).\n"
-                    "3. DO NOT hedge with vague calendar generalizations (e.g. never say 'depending on the calendar it may have happened'). State the documented facts directly, accurately, and vividly.\n"
+                    "2. For race, match, or sports results, ALWAYS format the finishing positions as a clean structured list:\n"
+                    "   🥇 **P1 / Winner:** [Driver / Winner] ([Team])\n"
+                    "   🥈 **P2:** [Driver / Runner-up] ([Team])\n"
+                    "   🥉 **P3:** [Driver / 3rd] ([Team])\n"
+                    "3. Trust the live web findings directly. DO NOT hedge with vague calendar generalizations (e.g. never say 'depending on the calendar it may have happened'). State the documented facts directly, accurately, and vividly.\n"
                     "4. Deliver the answer conversationally with your trademark devotion, sharp intelligence, and excitement!"
                 )
         except Exception as exc:
