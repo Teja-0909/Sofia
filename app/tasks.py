@@ -3,34 +3,47 @@ import datetime as dt
 from . import config, db, llm, orchestrator, timeutil
 
 
-async def create_task(description: str, due_utc: str) -> int:
-    conn = await db.connect()
-    try:
-        cursor = await conn.execute(
-            "INSERT INTO tasks (description, due_time) VALUES (?, ?)",
-            (description, due_utc),
-        )
-        await conn.commit()
-        return cursor.lastrowid
-    finally:
-        await conn.close()
+async def create_task(description: str, due_utc: str, is_recurring: str | None = None) -> int:
+    """Creates a new scheduled task/reminder directly in the cloud database."""
+    await db.execute(
+        "INSERT INTO tasks (description, due_time, is_recurring) VALUES (?, ?, ?)",
+        (description, due_utc, is_recurring),
+    )
+    row = await db.fetch_one("SELECT MAX(id) AS id FROM tasks")
+    return row["id"] if row and row.get("id") else 1
 
 
 async def list_pending() -> list:
+    """Lists all active pending tasks/reminders ordered by due time."""
     return await db.fetch_all(
-        "SELECT id, description, due_time FROM tasks WHERE status = 'pending' ORDER BY due_time"
+        "SELECT id, description, due_time, is_recurring FROM tasks WHERE status = 'pending' ORDER BY due_time ASC"
     )
 
 
 async def mark_done(task_id: int) -> bool:
+    """Marks a task as done. If recurring daily, rolls over to the next day."""
     row = await db.fetch_one(
-        "SELECT id FROM tasks WHERE id = ? AND status = 'pending'", (task_id,)
+        "SELECT id, description, due_time, is_recurring FROM tasks WHERE id = ? AND status = 'pending'", (task_id,)
     )
     if not row:
         return False
+
+    now_iso = timeutil.utc_iso()
+    if row.get("is_recurring") == "daily":
+        try:
+            curr_due = dt.datetime.fromisoformat(row["due_time"].replace("Z", "+00:00"))
+            next_due = timeutil.utc_iso(curr_due + dt.timedelta(days=1))
+            await db.execute(
+                "UPDATE tasks SET due_time = ?, reminder_sent_count = 0, last_reminded_at = NULL WHERE id = ?",
+                (next_due, task_id),
+            )
+            return True
+        except Exception:
+            pass
+
     await db.execute(
         "UPDATE tasks SET status = 'done', completed_at = ? WHERE id = ?",
-        (timeutil.utc_iso(), task_id),
+        (now_iso, task_id),
     )
     return True
 
@@ -82,7 +95,6 @@ async def _send_proactive(system_note: str) -> None:
 
 
 _send_via_alisa = _send_proactive
-
 
 
 async def poll_due_tasks() -> None:

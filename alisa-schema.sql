@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     reminder_sent_count INTEGER NOT NULL DEFAULT 0,
     last_reminded_at    TEXT,
     completed_at        TEXT,
+    is_recurring        TEXT,
     created_at          TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
 CREATE INDEX IF NOT EXISTS idx_tasks_due ON tasks(status, due_time);

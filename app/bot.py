@@ -54,13 +54,30 @@ async def cmd_tasks(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     rows = await tasks.list_pending()
     if not rows:
-        await update.message.reply_text("nothing pending — you're all clear.")
+        await update.message.reply_text("nothing pending — you're all clear ✨")
         return
     lines = [
         f"{r['id']}. {r['description']} — {timeutil.format_local(r['due_time'])}"
         for r in rows
     ]
-    await update.message.reply_text("pending:\n" + "\n".join(lines))
+    await update.message.reply_text("📋 Scheduled Reminders & Tasks:\n" + "\n".join(lines))
+
+
+async def cmd_add(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not _allowed(update):
+        return
+    text = " ".join(context.args or []).strip()
+    if not text:
+        await update.message.reply_text("what should I remind you about? e.g. /add call mom at 9pm")
+        return
+    intent = await parser.parse(text)
+    if intent.get("description") and intent.get("due_utc"):
+        task_id = await tasks.create_task(intent["description"], intent["due_utc"])
+        when = timeutil.format_local(intent["due_utc"])
+        await update.message.reply_text(f"got it! I scheduled a reminder for '{intent['description']}' at {when} ✨")
+    else:
+        await tasks.add_temp_mention(text)
+        await update.message.reply_text(f"noted '{text}' in your open threads! ✨")
 
 
 async def cmd_done(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -78,7 +95,8 @@ async def cmd_done(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         )
         return
     row = await db.fetch_one("SELECT description FROM tasks WHERE id = ?", (task_id,))
-    reply = await triggers.praise(row["description"])
+    desc = row["description"] if row else "task"
+    reply = await triggers.praise(desc)
     await update.message.reply_text(reply)
 
 
@@ -202,10 +220,10 @@ def build_application() -> Application:
     )
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("tasks", cmd_tasks))
+    app.add_handler(CommandHandler("reminders", cmd_tasks))
+    app.add_handler(CommandHandler("add", cmd_add))
     app.add_handler(CommandHandler("done", cmd_done))
     app.add_handler(CommandHandler("win", cmd_win))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     return app
-
-
