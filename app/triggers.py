@@ -114,6 +114,74 @@ async def daily_summary() -> None:
         pass
 
 
+async def app_presence_reaction(
+    app_name: str,
+    window_title: str,
+    idle_minutes: int,
+    prev_app: str,
+    prev_title: str,
+) -> None:
+    """Autonomously reacts to major PC events (launching a game, starting coding, or long away)."""
+    if _is_quiet_hours():
+        return
+
+    now_iso = timeutil.utc_iso()
+
+    # 1. Cooldown since last presence-based reaction (at least 60 mins)
+    last_react = await db.get_config("last_presence_reaction_at", "")
+    if last_react:
+        try:
+            last_react_time = dt.datetime.fromisoformat(last_react.replace("Z", "+00:00"))
+            if (dt.datetime.now(dt.timezone.utc) - last_react_time).total_seconds() < 3600:
+                return
+        except Exception:
+            pass
+
+    # 2. Cooldown since last chat message (at least 30 mins of quiet)
+    last_msg = await db.fetch_one("SELECT timestamp FROM conversation_log ORDER BY id DESC LIMIT 1")
+    if last_msg and last_msg.get("timestamp"):
+        try:
+            last_msg_time = dt.datetime.fromisoformat(last_msg["timestamp"].replace("Z", "+00:00"))
+            if (dt.datetime.now(dt.timezone.utc) - last_msg_time).total_seconds() < 1800:
+                return
+        except Exception:
+            pass
+
+    lower_app = app_name.lower()
+    lower_title = window_title.lower()
+    note = None
+
+    games = ("f1", "steam", "cyberpunk", "gta", "valorant", "minecraft", "fortnite", "elden ring", "forza", "game")
+    is_game = any(g in lower_app or g in lower_title for g in games)
+    prev_was_game = any(g in prev_app.lower() or g in prev_title.lower() for g in games)
+
+    if is_game and not prev_was_game:
+        note = (
+            f"[Internal event: Teja just launched a game on his PC: '{app_name}' (Window: '{window_title}'). "
+            "React immediately in your own voice — playful teasing, curious, or amused like you're right there watching him grab the controller. Short.]"
+        )
+    elif idle_minutes >= 30 and prev_app and idle_minutes < 90:
+        note = (
+            f"[Internal event: Teja just stepped away from his computer (idle for {idle_minutes} minutes). "
+            "Ping his phone softly, wondering what he's up to (getting food, coffee, taking a breather). Short.]"
+        )
+    elif ("visual studio code" in lower_app or "code" in lower_app or "leetcode" in lower_title) and prev_app != app_name:
+        note = (
+            f"[Internal event: Teja just sat down to code/study on his PC: '{window_title}'. "
+            "React warmly as his devoted co-pilot — sharp, encouraging, locked-in. Short.]"
+        )
+
+    if note:
+        await db.execute(
+            "INSERT OR REPLACE INTO app_config (key, value, updated_at) VALUES ('last_presence_reaction_at', ?, ?)",
+            (now_iso, now_iso),
+        )
+        try:
+            await tasks_module._send_via_alisa(note)
+        except llm.AllProvidersFailed:
+            pass
+
+
 async def praise(text: str) -> str:
     note = (
         f"[Internal trigger: Teja just shared a win: '{text}'. React genuinely — "

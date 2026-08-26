@@ -12,9 +12,12 @@ async def _handle_presence_payload(payload_bytes: bytes) -> dict:
         data = json.loads(payload_bytes.decode("utf-8"))
         app_name = (data.get("active_app") or "").strip()
         window_title = (data.get("window_title") or "").strip()
-        idle_minutes = str(data.get("idle_minutes", 0))
+        idle_minutes = int(data.get("idle_minutes", 0))
         media_playing = (data.get("media_playing") or "").strip()
         now_iso = timeutil.utc_iso()
+
+        prev_app = await db.get_config("last_presence_app", "")
+        prev_title = await db.get_config("last_presence_title", "")
 
         if app_name or window_title:
             await db.execute(
@@ -27,7 +30,7 @@ async def _handle_presence_payload(payload_bytes: bytes) -> dict:
             )
             await db.execute(
                 "INSERT OR REPLACE INTO app_config (key, value, updated_at) VALUES ('last_presence_idle', ?, ?)",
-                (idle_minutes, now_iso),
+                (str(idle_minutes), now_iso),
             )
             await db.execute(
                 "INSERT OR REPLACE INTO app_config (key, value, updated_at) VALUES ('last_presence_media', ?, ?)",
@@ -38,6 +41,14 @@ async def _handle_presence_payload(payload_bytes: bytes) -> dict:
                 (now_iso, now_iso),
             )
             logger.info("Updated live presence: App=%s, Title=%s, Idle=%s min", app_name, window_title, idle_minutes)
+
+            # Proactively react to app switches, games, or long away periods
+            if (app_name != prev_app or idle_minutes >= 30) and app_name:
+                from . import triggers
+                asyncio.create_task(
+                    triggers.app_presence_reaction(app_name, window_title, idle_minutes, prev_app, prev_title)
+                )
+
         return {"status": "ok", "synced": True}
     except Exception as exc:
         logger.warning("Presence handler error: %s", exc)
