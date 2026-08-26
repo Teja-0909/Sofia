@@ -5,26 +5,45 @@ from . import config, db, llm, orchestrator, timeutil
 
 async def create_task(description: str, due_utc: str, is_recurring: str | None = None) -> int:
     """Creates a new scheduled task/reminder directly in the cloud database."""
-    await db.execute(
-        "INSERT INTO tasks (description, due_time, is_recurring) VALUES (?, ?, ?)",
-        (description, due_utc, is_recurring),
-    )
+    try:
+        await db.execute(
+            "INSERT INTO tasks (description, due_time, is_recurring) VALUES (?, ?, ?)",
+            (description, due_utc, is_recurring),
+        )
+    except Exception:
+        await db.execute(
+            "INSERT INTO tasks (description, due_time) VALUES (?, ?)",
+            (description, due_utc),
+        )
     row = await db.fetch_one("SELECT MAX(id) AS id FROM tasks")
     return row["id"] if row and row.get("id") else 1
 
 
 async def list_pending() -> list:
     """Lists all active pending tasks/reminders ordered by due time."""
-    return await db.fetch_all(
-        "SELECT id, description, due_time, is_recurring FROM tasks WHERE status = 'pending' ORDER BY due_time ASC"
-    )
+    try:
+        return await db.fetch_all(
+            "SELECT id, description, due_time, is_recurring FROM tasks WHERE status = 'pending' ORDER BY due_time ASC"
+        )
+    except Exception:
+        rows = await db.fetch_all(
+            "SELECT id, description, due_time FROM tasks WHERE status = 'pending' ORDER BY due_time ASC"
+        )
+        for r in rows:
+            r["is_recurring"] = None
+        return rows
 
 
 async def mark_done(task_id: int) -> bool:
     """Marks a task as done. If recurring daily, rolls over to the next day."""
-    row = await db.fetch_one(
-        "SELECT id, description, due_time, is_recurring FROM tasks WHERE id = ? AND status = 'pending'", (task_id,)
-    )
+    try:
+        row = await db.fetch_one(
+            "SELECT id, description, due_time, is_recurring FROM tasks WHERE id = ? AND status = 'pending'", (task_id,)
+        )
+    except Exception:
+        row = await db.fetch_one(
+            "SELECT id, description, due_time FROM tasks WHERE id = ? AND status = 'pending'", (task_id,)
+        )
     if not row:
         return False
 

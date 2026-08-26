@@ -132,6 +132,10 @@ async def init() -> None:
                 "INSERT OR IGNORE INTO app_config (key, value) VALUES (?, ?)",
                 (key, value),
             )
+        try:
+            await client.execute("ALTER TABLE tasks ADD COLUMN is_recurring TEXT")
+        except Exception:
+            pass
         logger.info("Turso cloud database initialized successfully")
     else:
         conn = await connect()
@@ -142,6 +146,10 @@ async def init() -> None:
                     "INSERT OR IGNORE INTO app_config (key, value) VALUES (?, ?)",
                     (key, value),
                 )
+            try:
+                await conn.execute("ALTER TABLE tasks ADD COLUMN is_recurring TEXT")
+            except Exception:
+                pass
             await conn.commit()
             logger.info("Local SQLite database initialized at %s", config.DB_PATH)
         finally:

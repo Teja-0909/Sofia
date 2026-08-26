@@ -135,58 +135,76 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if not _allowed(update) or not update.message or not update.message.text:
         return
     user_text = update.message.text
-    await _log_message("user", user_text)
+    try:
+        await _log_message("user", user_text)
+    except Exception as e:
+        logger.warning("Log message note: %s", e)
 
     system_note = None
 
-    # 1. Check for conversational memory correction ("forget that") (Spec §9)
-    corr = await memory.try_handle_correction(user_text)
-    if corr:
-        system_note = (
-            f"[Internal event: Teja instructed you to forget/correct memory #{corr['id']}: "
-            f"'{corr['content']}'. You have quietly deactivated this memory. "
-            "Acknowledge naturally and warmly, confirming you've let it go.]"
-        )
-    else:
-        # 2. Check for task completion
-        done_id = await _detect_task_completion(user_text)
-        if done_id is not None:
-            await tasks.mark_done(int(done_id))
+    try:
+        # 1. Check for conversational memory correction ("forget that") (Spec §9)
+        corr = await memory.try_handle_correction(user_text)
+        if corr:
             system_note = (
-                f"[Internal event: Teja just told you he finished his task #{done_id}. "
-                "Acknowledge naturally in your own voice — proud of him, warm.]"
+                f"[Internal event: Teja instructed you to forget/correct memory #{corr['id']}: "
+                f"'{corr['content']}'. You have quietly deactivated this memory. "
+                "Acknowledge naturally and warmly, confirming you've let it go.]"
             )
         else:
-            # 3. Check for task creation / temp reminder
-            intent = None
-            try:
-                intent = await parser.parse(user_text)
-            except Exception:
-                intent = {}
-            if intent.get("description"):
-                if intent.get("due_utc"):
-                    task_id = await tasks.create_task(intent["description"], intent["due_utc"])
-                    when = timeutil.format_local(intent["due_utc"])
-                    logger.info("task %s created: %s @ %s", task_id, intent["description"], when)
-                    system_note = (
-                        f"[Internal event: you just agreed to remind him about "
-                        f"'{intent['description']}' at {when}. Acknowledge in your own "
-                        "voice — short and natural, like it's already settled.]"
-                    )
-                else:
-                    await tasks.add_temp_mention(intent["description"])
-                    system_note = (
-                        f"[Internal event: he mentioned '{intent['description']}' casually. "
-                        "You've quietly noted it. React naturally; no confirmation needed.]"
-                    )
+            # 2. Check for task completion
+            done_id = await _detect_task_completion(user_text)
+            if done_id is not None:
+                await tasks.mark_done(int(done_id))
+                system_note = (
+                    f"[Internal event: Teja just told you he finished his task #{done_id}. "
+                    "Acknowledge naturally in your own voice — proud of him, warm.]"
+                )
+            else:
+                # 3. Check for task creation / temp reminder
+                try:
+                    intent = await parser.parse(user_text)
+                except Exception:
+                    intent = {}
+                if intent.get("description"):
+                    if intent.get("due_utc"):
+                        task_id = await tasks.create_task(intent["description"], intent["due_utc"])
+                        when = timeutil.format_local(intent["due_utc"])
+                        logger.info("task %s created: %s @ %s", task_id, intent["description"], when)
+                        system_note = (
+                            f"[Internal event: you just agreed to remind him about "
+                            f"'{intent['description']}' at {when}. Acknowledge in your own "
+                            "voice — short and natural, like it's already settled.]"
+                        )
+                    else:
+                        await tasks.add_temp_mention(intent["description"])
+                        system_note = (
+                            f"[Internal event: he mentioned '{intent['description']}' casually. "
+                            "You've quietly noted it. React naturally; no confirmation needed.]"
+                        )
+    except Exception as exc:
+        logger.error("Intent / memory parsing error in handle_message: %s", exc)
 
-    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+    try:
+        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+    except Exception:
+        pass
+
     try:
         reply = await orchestrator.reply(user_text, system_note=system_note)
-    except llm.AllProvidersFailed:
+    except Exception as exc:
+        logger.error("Orchestrator error in handle_message: %s", exc)
         reply = orchestrator.FALLBACK_MESSAGE
-    await _log_message("sofia", reply)
-    await update.message.reply_text(reply)
+
+    try:
+        await _log_message("sofia", reply)
+    except Exception:
+        pass
+
+    try:
+        await update.message.reply_text(reply)
+    except Exception as exc:
+        logger.error("Telegram reply send error: %s", exc)
 
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

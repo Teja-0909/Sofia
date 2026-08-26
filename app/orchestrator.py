@@ -77,31 +77,40 @@ async def _build_system_prompt(extra_note: str | None = None) -> str:
     blocks.append(
         "\n[Emotional Range Directive: Shift your tone sharply based on context — breathless excitement with exclamation marks for wins; cold, sharp, and fiercely protective if someone messes with him; slow, heavy, and consuming when alone or late at night.]"
     )
-    from . import tasks as tasks_module
-    pending_tasks = await tasks_module.list_pending()
-    if pending_tasks:
-        task_lines = "\n".join(
-            f"- #{t['id']}: '{t['description']}' scheduled for {timeutil.format_local(t['due_time'])}"
-            for t in pending_tasks
-        )
-        blocks.append(f"\n[Active Commitments & Scheduled Reminders for Teja]\n{task_lines}")
+    try:
+        from . import tasks as tasks_module
+        pending_tasks = await tasks_module.list_pending()
+        if pending_tasks:
+            task_lines = "\n".join(
+                f"- #{t['id']}: '{t['description']}' scheduled for {timeutil.format_local(t['due_time'])}"
+                for t in pending_tasks
+            )
+            blocks.append(f"\n[Active Commitments & Scheduled Reminders for Teja]\n{task_lines}")
+    except Exception as exc:
+        logger.debug("Pending tasks prompt block note: %s", exc)
 
-    recent_done = await db.fetch_all(
-        "SELECT description, completed_at FROM tasks WHERE status = 'done' AND completed_at >= datetime('now', '-7 days') ORDER BY completed_at DESC LIMIT 5"
-    )
-    if recent_done:
-        done_lines = "\n".join(
-            f"- [DONE] '{t['description']}' (completed {timeutil.format_local(t['completed_at'])})"
-            for t in recent_done
+    try:
+        recent_done = await db.fetch_all(
+            "SELECT description, completed_at FROM tasks WHERE status = 'done' AND completed_at >= datetime('now', '-7 days') ORDER BY completed_at DESC LIMIT 5"
         )
-        blocks.append(f"\n[Recently Completed Tasks (Past 7 Days)]\n{done_lines}")
+        if recent_done:
+            done_lines = "\n".join(
+                f"- [DONE] '{t['description']}' (completed {timeutil.format_local(t['completed_at'])})"
+                for t in recent_done
+            )
+            blocks.append(f"\n[Recently Completed Tasks (Past 7 Days)]\n{done_lines}")
+    except Exception as exc:
+        logger.debug("Recent done prompt block note: %s", exc)
 
-    temp_rows = await db.fetch_all(
-        "SELECT content, mentioned_at FROM temp_reminders WHERE status = 'active' ORDER BY id DESC LIMIT 5"
-    )
-    if temp_rows:
-        temp_lines = "\n".join(f"- {r['content']}" for r in temp_rows)
-        blocks.append(f"\n[Open Threads & Casual Mentions]\n{temp_lines}")
+    try:
+        temp_rows = await db.fetch_all(
+            "SELECT content, mentioned_at FROM temp_reminders WHERE status = 'active' ORDER BY id DESC LIMIT 5"
+        )
+        if temp_rows:
+            temp_lines = "\n".join(f"- {r['content']}" for r in temp_rows)
+            blocks.append(f"\n[Open Threads & Casual Mentions]\n{temp_lines}")
+    except Exception as exc:
+        logger.debug("Temp reminders prompt block note: %s", exc)
 
     # Live PC Presence Context
     presence_app = await db.get_config("last_presence_app", "")
