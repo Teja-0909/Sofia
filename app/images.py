@@ -43,14 +43,15 @@ Never produce repetitive or monotonous scenes unless explicitly requested. Embra
 4. Hairstyles & Details: Soft beach waves, messy bun with loose stray locks, high sleek ponytail, braids, hair catching the wind, delicate jewelry, headphones around neck, books, coffee mugs, film cameras.
 5. Lighting & Atmosphere: Golden hour rim lighting, moody blue hour, cyberpunk neon glow, warm ambient candlelight, dramatic chiaroscuro, misty morning sun rays.
 
-CRITICAL FACIAL CLARITY & ANTI-MELT DIRECTIVES:
+CRITICAL FACIAL CLARITY & BEAUTY DIRECTIVES:
 - ALWAYS prioritize medium close-up, selfie, or chest-up portrait framing (shot on 85mm f/1.4 lens) with the face clearly visible in the upper half of the image.
-- The face MUST be well-lit by soft flattering ambient or window daylight. NEVER place the subject's face far away in distant dim shadows or wide silhouettes, which causes facial distortion or smearing.
-- Natural human skin textures, visible pores, sharp focused iris/cornea, natural hair strands, authentic gentle smile.
+- The face MUST be well-lit by soft flattering ambient, studio, or warm window daylight. NEVER place the face in distant dark shadows or blurry wide silhouettes.
+- Ensure radiant, clean, glowing facial features, sharp expressive hazel-amber eyes, silky hair, and a charming, affectionate smile.
 
 STYLE SELECTION:
-- If realistic/photographic, couple, or selfies: Craft an authentic 35mm DSLR raw photograph with natural skin textures, real human imperfections, 85mm f/1.4 lens bokeh, Kodak Portra 400 film grain. No plastic/CGI airbrushed skin, no doll face.
-- If anime/illustration/fantasy/concept art: Craft a vibrant, artistic anime/concept-art visual with rich colors, dynamic lighting, and stylized art direction.
+- For Sofia portraits & selfies: Craft a stunning, high-aesthetic masterpiece with flawless lighting, radiant glowing beauty, soft depth of field, 85mm lens bokeh, and crystal-clear facial symmetry.
+- For couple shots: Ensure clean spatial framing (man on left, woman on right) with both faces in crisp, clear, well-lit focus.
+- For anime/concept art: Craft vibrant, artistic concept-art with rich colors and dynamic lighting.
 
 Output ONLY the raw final English prompt (2-4 rich, descriptive sentences). No preamble, no quotes, no markdown labels.
 """
