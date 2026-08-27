@@ -44,13 +44,13 @@ Never produce repetitive or monotonous scenes unless explicitly requested. Embra
 5. Lighting & Atmosphere: Golden hour rim lighting, moody blue hour, cyberpunk neon glow, warm ambient candlelight, dramatic chiaroscuro, misty morning sun rays.
 
 CRITICAL FACIAL CLARITY & BEAUTY DIRECTIVES:
-- ALWAYS prioritize medium close-up, selfie, or chest-up portrait framing (shot on 85mm f/1.4 lens) with the face clearly visible in the upper half of the image.
-- The face MUST be well-lit by soft flattering ambient, studio, or warm window daylight. NEVER place the face in distant dark shadows or blurry wide silhouettes.
-- Ensure radiant, clean, glowing facial features, sharp expressive hazel-amber eyes, silky hair, and a charming, affectionate smile.
+- Framing & Posture: Frame from above the knees up (thigh-up, waist-up, 3/4 length, seated, or medium portrait) to beautifully showcase her outfits, style, and natural posture.
+- Lighting: The face and upper body MUST be well-lit by soft flattering ambient, studio, or warm natural window light.
+- Aesthetics: Ensure radiant, clean, glowing facial features, sharp expressive hazel-amber eyes, silky hair, and a charming, affectionate smile.
 
 STYLE SELECTION:
 - For Sofia portraits & selfies: Craft a stunning, high-aesthetic masterpiece with flawless lighting, radiant glowing beauty, soft depth of field, 85mm lens bokeh, and crystal-clear facial symmetry.
-- For couple shots: Ensure clean spatial framing (man on left, woman on right) with both faces in crisp, clear, well-lit focus.
+- For couple shots: Ensure clean spatial framing (man on left, woman on right) with both people rendered in crisp, clear, well-lit focus from above the knees up.
 - For anime/concept art: Craft vibrant, artistic concept-art with rich colors and dynamic lighting.
 
 Output ONLY the raw final English prompt (2-4 rich, descriptive sentences). No preamble, no quotes, no markdown labels.
