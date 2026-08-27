@@ -122,15 +122,52 @@ async def craft_image_caption(user_text: str, visual_prompt: str) -> str:
         return '*She smiles warmly as she shares the photo with you.* "Here you go, love!"'
 
 
+async def generate_image_hf(visual_prompt: str, token: str) -> bytes | None:
+    """Generates a high-precision photorealistic image via Hugging Face Serverless Inference API."""
+    models = [
+        "black-forest-labs/FLUX.1-schnell",
+        "SG161222/RealVisXL_V4.0",
+        "stabilityai/stable-diffusion-xl-base-1.0",
+    ]
+    headers = {
+        "Authorization": f"Bearer {token.strip()}",
+        "User-Agent": "Sofia-AI-Companion/1.0",
+    }
+    async with httpx.AsyncClient(timeout=45, follow_redirects=True) as client:
+        for model in models:
+            url = f"https://api-inference.huggingface.co/models/{model}"
+            try:
+                resp = await client.post(url, headers=headers, json={"inputs": visual_prompt})
+                if resp.status_code == 200 and len(resp.content) > 5000:
+                    # Verify it's an actual image, not an error JSON
+                    content_type = resp.headers.get("content-type", "")
+                    if "image" in content_type or not resp.content.startswith(b"{"):
+                        logger.info("Successfully generated %s bytes image via Hugging Face model: %s", len(resp.content), model)
+                        return resp.content
+                elif resp.status_code == 503:
+                    logger.info("HF model %s is loading (503), trying next model...", model)
+                else:
+                    logger.warning("HF model %s returned status %s", model, resp.status_code)
+            except Exception as exc:
+                logger.warning("HF generation error on %s: %s", model, exc)
+    return None
+
+
 async def generate_image_bytes(visual_prompt: str) -> bytes | None:
-    """Generates an image using Flux engine with dynamic model selection, aspect ratio, and randomized seed."""
+    """Generates an image using Hugging Face if configured, falling back to Pollinations."""
+    # 1. Primary: Hugging Face Serverless Inference (True Photorealism, Zero Doll Look)
+    if config.HF_TOKEN:
+        hf_img = await generate_image_hf(visual_prompt, config.HF_TOKEN)
+        if hf_img:
+            return hf_img
+        logger.warning("Hugging Face inference failed or timed out, falling back to Pollinations...")
+
+    # 2. Fallback: Pollinations engine with dynamic model selection, aspect ratio, and randomized seed
     encoded = quote(visual_prompt)
     seed = random.randint(1, 99999999)
 
-    # Dynamic model routing & aspect ratio based on artistic intent
     lower = visual_prompt.lower()
     if any(k in lower for k in ("couple", "two people", "together", "man on the left", "man and woman")):
-        # Landscape 4:3 gives proper composition for two people without clipping or extra heads
         width, height = 1024, 768
     elif any(k in lower for k in ("portrait", "full body", "outfit", "standing")):
         width, height = 768, 1024
