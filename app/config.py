@@ -53,7 +53,8 @@ PORT = int(os.environ.get("PORT", "10000"))
 TURSO_DATABASE_URL = os.environ.get("TURSO_DATABASE_URL", "")
 TURSO_AUTH_TOKEN = os.environ.get("TURSO_AUTH_TOKEN", "")
 
-# Hugging Face Free Inference API for Photorealistic Images
+# High-Definition Photorealistic Image Generation Engines
+TOGETHER_API_KEY = os.environ.get("TOGETHER_API_KEY", "")
 HF_TOKEN = os.environ.get("HF_TOKEN", "") or os.environ.get("HUGGINGFACE_API_KEY", "")
 
 DEFAULT_CONFIG = {

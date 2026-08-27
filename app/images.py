@@ -43,8 +43,13 @@ Never produce repetitive or monotonous scenes unless explicitly requested. Embra
 4. Hairstyles & Details: Soft beach waves, messy bun with loose stray locks, high sleek ponytail, braids, hair catching the wind, delicate jewelry, headphones around neck, books, coffee mugs, film cameras.
 5. Lighting & Atmosphere: Golden hour rim lighting, moody blue hour, cyberpunk neon glow, warm ambient candlelight, dramatic chiaroscuro, misty morning sun rays.
 
+CRITICAL FACIAL CLARITY & ANTI-MELT DIRECTIVES:
+- ALWAYS prioritize medium close-up, selfie, or chest-up portrait framing (shot on 85mm f/1.4 lens) with the face clearly visible in the upper half of the image.
+- The face MUST be well-lit by soft flattering ambient or window daylight. NEVER place the subject's face far away in distant dim shadows or wide silhouettes, which causes facial distortion or smearing.
+- Natural human skin textures, visible pores, sharp focused iris/cornea, natural hair strands, authentic gentle smile.
+
 STYLE SELECTION:
-- If realistic/photographic, couple, or selfies: Craft an authentic 35mm DSLR raw photograph with natural skin textures, real human imperfections, 85mm f/1.4 lens bokeh, Kodak Portra 400 film grain. No plastic/CGI airbrushed skin.
+- If realistic/photographic, couple, or selfies: Craft an authentic 35mm DSLR raw photograph with natural skin textures, real human imperfections, 85mm f/1.4 lens bokeh, Kodak Portra 400 film grain. No plastic/CGI airbrushed skin, no doll face.
 - If anime/illustration/fantasy/concept art: Craft a vibrant, artistic anime/concept-art visual with rich colors, dynamic lighting, and stylized art direction.
 
 Output ONLY the raw final English prompt (2-4 rich, descriptive sentences). No preamble, no quotes, no markdown labels.
@@ -122,6 +127,40 @@ async def craft_image_caption(user_text: str, visual_prompt: str) -> str:
         return '*She smiles warmly as she shares the photo with you.* "Here you go, love!"'
 
 
+async def generate_image_together(visual_prompt: str, token: str) -> bytes | None:
+    """Generates an uncompressed studio-grade FLUX image via Together AI."""
+    import base64
+    url = "https://api.together.xyz/v1/images/generations"
+    headers = {
+        "Authorization": f"Bearer {token.strip()}",
+        "Content-Type": "application/json",
+        "User-Agent": "Sofia-AI-Companion/1.0",
+    }
+    payload = {
+        "model": "black-forest-labs/FLUX.1-schnell",
+        "prompt": visual_prompt,
+        "width": 1024,
+        "height": 1024,
+        "steps": 4,
+        "n": 1,
+        "response_format": "b64_json",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=35) as client:
+            resp = await client.post(url, headers=headers, json=payload)
+            if resp.status_code == 200:
+                data = resp.json()
+                b64 = data["data"][0]["b64_json"]
+                img_bytes = base64.b64decode(b64)
+                logger.info("Successfully generated %s bytes studio FLUX image via Together AI", len(img_bytes))
+                return img_bytes
+            else:
+                logger.warning("Together AI returned %s: %s", resp.status_code, resp.text[:100])
+    except Exception as exc:
+        logger.warning("Together AI generation error: %s", exc)
+    return None
+
+
 async def generate_image_hf(visual_prompt: str, token: str) -> bytes | None:
     """Generates a high-precision photorealistic image via Hugging Face Serverless Inference API."""
     models = [
@@ -135,11 +174,10 @@ async def generate_image_hf(visual_prompt: str, token: str) -> bytes | None:
     }
     async with httpx.AsyncClient(timeout=45, follow_redirects=True) as client:
         for model in models:
-            url = f"https://api-inference.huggingface.co/models/{model}"
+            url = f"https://router.huggingface.co/hf-inference/models/{model}"
             try:
                 resp = await client.post(url, headers=headers, json={"inputs": visual_prompt})
                 if resp.status_code == 200 and len(resp.content) > 5000:
-                    # Verify it's an actual image, not an error JSON
                     content_type = resp.headers.get("content-type", "")
                     if "image" in content_type or not resp.content.startswith(b"{"):
                         logger.info("Successfully generated %s bytes image via Hugging Face model: %s", len(resp.content), model)
@@ -154,13 +192,20 @@ async def generate_image_hf(visual_prompt: str, token: str) -> bytes | None:
 
 
 async def generate_image_bytes(visual_prompt: str) -> bytes | None:
-    """Generates an image using Hugging Face if configured, falling back to Pollinations."""
-    # 1. Primary: Hugging Face Serverless Inference (True Photorealism, Zero Doll Look)
+    """Generates an image using Together AI / Hugging Face if configured, falling back to Pollinations."""
+    # 1. Studio Grade: Together AI FLUX.1 (Uncompressed Photorealism, Zero Doll Look)
+    if config.TOGETHER_API_KEY:
+        together_img = await generate_image_together(visual_prompt, config.TOGETHER_API_KEY)
+        if together_img:
+            return together_img
+        logger.warning("Together AI generation failed, checking fallbacks...")
+
+    # 2. Secondary: Hugging Face Serverless Inference
     if config.HF_TOKEN:
         hf_img = await generate_image_hf(visual_prompt, config.HF_TOKEN)
         if hf_img:
             return hf_img
-        logger.warning("Hugging Face inference failed or timed out, falling back to Pollinations...")
+        logger.warning("Hugging Face inference failed, falling back to Pollinations...")
 
     # 2. Fallback: Pollinations engine with dynamic model selection, aspect ratio, and randomized seed
     encoded = quote(visual_prompt)
