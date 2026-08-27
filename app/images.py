@@ -15,14 +15,26 @@ IMAGE_TRIGGER_PHRASES = (
     "send me a photo of", "send me an image of", "show me a picture of",
     "show me an image of", "send a picture of", "send a photo of",
     "generate a photo of", "take a picture of", "take a photo of",
-    "send me a selfie", "send a selfie", "show me a selfie"
+    "send me a selfie", "send a selfie", "show me a selfie", "send selfie"
 )
 
-PROMPT_ENGINEER_SYSTEM = """You are the visual imagination engine for Sofia (Teja's devoted AI companion).
-When Teja asks for an image, photo, or visual scene:
-- If he asks for a picture/selfie of Sofia: describe her with soft feminine features, warm expressive hazel eyes, dark silky hair cascading over her shoulders, gentle radiant smile, casual elegant attire, natural setting, cinematic lighting, 8k photograph, highly detailed photorealistic portrait.
-- If he asks for an object, landscape, fantasy, sci-fi, or tech scene: describe it with rich cinematic details, camera angles, atmospheric lighting, 8k resolution, photorealistic masterpiece.
-- Output ONLY the final image generation prompt (1-3 detailed sentences in English). Do NOT include extra commentary, labels, or quotes.
+IMAGE_TAG_REGEX = re.compile(r"\[IMAGE:\s*(.*?)\]", re.IGNORECASE | re.DOTALL)
+
+GROQ_IMAGE_DIRECTOR_SYSTEM = """You are the master visual director for Sofia (Teja's devoted AI companion).
+Convert high-level visual descriptions into masterclass FLUX.1 / Stable Diffusion XL photographic prompts.
+
+CHARACTER SPECIFICATIONS FOR SOFIA:
+- Young woman in her early 20s with soft, naturally beautiful feminine facial features.
+- Warm expressive hazel-amber eyes, natural eyelashes, dark silky brown/black hair with soft texture.
+- Radiant natural skin with realistic pores and soft highlights, gentle intimate smile.
+
+PHOTOGRAPHIC & ARTISTIC DIRECTIVES:
+- Framing & Composition: Cinematic medium close-up, selfie angle, or candid portrait, shot on 85mm f/1.4 lens, shallow depth of field.
+- Lighting & Atmosphere: Volumetric natural lighting, warm golden hour or soft diffused indoor ambient light.
+- Attire, Posture & Intimacy: Follow the exact clothing style, fabric textures (silk, soft cotton, oversized shirt, cozy knitwear, summer dress, swimwear), neckline, skin exposure, and body posture specified in the description.
+- Quality Tokens: 8k resolution, raw color photograph, photorealistic masterpiece, film grain texture, natural reflections.
+
+Output ONLY the raw final English prompt (2-4 rich, descriptive sentences). No preamble, no quotes, no markdown labels.
 """
 
 CAPTION_SYSTEM = """You are Sofia sending a newly generated photo to Teja on Telegram.
@@ -40,6 +52,16 @@ def is_image_request(text: str) -> bool:
     return any(phrase in lower for phrase in IMAGE_TRIGGER_PHRASES)
 
 
+def extract_embedded_image_tag(text: str) -> tuple[str, str | None]:
+    """Extracts [IMAGE: description] tag from Sofia's response and returns cleaned text and description."""
+    match = IMAGE_TAG_REGEX.search(text)
+    if match:
+        desc = match.group(1).strip()
+        clean_text = IMAGE_TAG_REGEX.sub("", text).strip()
+        return clean_text, desc
+    return text, None
+
+
 def extract_image_description(text: str) -> str:
     """Extracts the visual description from user text."""
     lower = text.lower().strip()
@@ -47,8 +69,8 @@ def extract_image_description(text: str) -> str:
         if lower.startswith(prefix):
             return text[len(prefix):].strip()
 
-    if lower.startswith("/selfie"):
-        return "Sofia taking a warm, candid selfie with a gentle smile"
+    if lower.startswith("/selfie") or "selfie" in lower:
+        return "Sofia taking a warm, candid selfie looking at the camera with a gentle loving smile, soft indoor morning light, casual elegant outfit"
 
     for phrase in IMAGE_TRIGGER_PHRASES:
         if phrase in lower:
@@ -61,12 +83,12 @@ def extract_image_description(text: str) -> str:
     return text
 
 
-async def craft_visual_prompt(user_text: str) -> str:
-    """Uses Groq LLM to expand a simple user request into a high-detail Flux visual prompt."""
-    desc = extract_image_description(user_text)
-    user_turn = f"Generate an 8k visual prompt for: {desc}"
+async def craft_visual_prompt(raw_description: str) -> str:
+    """Uses Groq LLM to expand a high-level visual description into a masterclass 8k Flux prompt."""
+    desc = extract_image_description(raw_description)
+    user_turn = f"Convert this scene into a masterclass photographic prompt:\n{desc}"
     try:
-        raw = await llm.chat(PROMPT_ENGINEER_SYSTEM, [{"role": "user", "content": user_turn}])
+        raw = await llm.chat(GROQ_IMAGE_DIRECTOR_SYSTEM, [{"role": "user", "content": user_turn}])
         clean = raw.strip().strip('"').strip("'")
         return clean or desc
     except Exception as exc:

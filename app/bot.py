@@ -264,20 +264,34 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         pass
 
     try:
-        reply = await orchestrator.reply(user_text, system_note=system_note)
+        raw_reply = await orchestrator.reply(user_text, system_note=system_note)
     except Exception as exc:
         logger.error("Orchestrator error in handle_message: %s", exc)
-        reply = orchestrator.FALLBACK_MESSAGE
+        raw_reply = orchestrator.FALLBACK_MESSAGE
+
+    from . import images
+    clean_reply, embedded_image_desc = images.extract_embedded_image_tag(raw_reply)
 
     try:
-        await _log_message("sofia", reply)
+        await _log_message("sofia", raw_reply)
     except Exception:
         pass
 
     try:
-        await update.message.reply_text(reply)
+        if clean_reply:
+            await update.message.reply_text(clean_reply)
     except Exception as exc:
         logger.error("Telegram reply send error: %s", exc)
+
+    if embedded_image_desc:
+        try:
+            await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_PHOTO)
+            visual_prompt = await images.craft_visual_prompt(embedded_image_desc)
+            img_bytes = await images.generate_image_bytes(visual_prompt)
+            if img_bytes:
+                await update.message.reply_photo(photo=img_bytes)
+        except Exception as img_exc:
+            logger.error("Embedded image render error: %s", img_exc)
 
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

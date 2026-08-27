@@ -241,6 +241,11 @@ class TestAlisaCore(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(images.is_image_request("who won the Dutch GP?"))
         self.assertFalse(images.is_image_request("remind me to buy milk"))
 
+        raw_msg = 'Here is a photo from my morning walk! [IMAGE: Sofia standing on a sunlit walking trail in casual athletic wear, soft morning light] Hope you love it!'
+        clean, tag = images.extract_embedded_image_tag(raw_msg)
+        self.assertEqual(tag, "Sofia standing on a sunlit walking trail in casual athletic wear, soft morning light")
+        self.assertEqual(clean, "Here is a photo from my morning walk!  Hope you love it!")
+
 
 if __name__ == "__main__":
     unittest.main()
