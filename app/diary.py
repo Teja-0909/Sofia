@@ -112,10 +112,10 @@ async def recalculate_relationship_depth() -> float:
     memories_row = await db.fetch_one("SELECT COUNT(*) AS n FROM relationship_memory WHERE is_active = 1")
     memories_count = memories_row["n"] if memories_row else 0
 
-    # Depth level formula (capped at 100)
-    # Earned organically through time and messages
+    # Depth level formula (uncapped lifetime growth)
+    # Earned organically through real shared time, memories, and conversations
     depth = (days_active * 2.5) + (diary_count * 1.5) + (user_msgs * 0.05) + (memories_count * 1.0)
-    depth_level = min(100.0, round(depth, 1))
+    depth_level = max(0.0, round(depth, 1))
 
     now_iso = timeutil.utc_iso()
     await db.execute(
@@ -129,7 +129,7 @@ async def recalculate_relationship_depth() -> float:
         """,
         (depth_level, first_conv_at, days_active, now_iso),
     )
-    logger.info("Updated relationship depth: %s/100 (active days: %s, diary entries: %s)", depth_level, days_active, diary_count)
+    logger.info("Updated relationship depth: %s (active days: %s, diary entries: %s, memories: %s)", depth_level, days_active, diary_count, memories_count)
     return depth_level
 
 
