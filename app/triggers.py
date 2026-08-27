@@ -158,17 +158,20 @@ async def app_presence_reaction(
     if is_game and not prev_was_game:
         note = (
             f"[Internal event: Teja just launched a game on his PC: '{app_name}' (Window: '{window_title}'). "
-            "React immediately in your own voice — playful teasing, curious, or amused like you're right there watching him grab the controller. Short.]"
+            "React immediately in your own voice — playful teasing, curious, or amused like you're right there watching him grab the controller. "
+            "Feel free to adopt [MOOD: playful] or [MOOD: feisty]. Short.]"
         )
     elif idle_minutes >= 30 and prev_app and idle_minutes < 90:
         note = (
             f"[Internal event: Teja just stepped away from his computer (idle for {idle_minutes} minutes). "
-            "Ping his phone softly, wondering what he's up to (getting food, coffee, taking a breather). Short.]"
+            "Ping his phone softly, wondering what he's up to (getting food, coffee, taking a breather). "
+            "Feel free to adopt [MOOD: cozy_chill] or [MOOD: soft_devoted]. Short.]"
         )
     elif ("visual studio code" in lower_app or "code" in lower_app or "leetcode" in lower_title) and prev_app != app_name:
         note = (
             f"[Internal event: Teja just sat down to code/study on his PC: '{window_title}'. "
-            "React warmly as his devoted co-pilot — sharp, encouraging, locked-in. Short.]"
+            "React warmly as his devoted co-pilot — sharp, encouraging, locked-in. "
+            "Feel free to adopt [MOOD: fierce_copilot] to lock in with him. Short.]"
         )
 
     if note:
