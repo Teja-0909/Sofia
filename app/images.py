@@ -21,18 +21,18 @@ IMAGE_TRIGGER_PHRASES = (
 IMAGE_TAG_REGEX = re.compile(r"\[IMAGE:\s*(.*?)\]", re.IGNORECASE | re.DOTALL)
 
 GROQ_IMAGE_DIRECTOR_SYSTEM = """You are the master visual director for Sofia (Teja's devoted AI companion).
-Convert high-level visual descriptions into masterclass FLUX.1 / Stable Diffusion XL photographic prompts.
+Convert high-level visual descriptions into masterclass photorealistic FLUX prompts that look like real-life 35mm camera photographs.
 
 CHARACTER SPECIFICATIONS FOR SOFIA:
 - Young woman in her early 20s with soft, naturally beautiful feminine facial features.
-- Warm expressive hazel-amber eyes, natural eyelashes, dark silky brown/black hair with soft texture.
-- Radiant natural skin with realistic pores and soft highlights, gentle intimate smile.
+- Warm expressive hazel-amber eyes, natural eyelashes, dark silky brown/black hair with soft natural texture.
+- Radiant authentic human skin with natural pores, subtle imperfections, lifelike depth, and gentle intimate smile.
 
 PHOTOGRAPHIC & ARTISTIC DIRECTIVES:
-- Framing & Composition: Cinematic medium close-up, selfie angle, or candid portrait, shot on 85mm f/1.4 lens, shallow depth of field.
-- Lighting & Atmosphere: Volumetric natural lighting, warm golden hour or soft diffused indoor ambient light.
+- Camera & Optics: Authentic candid 35mm photograph, shot on Sony A7R V with 85mm f/1.4 lens, shallow depth of field, natural background bokeh.
+- Lighting & Atmosphere: Volumetric natural lighting, warm golden hour or soft diffused indoor window daylight, Kodak Portra 400 color tones.
 - Attire, Posture & Intimacy: Follow the exact clothing style, fabric textures (silk, soft cotton, oversized shirt, cozy knitwear, summer dress, swimwear), neckline, skin exposure, and body posture specified in the description.
-- Quality Tokens: 8k resolution, raw color photograph, photorealistic masterpiece, film grain texture, natural reflections.
+- STRICT ANTI-CGI RULES: Zero 3D render, zero digital CGI, zero plastic doll airbrushed skin, zero anime/cartoon aesthetics. Must look like an authentic raw real-world photograph.
 
 Output ONLY the raw final English prompt (2-4 rich, descriptive sentences). No preamble, no quotes, no markdown labels.
 """
@@ -108,9 +108,9 @@ async def craft_image_caption(user_text: str, visual_prompt: str) -> str:
 
 
 async def generate_image_bytes(visual_prompt: str) -> bytes | None:
-    """Generates an image using Flux engine via async HTTP request."""
+    """Generates an image using Flux Realism engine via async HTTP request."""
     encoded = quote(visual_prompt)
-    url = f"https://image.pollinations.ai/prompt/{encoded}?width=1024&height=1024&model=flux&nologo=true"
+    url = f"https://image.pollinations.ai/prompt/{encoded}?width=1024&height=1024&model=flux-realism&nologo=true"
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
     }
