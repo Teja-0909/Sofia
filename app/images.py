@@ -65,6 +65,31 @@ def extract_embedded_image_tag(text: str) -> tuple[str, str | None]:
     return text, None
 
 
+async def should_allow_autonomous_image() -> bool:
+    """Checks if enough time has passed since the last autonomous unprompted image (cooldown: 45 mins)."""
+    from . import db
+    import datetime as dt
+    last_auto = await db.get_config("last_autonomous_image_at", "")
+    if not last_auto:
+        return True
+    try:
+        ts = dt.datetime.fromisoformat(last_auto.replace("Z", "+00:00"))
+        now = dt.datetime.now(dt.timezone.utc)
+        return (now - ts).total_seconds() >= 2700  # 45 minutes cooldown
+    except Exception:
+        return True
+
+
+async def record_autonomous_image_sent() -> None:
+    """Records the timestamp of an autonomous image send to enforce cooldown."""
+    from . import db, timeutil
+    now_iso = timeutil.utc_iso()
+    await db.execute(
+        "INSERT OR REPLACE INTO app_config (key, value, updated_at) VALUES ('last_autonomous_image_at', ?, ?)",
+        (now_iso, now_iso),
+    )
+
+
 def extract_image_description(text: str) -> str:
     """Extracts the visual description from user text."""
     lower = text.lower().strip()

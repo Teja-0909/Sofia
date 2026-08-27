@@ -297,14 +297,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         logger.error("Telegram reply send error: %s", exc)
 
     if embedded_image_desc:
-        try:
-            await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_PHOTO)
-            visual_prompt = await images.craft_visual_prompt(embedded_image_desc)
-            img_bytes = await images.generate_image_bytes(visual_prompt)
-            if img_bytes:
-                await update.message.reply_photo(photo=img_bytes)
-        except Exception as img_exc:
-            logger.error("Embedded image render error: %s", img_exc)
+        can_send = await images.should_allow_autonomous_image()
+        if can_send:
+            await images.record_autonomous_image_sent()
+            try:
+                await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_PHOTO)
+                visual_prompt = await images.craft_visual_prompt(embedded_image_desc)
+                img_bytes = await images.generate_image_bytes(visual_prompt)
+                if img_bytes:
+                    await update.message.reply_photo(photo=img_bytes)
+            except Exception as img_exc:
+                logger.error("Embedded image render error: %s", img_exc)
+        else:
+            logger.info("Autonomous embedded image skipped due to cooldown")
 
 
 async def cmd_memory(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
