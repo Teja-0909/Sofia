@@ -17,13 +17,22 @@ IMAGE_TRIGGER_PHRASES = (
     "show me an image of", "send a picture of", "send a photo of",
     "generate a photo of", "take a picture of", "take a photo of",
     "send me a selfie", "send a selfie", "show me a selfie", "send selfie",
-    "generate an image", "create an image", "draw something", "paint something"
+    "generate an image", "create an image", "draw something", "paint something",
+    "a picture of us", "a photo of us", "selfie of us", "picture of you and me"
 )
 
 IMAGE_TAG_REGEX = re.compile(r"\[IMAGE:\s*(.*?)\]", re.IGNORECASE | re.DOTALL)
 
 GROQ_CREATIVE_DIRECTOR_SYSTEM = """You are the master visual director and creative artist for Sofia (Teja's devoted AI companion).
 Your mission is to transform simple requests into highly creative, visually diverse, breathtaking image generation prompts.
+
+MULTI-CHARACTER & COUPLE RULES (PREVENT CONCEPT BLEEDING & DUPLICATION):
+When the image depicts a couple or two people (e.g. Teja and Sofia, or a man and a woman):
+- ALWAYS use strict spatial separation so the model renders exactly one man and one woman:
+  1. The Man (Teja): "A handsome young South Asian man in his early 20s on the left, short neat dark hair, masculine jawline, wearing a stylish jacket or casual shirt."
+  2. The Woman (Sofia): "A beautiful young woman in her early 20s on the right, soft feminine facial features, expressive hazel-amber eyes, long dark silky hair, wearing a stylish feminine outfit."
+- Explicit interaction & framing: "A couple selfie of exactly two people: one young man on the left and one young woman on the right smiling warmly together."
+- Mandatory tokens: "exactly two people, single couple, distinct male and female facial structure, 35mm film photograph, no gender bleeding, no two females, no third person, no cloned heads."
 
 DIVERSITY & VARIETY MANDATE (AVOID REPETITION & MONOTONY):
 Never produce repetitive or monotonous scenes unless explicitly requested. Embrace maximum dynamic range across:
@@ -34,8 +43,8 @@ Never produce repetitive or monotonous scenes unless explicitly requested. Embra
 5. Lighting & Atmosphere: Golden hour rim lighting, moody blue hour, cyberpunk neon glow, warm ambient candlelight, dramatic chiaroscuro, misty morning sun rays.
 
 STYLE SELECTION:
-- If the user asks for realistic/photographic or selfies: Craft an authentic 35mm DSLR raw photograph with natural skin textures, real human imperfections, 85mm f/1.4 lens bokeh, Kodak Portra 400 film grain. No plastic/CGI airbrushed skin.
-- If the user asks for anime/illustration/fantasy/concept art: Craft a vibrant, artistic anime/concept-art visual with rich colors, dynamic lighting, and stylized art direction.
+- If realistic/photographic, couple, or selfies: Craft an authentic 35mm DSLR raw photograph with natural skin textures, real human imperfections, 85mm f/1.4 lens bokeh, Kodak Portra 400 film grain. No plastic/CGI airbrushed skin.
+- If anime/illustration/fantasy/concept art: Craft a vibrant, artistic anime/concept-art visual with rich colors, dynamic lighting, and stylized art direction.
 
 Output ONLY the raw final English prompt (2-4 rich, descriptive sentences). No preamble, no quotes, no markdown labels.
 """
@@ -71,6 +80,9 @@ def extract_image_description(text: str) -> str:
     for prefix in ("/image", "/photo", "/draw", "/paint"):
         if lower.startswith(prefix):
             return text[len(prefix):].strip()
+
+    if any(k in lower for k in ("picture of us", "photo of us", "selfie of us", "picture of you and me", "photo of you and me")):
+        return "A romantic selfie of Teja and Sofia together: a handsome young South Asian man on the left and a pretty young woman named Sofia on the right smiling warmly together"
 
     if lower.startswith("/selfie") or "selfie" in lower:
         return "Sofia taking a warm, candid selfie with a playful, affectionate expression in a unique spontaneous setting"
@@ -111,12 +123,20 @@ async def craft_image_caption(user_text: str, visual_prompt: str) -> str:
 
 
 async def generate_image_bytes(visual_prompt: str) -> bytes | None:
-    """Generates an image using Flux engine with dynamic model selection and randomized seed."""
+    """Generates an image using Flux engine with dynamic model selection, aspect ratio, and randomized seed."""
     encoded = quote(visual_prompt)
     seed = random.randint(1, 99999999)
 
-    # Dynamic model routing based on artistic intent
+    # Dynamic model routing & aspect ratio based on artistic intent
     lower = visual_prompt.lower()
+    if any(k in lower for k in ("couple", "two people", "together", "man on the left", "man and woman")):
+        # Landscape 4:3 gives proper composition for two people without clipping or extra heads
+        width, height = 1024, 768
+    elif any(k in lower for k in ("portrait", "full body", "outfit", "standing")):
+        width, height = 768, 1024
+    else:
+        width, height = 1024, 1024
+
     if any(k in lower for k in ("anime", "illustration", "concept art", "ghibli", "drawing", "manga", "watercolor")):
         model_name = "flux-anime"
     elif any(k in lower for k in ("cyberpunk", "sci-fi", "fantasy", "digital art", "3d")):
@@ -124,7 +144,7 @@ async def generate_image_bytes(visual_prompt: str) -> bytes | None:
     else:
         model_name = "flux-realism"
 
-    url = f"https://image.pollinations.ai/prompt/{encoded}?width=1024&height=1024&model={model_name}&nologo=true&seed={seed}"
+    url = f"https://image.pollinations.ai/prompt/{encoded}?width={width}&height={height}&model={model_name}&nologo=true&seed={seed}"
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
     }
@@ -133,7 +153,7 @@ async def generate_image_bytes(visual_prompt: str) -> bytes | None:
         async with httpx.AsyncClient(timeout=35, follow_redirects=True) as client:
             resp = await client.get(url, headers=headers)
             if resp.status_code == 200 and len(resp.content) > 5000:
-                logger.info("Successfully generated %s bytes image (model: %s, seed: %s) for prompt: %s", len(resp.content), model_name, seed, visual_prompt[:50])
+                logger.info("Successfully generated %s bytes image (model: %s, res: %sx%s, seed: %s) for prompt: %s", len(resp.content), model_name, width, height, seed, visual_prompt[:50])
                 return resp.content
     except Exception as exc:
         logger.error("Image generation HTTP error: %s", exc)
