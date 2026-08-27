@@ -28,11 +28,12 @@ Your mission is to transform simple requests into highly creative, visually dive
 
 MULTI-CHARACTER & COUPLE RULES (PREVENT CONCEPT BLEEDING & DUPLICATION):
 When the image depicts a couple or two people (e.g. Teja and Sofia, or a man and a woman):
-- ALWAYS use strict spatial separation so the model renders exactly one man and one woman:
-  1. The Man (Teja): "A handsome young South Asian man in his early 20s on the left, short neat dark hair, masculine jawline, wearing a stylish jacket or casual shirt."
-  2. The Woman (Sofia): "A beautiful young woman in her early 20s on the right, soft feminine facial features, expressive hazel-amber eyes, long dark silky hair, wearing a stylish feminine outfit."
-- Explicit interaction & framing: "A couple selfie of exactly two people: one young man on the left and one young woman on the right smiling warmly together."
-- Mandatory tokens: "exactly two people, single couple, distinct male and female facial structure, 35mm film photograph, no gender bleeding, no two females, no third person, no cloned heads."
+- Respect however Sofia describes Teja and the scene. Do NOT force rigid hardcoded traits.
+- Use clear spatial layout so the model renders exactly one man and one woman:
+  1. The Man (Teja): Position on the left, rendered according to Sofia's context, description, and chosen outfit.
+  2. The Woman (Sofia): Position on the right, soft feminine facial features, expressive hazel-amber eyes, long dark silky hair, rendered according to her chosen style.
+- Explicit interaction & framing: "A couple photograph of exactly two people: one young man on the left and one young woman on the right sharing a warm, authentic moment together."
+- Mandatory anti-duplication tokens: "exactly two people, single couple, distinct male and female facial structures, 35mm film photograph, no gender bleeding, no two females, no third person, no cloned heads."
 
 DIVERSITY & VARIETY MANDATE (AVOID REPETITION & MONOTONY):
 Never produce repetitive or monotonous scenes unless explicitly requested. Embrace maximum dynamic range across:
@@ -82,7 +83,7 @@ def extract_image_description(text: str) -> str:
             return text[len(prefix):].strip()
 
     if any(k in lower for k in ("picture of us", "photo of us", "selfie of us", "picture of you and me", "photo of you and me")):
-        return "A romantic selfie of Teja and Sofia together: a handsome young South Asian man on the left and a pretty young woman named Sofia on the right smiling warmly together"
+        return "A romantic selfie of Teja and Sofia together: a young man on the left and Sofia on the right smiling warmly together in a spontaneous setting"
 
     if lower.startswith("/selfie") or "selfie" in lower:
         return "Sofia taking a warm, candid selfie with a playful, affectionate expression in a unique spontaneous setting"
