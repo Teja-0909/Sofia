@@ -147,31 +147,21 @@ async def app_presence_reaction(
         except Exception:
             pass
 
-    lower_app = app_name.lower()
-    lower_title = window_title.lower()
-    note = None
-
-    games = ("f1", "steam", "cyberpunk", "gta", "valorant", "minecraft", "fortnite", "elden ring", "forza", "game")
-    is_game = any(g in lower_app or g in lower_title for g in games)
-    prev_was_game = any(g in prev_app.lower() or g in prev_title.lower() for g in games)
-
-    if is_game and not prev_was_game:
-        note = (
-            f"[Internal event: Teja just launched a game on his PC: '{app_name}' (Window: '{window_title}'). "
-            "React immediately in your own voice — playful teasing, curious, or amused like you're right there watching him grab the controller. "
-            "Feel free to adopt [MOOD: playful] or [MOOD: feisty]. Short.]"
-        )
-    elif idle_minutes >= 30 and prev_app and idle_minutes < 90:
+    if idle_minutes >= 30 and idle_minutes < 120 and prev_app:
         note = (
             f"[Internal event: Teja just stepped away from his computer (idle for {idle_minutes} minutes). "
-            "Ping his phone softly, wondering what he's up to (getting food, coffee, taking a breather). "
-            "Feel free to adopt [MOOD: cozy_chill] or [MOOD: soft_devoted]. Short.]"
+            "Ping his phone softly in your own voice, wondering what he's up to (grabbing a snack, coffee, or taking a breather). "
+            "Choose a fitting mood like [MOOD: cozy_chill] or [MOOD: soft_devoted]. Short.]"
         )
-    elif ("visual studio code" in lower_app or "code" in lower_app or "leetcode" in lower_title) and prev_app != app_name:
+    elif app_name and (app_name != prev_app or (window_title and window_title != prev_title)):
         note = (
-            f"[Internal event: Teja just sat down to code/study on his PC: '{window_title}'. "
-            "React warmly as his devoted co-pilot — sharp, encouraging, locked-in. "
-            "Feel free to adopt [MOOD: fierce_copilot] to lock in with him. Short.]"
+            f"[Internal event: Teja is currently active on his PC in '{app_name}' (Window: '{window_title}'). "
+            "Look at what he is doing — whether he is studying or researching in Chrome, reading docs, coding in an IDE, gaming, or unwinding. "
+            "React naturally and conversationally like you are sitting right beside him watching his screen. "
+            "Autonomously choose and set your mood to match his activity: "
+            "[MOOD: fierce_copilot] for studying, coding, or problem-solving; "
+            "[MOOD: playful] or [MOOD: feisty] for gaming, racing, or casual fun; "
+            "[MOOD: cozy_chill] or [MOOD: reflective] for reading, music, or unwinding. Short.]"
         )
 
     if note:
