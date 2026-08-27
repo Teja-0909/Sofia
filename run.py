@@ -14,10 +14,11 @@ async def run_bot() -> None:
     # 2. Initialize database (Turso Cloud SQLite or local)
     await db.init()
     try:
-        from app import diary
+        from app import diary, memory_file
         await diary.recalculate_relationship_depth()
+        await memory_file.get_memory_md()
     except Exception as exc:
-        logger.warning("Initial depth calculation note: %s", exc)
+        logger.warning("Initial state & memory load note: %s", exc)
 
     # 3. Start background APScheduler
     sched = await scheduler.create_scheduler()
