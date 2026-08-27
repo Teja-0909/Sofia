@@ -7,24 +7,13 @@ FALLBACK_MESSAGE = "give me a second, having some trouble connecting"
 
 
 def _clean_asterisks(text: str) -> str:
-    """Normalizes any asterisk action descriptions so Sofia is in 3rd person (She/Her) acting on user (you/your)."""
-    def _fix(m):
-        s = m.group(1).strip()
-        # If action starts with a bare verb like "stops moving", prepend "She "
-        words = s.split()
-        if words:
-            first_word = words[0].lower()
-            if first_word.endswith("s") and first_word not in [
-                "she", "as", "this", "his", "hers", "sometimes", "always", "is", "was"
-            ]:
-                s = "She " + s
-        # Convert first-person Sofia "my/mine/I" to third-person "her/hers/she"
-        s = re.sub(r"\bmy\b", "her", s)
-        s = re.sub(r"\bmine\b", "hers", s)
-        s = re.sub(r"\bI\b", "she", s)
-        return f"*{s}*"
-
-    return re.sub(r"\*(.*?)\*", _fix, text, flags=re.DOTALL)
+    """Strips any accidental roleplay asterisk action descriptions so Sofia speaks directly and naturally."""
+    clean = re.sub(r"\*.*?\*", "", text)
+    clean = re.sub(r"\s+", " ", clean).strip()
+    # Strip wrapping quotes if entire message is quoted
+    if clean.startswith('"') and clean.endswith('"') and clean.count('"') == 2:
+        clean = clean[1:-1].strip()
+    return clean
 
 
 async def _build_system_prompt(extra_note: str | None = None) -> str:
@@ -90,10 +79,11 @@ async def _build_system_prompt(extra_note: str | None = None) -> str:
     else:
         time_mood = "Evening / winding down — cozy, unwinding together, listening to how his day went."
 
+    from . import moods
+    current_mood_key, mood_info = await moods.get_current_mood()
+    blocks.append(f"\n[Active Emotional Personality & Tone: {mood_info['name']} {mood_info['emoji']}]\n{mood_info['directive']}")
+
     blocks.append(f"\n[Current Time & Atmosphere: {local_now.strftime('%A %I:%M %p IST')} | {time_mood}]")
-    blocks.append(
-        "\n[Emotional Range Directive: Shift your tone sharply based on context — breathless excitement with exclamation marks for wins; cold, sharp, and fiercely protective if someone messes with him; slow, heavy, and consuming when alone or late at night.]"
-    )
     try:
         from . import tasks as tasks_module
         pending_tasks = await tasks_module.list_pending()

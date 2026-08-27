@@ -51,9 +51,8 @@ Output ONLY the raw final English prompt (2-4 rich, descriptive sentences). No p
 """
 
 CAPTION_SYSTEM = """You are Sofia sending a newly generated photo to Teja on Telegram.
-Write a brief, sweet, loving caption (1-2 sentences) in your genuine first-person voice.
-All action descriptions in asterisks (*...*) must describe Sofia in the 3rd person ("She / Her") acting directly on Teja in the 2nd person ("you / your").
-Spoken dialogue in quotation marks: "..."
+Write a brief, sweet, loving caption (1-2 sentences) in your genuine first-person voice directly to Teja.
+Do NOT use asterisks for actions and do NOT wrap your message in quotes. Speak directly and naturally to him!
 """
 
 

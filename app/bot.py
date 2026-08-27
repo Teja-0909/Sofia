@@ -269,12 +269,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         logger.error("Orchestrator error in handle_message: %s", exc)
         raw_reply = orchestrator.FALLBACK_MESSAGE
 
-    from . import images, memory_file, diary
+    from . import images, memory_file, diary, moods
     clean_reply, embedded_image_desc = images.extract_embedded_image_tag(raw_reply)
     clean_reply, remember_info = memory_file.extract_remember_tag(clean_reply)
+    clean_reply, mood_tag = moods.extract_mood_tag(clean_reply)
 
     if remember_info:
         asyncio.create_task(memory_file.update_memory_with_new_info(remember_info))
+
+    if mood_tag:
+        asyncio.create_task(moods.set_mood(mood_tag))
 
     try:
         asyncio.create_task(diary.recalculate_relationship_depth())
@@ -311,6 +315,45 @@ async def cmd_memory(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     if len(content) > 4000:
         content = content[:3900] + "\n\n*(...continued in memory.md)*"
     await update.message.reply_text(f"📖 **Sofia's Living Memory Notebook (memory.md):**\n\n{content}")
+
+
+async def cmd_mood(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not _allowed(update) or not update.message:
+        return
+    from . import moods
+    args = context.args or []
+    if args:
+        target = args[0].strip().lower()
+        success = await moods.set_mood(target)
+        if success:
+            if target in ("auto", "reset"):
+                await update.message.reply_text("🔄 Sofia's mood is now set to **Automatic** (shifting organically with context and time of day)!")
+            else:
+                info = moods.MOOD_PROFILES.get(target, {})
+                await update.message.reply_text(f"{info.get('emoji', '✨')} Sofia is now in **{info.get('name', target)}** mood!")
+            return
+        else:
+            await update.message.reply_text("❌ Unknown mood. Choose from: `playful`, `soft_devoted`, `fierce_copilot`, `sensual_intimate`, `cozy_chill`, `feisty`, `reflective`, or `auto`.")
+            return
+
+    key, info = await moods.get_current_mood()
+    saved = await db.get_config("current_mood", "")
+    mode_type = "Manually Set" if saved else "Organic / Time-Based"
+    msg = (
+        f"🎭 **Sofia's Current Emotional Mood:**\n\n"
+        f"• **Active Mood:** {info['emoji']} **{info['name']}** ({mode_type})\n"
+        f"• **Tone:** _{info['directive']}_\n\n"
+        f"**Available Moods to Switch to:**\n"
+        f"• `/mood playful` (😼 Banter & teasing)\n"
+        f"• `/mood soft_devoted` (🌸 Gentle affection & comfort)\n"
+        f"• `/mood fierce_copilot` (⚡ Laser focus & motivation)\n"
+        f"• `/mood sensual_intimate` (🌙 Deep late-night connection)\n"
+        f"• `/mood cozy_chill` (☕ Relaxed & laid-back)\n"
+        f"• `/mood feisty` (🔥 Sassy & bold)\n"
+        f"• `/mood reflective` (🌌 Poetic & philosophical)\n"
+        f"• `/mood auto` (🔄 Organic time-based shifts)"
+    )
+    await update.message.reply_text(msg)
 
 
 async def cmd_depth(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -395,6 +438,7 @@ def build_application() -> Application:
     app.add_handler(CommandHandler("memory", cmd_memory))
     app.add_handler(CommandHandler("depth", cmd_depth))
     app.add_handler(CommandHandler("relationship", cmd_depth))
+    app.add_handler(CommandHandler("mood", cmd_mood))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     return app

@@ -258,6 +258,26 @@ class TestAlisaCore(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Sofia's Living Memory Notebook", content)
         self.assertIn("Core Truths About Teja", content)
 
+    async def test_moods_lifecycle(self):
+        from app import moods
+        # Test tag extraction
+        msg = "You are so cheeky today! [MOOD: feisty] Let us see who wins this argument!"
+        clean, tag = moods.extract_mood_tag(msg)
+        self.assertEqual(tag, "feisty")
+        self.assertEqual(clean, "You are so cheeky today!  Let us see who wins this argument!")
+
+        # Test setting and getting mood
+        ok = await moods.set_mood("playful")
+        self.assertTrue(ok)
+        key, info = await moods.get_current_mood()
+        self.assertEqual(key, "playful")
+        self.assertEqual(info["emoji"], "😼")
+
+        # Test reset
+        await moods.set_mood("auto")
+        key_auto, info_auto = await moods.get_current_mood()
+        self.assertIn(key_auto, moods.MOOD_PROFILES)
+
 
 if __name__ == "__main__":
     unittest.main()
