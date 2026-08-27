@@ -100,16 +100,39 @@ async def get_or_create_mood_today() -> dict:
 
 
 async def _send_proactive(system_note: str) -> None:
-    from . import bot as bot_module
+    from . import bot as bot_module, images, memory_file, moods
 
     bot_instance = bot_module.get_bot()
     if bot_instance is None:
         return
-    text = await orchestrator.proactive(system_note)
-    await bot_module.send_text(bot_instance, text)
+    raw_text = await orchestrator.proactive(system_note)
+
+    clean_text, embedded_image_desc = images.extract_embedded_image_tag(raw_text)
+    clean_text, remember_info = memory_file.extract_remember_tag(clean_text)
+    clean_text, mood_tag = moods.extract_mood_tag(clean_text)
+
+    if remember_info:
+        import asyncio
+        asyncio.create_task(memory_file.update_memory_with_new_info(remember_info))
+    if mood_tag:
+        import asyncio
+        asyncio.create_task(moods.set_mood(mood_tag))
+
+    if clean_text:
+        await bot_module.send_text(bot_instance, clean_text)
+
+    if embedded_image_desc:
+        try:
+            visual_prompt = await images.craft_visual_prompt(embedded_image_desc)
+            img_bytes = await images.generate_image_bytes(visual_prompt)
+            if img_bytes:
+                await bot_instance.send_photo(chat_id=config.ALLOWED_USER_ID, photo=img_bytes)
+        except Exception as img_exc:
+            logger.error("Proactive image send error: %s", img_exc)
+
     await db.execute(
         "INSERT INTO conversation_log (role, content, channel) VALUES ('sofia', ?, 'text')",
-        (text,),
+        (raw_text,),
     )
 
 
