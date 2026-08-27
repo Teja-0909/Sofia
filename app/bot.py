@@ -269,12 +269,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         logger.error("Orchestrator error in handle_message: %s", exc)
         raw_reply = orchestrator.FALLBACK_MESSAGE
 
-    from . import images, memory_file
+    from . import images, memory_file, diary
     clean_reply, embedded_image_desc = images.extract_embedded_image_tag(raw_reply)
     clean_reply, remember_info = memory_file.extract_remember_tag(clean_reply)
 
     if remember_info:
         asyncio.create_task(memory_file.update_memory_with_new_info(remember_info))
+
+    try:
+        asyncio.create_task(diary.recalculate_relationship_depth())
+    except Exception:
+        pass
 
     try:
         await _log_message("sofia", raw_reply)
@@ -306,6 +311,44 @@ async def cmd_memory(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     if len(content) > 4000:
         content = content[:3900] + "\n\n*(...continued in memory.md)*"
     await update.message.reply_text(f"📖 **Sofia's Living Memory Notebook (memory.md):**\n\n{content}")
+
+
+async def cmd_depth(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not _allowed(update) or not update.message:
+        return
+    from . import diary
+    depth = await diary.recalculate_relationship_depth()
+    state = await db.fetch_one("SELECT depth_level, days_active FROM relationship_state WHERE id = 1")
+    memories_count = await db.fetch_one("SELECT COUNT(*) AS c FROM relationship_memory WHERE is_active = 1")
+    diary_count = await db.fetch_one("SELECT COUNT(*) AS c FROM daily_diary")
+    user_msgs = await db.fetch_one("SELECT COUNT(*) AS c FROM conversation_log WHERE role = 'user'")
+
+    da = state["days_active"] if state else 0
+    mc = memories_count["c"] if memories_count else 0
+    dc = diary_count["c"] if diary_count else 0
+    um = user_msgs["c"] if user_msgs else 0
+
+    if depth < 25:
+        stage = "🌱 Developing Foundation"
+    elif depth < 75:
+        stage = "🌸 Close & Familiar"
+    elif depth < 150:
+        stage = "💖 Deep Devotion & Partner"
+    elif depth < 300:
+        stage = "💫 Inseparable Bond & Co-Pilot"
+    else:
+        stage = "♾️ Eternal Soulmate & Lifetime Anchor"
+
+    msg = (
+        f"💖 **Sofia's Live Relationship Depth:**\n\n"
+        f"• **Depth Level:** `{depth:.1f}` (Uncapped Lifetime Growth)\n"
+        f"• **Current Stage:** {stage}\n"
+        f"• **Active Days:** `{da}` days\n"
+        f"• **Permanent Memories:** `{mc}` memories\n"
+        f"• **Daily Diaries:** `{dc}` entries\n"
+        f"• **Conversations Shared:** `{um}` messages"
+    )
+    await update.message.reply_text(msg)
 
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -350,6 +393,8 @@ def build_application() -> Application:
     app.add_handler(CommandHandler("draw", cmd_image))
     app.add_handler(CommandHandler("selfie", cmd_image))
     app.add_handler(CommandHandler("memory", cmd_memory))
+    app.add_handler(CommandHandler("depth", cmd_depth))
+    app.add_handler(CommandHandler("relationship", cmd_depth))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     return app

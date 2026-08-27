@@ -171,7 +171,6 @@ class TestAlisaCore(unittest.IsolatedAsyncioTestCase):
 
         depth = await diary.recalculate_relationship_depth()
         self.assertGreater(depth, 0)
-        self.assertLessEqual(depth, 100.0)
 
         state = await db.fetch_one("SELECT depth_level, days_active FROM relationship_state WHERE id = 1")
         self.assertEqual(state["depth_level"], depth)
