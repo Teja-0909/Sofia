@@ -69,12 +69,30 @@ MOOD_TAG_REGEX = re.compile(r"\[MOOD:\s*([a-zA-Z_]+)\]", re.IGNORECASE)
 
 
 async def get_current_mood() -> tuple[str, dict]:
-    """Retrieves Sofia's active mood from DB, falling back to time-of-day natural default."""
-    saved_mood = await db.get_config("current_mood", "")
-    if saved_mood and saved_mood.lower() in MOOD_PROFILES:
-        return saved_mood.lower(), MOOD_PROFILES[saved_mood.lower()]
+    """
+    Retrieves Sofia's active mood.
+    If a conversational mood was set within the last 3 hours, it is preserved.
+    After 3 hours of silence, it naturally blends back to the time-of-day baseline.
+    """
+    row = await db.fetch_one("SELECT value, updated_at FROM app_config WHERE key = 'current_mood'")
+    if row and row.get("value"):
+        saved_mood = row["value"].strip().lower()
+        if saved_mood in MOOD_PROFILES:
+            updated_at = row.get("updated_at")
+            if updated_at:
+                try:
+                    import datetime as dt
+                    ts = dt.datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
+                    now = dt.datetime.now(dt.timezone.utc)
+                    # If set within last 3 hours, keep the active conversational mood
+                    if (now - ts).total_seconds() < 10800:
+                        return saved_mood, MOOD_PROFILES[saved_mood]
+                except Exception:
+                    return saved_mood, MOOD_PROFILES[saved_mood]
+            else:
+                return saved_mood, MOOD_PROFILES[saved_mood]
 
-    # Time-based organic fallback
+    # Time-based organic baseline (IST)
     hour = timeutil.now_local().hour
     if 0 <= hour < 5:
         key = "sensual_intimate"
