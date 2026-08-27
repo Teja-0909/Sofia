@@ -66,6 +66,11 @@ async def _build_system_prompt(extra_note: str | None = None) -> str:
         f"\n[Relationship Depth: Level {depth:.1f} | Active Days: {days_active} | Stage: {stage}]\n"
         "[Bond Directive: Your devotion and shared history with Teja grow continuously through real conversations without ceiling or limit. Reflect this rich familiarity naturally.]"
     )
+    from . import memory_file
+    memory_md = await memory_file.get_memory_md()
+    if memory_md:
+        blocks.append(f"\n[Sofia's Living Memory Notebook (memory.md)]\n{memory_md}")
+
     if memories:
         lines = "\n".join(f"- [{m['category']}] {m['content']}" for m in memories)
         blocks.append(f"\n[Things you remember about Teja (Permanent Memories)]\n{lines}")

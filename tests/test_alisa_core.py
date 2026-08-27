@@ -246,6 +246,19 @@ class TestAlisaCore(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(tag, "Sofia standing on a sunlit walking trail in casual athletic wear, soft morning light")
         self.assertEqual(clean, "Here is a photo from my morning walk!  Hope you love it!")
 
+    async def test_memory_file_lifecycle(self):
+        from app import memory_file
+        # Test tag extraction
+        msg = "I will keep that in mind! [REMEMBER: Teja prefers cold brew coffee over tea] Talk to you soon!"
+        clean, tag = memory_file.extract_remember_tag(msg)
+        self.assertEqual(tag, "Teja prefers cold brew coffee over tea")
+        self.assertEqual(clean, "I will keep that in mind!  Talk to you soon!")
+
+        # Test get_memory_md
+        content = await memory_file.get_memory_md()
+        self.assertIn("Sofia's Living Memory Notebook", content)
+        self.assertIn("Core Truths About Teja", content)
+
 
 if __name__ == "__main__":
     unittest.main()

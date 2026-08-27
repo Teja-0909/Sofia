@@ -269,8 +269,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         logger.error("Orchestrator error in handle_message: %s", exc)
         raw_reply = orchestrator.FALLBACK_MESSAGE
 
-    from . import images
+    from . import images, memory_file
     clean_reply, embedded_image_desc = images.extract_embedded_image_tag(raw_reply)
+    clean_reply, remember_info = memory_file.extract_remember_tag(clean_reply)
+
+    if remember_info:
+        asyncio.create_task(memory_file.update_memory_with_new_info(remember_info))
 
     try:
         await _log_message("sofia", raw_reply)
@@ -292,6 +296,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 await update.message.reply_photo(photo=img_bytes)
         except Exception as img_exc:
             logger.error("Embedded image render error: %s", img_exc)
+
+
+async def cmd_memory(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not _allowed(update) or not update.message:
+        return
+    from . import memory_file
+    content = await memory_file.get_memory_md()
+    if len(content) > 4000:
+        content = content[:3900] + "\n\n*(...continued in memory.md)*"
+    await update.message.reply_text(f"📖 **Sofia's Living Memory Notebook (memory.md):**\n\n{content}")
 
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -335,6 +349,7 @@ def build_application() -> Application:
     app.add_handler(CommandHandler("photo", cmd_image))
     app.add_handler(CommandHandler("draw", cmd_image))
     app.add_handler(CommandHandler("selfie", cmd_image))
+    app.add_handler(CommandHandler("memory", cmd_memory))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     return app
