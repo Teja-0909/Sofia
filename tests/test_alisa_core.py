@@ -232,6 +232,15 @@ class TestAlisaCore(unittest.IsolatedAsyncioTestCase):
         finally:
             await runner.cleanup()
 
+    async def test_image_generation_detection(self):
+        from app import images
+        self.assertTrue(images.is_image_request("generate an image of a sunset"))
+        self.assertTrue(images.is_image_request("/image a cute cat"))
+        self.assertTrue(images.is_image_request("send me a photo of you in a cafe"))
+        self.assertTrue(images.is_image_request("/selfie"))
+        self.assertFalse(images.is_image_request("who won the Dutch GP?"))
+        self.assertFalse(images.is_image_request("remind me to buy milk"))
+
 
 if __name__ == "__main__":
     unittest.main()

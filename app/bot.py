@@ -145,6 +145,35 @@ async def cmd_read(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(reply)
 
 
+async def _handle_image_generation(update: Update, context: ContextTypes.DEFAULT_TYPE, user_text: str) -> None:
+    from . import images
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_PHOTO)
+    try:
+        visual_prompt = await images.craft_visual_prompt(user_text)
+        img_bytes = await images.generate_image_bytes(visual_prompt)
+        if img_bytes:
+            caption = await images.craft_image_caption(user_text, visual_prompt)
+            await _log_message("sofia", f"[Generated Image: '{visual_prompt}'] {caption}")
+            await update.message.reply_photo(photo=img_bytes, caption=caption)
+            return
+    except Exception as exc:
+        logger.error("Image generation handler error: %s", exc)
+
+    reply = await orchestrator.reply(user_text)
+    await _log_message("sofia", reply)
+    await update.message.reply_text(reply)
+
+
+async def cmd_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not _allowed(update):
+        return
+    desc = " ".join(context.args or []).strip()
+    if not desc:
+        await update.message.reply_text("what image would you like me to create? e.g. /image a sunset over the mountains")
+        return
+    await _handle_image_generation(update, context, desc)
+
+
 async def _detect_task_completion(user_text: str) -> str | None:
     lower = user_text.lower().strip()
     if not any(w in lower for w in DONE_WORDS):
@@ -173,6 +202,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await _log_message("user", user_text)
     except Exception as e:
         logger.warning("Log message note: %s", e)
+
+    # 0. Check for Image Generation Request
+    from . import images
+    if images.is_image_request(user_text):
+        await _handle_image_generation(update, context, user_text)
+        return
 
     system_note = None
 
@@ -282,6 +317,10 @@ def build_application() -> Application:
     app.add_handler(CommandHandler("win", cmd_win))
     app.add_handler(CommandHandler("search", cmd_search))
     app.add_handler(CommandHandler("read", cmd_read))
+    app.add_handler(CommandHandler("image", cmd_image))
+    app.add_handler(CommandHandler("photo", cmd_image))
+    app.add_handler(CommandHandler("draw", cmd_image))
+    app.add_handler(CommandHandler("selfie", cmd_image))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     return app
