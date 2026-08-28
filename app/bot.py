@@ -230,8 +230,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 desc = row["description"] if row else f"task #{done_id}"
                 logger.info("Task #%s ('%s') marked done by user message: '%s'", done_id, desc, user_text)
                 system_note = (
-                    f"[Internal event: Teja just finished his task: '{desc}'. "
-                    "Acknowledge naturally in your own voice — proud of him, warm, affectionate.]"
+                    f"[Internal event: Teja just marked his task #{done_id} ('{desc}') as DONE/completed. "
+                    "Acknowledge with genuine pride, warmth, and affection in your own voice. DO NOT recreate or reschedule this task!]"
                 )
             else:
                 # 3. Check for task creation / temp reminder
@@ -273,8 +273,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     clean_reply, embedded_image_desc = images.extract_embedded_image_tag(raw_reply)
     clean_reply, remember_info = memory_file.extract_remember_tag(clean_reply)
     clean_reply, mood_tag = moods.extract_mood_tag(clean_reply)
+    clean_reply, done_tag = parser.extract_done_tag(clean_reply)
     clean_reply, task_tag_data = parser.extract_task_tag(clean_reply)
-    if task_tag_data and task_tag_data.get("description") and task_tag_data.get("due_utc"):
+
+    # If Sofia emitted [DONE: ...], mark that task done in DB
+    if done_tag:
+        pending = await tasks.list_pending()
+        matched_id = await parser.detect_completion(done_tag, pending) if pending else None
+        if matched_id:
+            await tasks.mark_done(int(matched_id))
+            logger.info("Sofia [DONE: %s] marked task #%s as done in DB", done_tag, matched_id)
+
+    # Only create new task if this turn wasn't marking a task as done
+    is_completion_turn = (done_id is not None) or (done_tag is not None)
+    if not is_completion_turn and task_tag_data and task_tag_data.get("description") and task_tag_data.get("due_utc"):
         try:
             task_id = await tasks.create_task(task_tag_data["description"], task_tag_data["due_utc"])
             logger.info("Sofia created task #%s ('%s' due %s) in tasks table", task_id, task_tag_data["description"], task_tag_data["due_utc"])

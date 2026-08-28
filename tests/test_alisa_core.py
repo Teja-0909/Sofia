@@ -297,6 +297,31 @@ class TestAlisaCore(unittest.IsolatedAsyncioTestCase):
         marked = await tasks.mark_done(task_id)
         self.assertTrue(marked)
 
+    async def test_task_done_tag_and_completion(self):
+        from app import parser, tasks, db
+        # 1. Create a task
+        task_id = await tasks.create_task("Review biology notes", "2026-08-28T21:00:00Z")
+        pending = await tasks.list_pending()
+        self.assertTrue(any(t["id"] == task_id for t in pending))
+
+        # 2. Test detect_completion on natural phrases
+        matched_id = await parser.detect_completion("mark it as done", pending)
+        self.assertEqual(matched_id, task_id)
+
+        matched_num_id = await parser.detect_completion(f"mark task #{task_id} done", pending)
+        self.assertEqual(matched_num_id, task_id)
+
+        # 3. Test Sofia [DONE: ...] tag extraction
+        sofia_msg = f"Awesome work! [DONE: {task_id}] I am so proud of you!"
+        clean, done_tag = parser.extract_done_tag(sofia_msg)
+        self.assertEqual(clean, "Awesome work!  I am so proud of you!")
+        self.assertEqual(done_tag, str(task_id))
+
+        # Mark done and verify it's removed from pending
+        await tasks.mark_done(task_id)
+        pending_after = await tasks.list_pending()
+        self.assertFalse(any(t["id"] == task_id for t in pending_after))
+
 
 if __name__ == "__main__":
     unittest.main()
