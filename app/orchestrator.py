@@ -171,8 +171,71 @@ async def _history(limit: int = 200) -> list[dict]:
     ]
 
 
-async def _generate(system: str, messages: list[dict]) -> str:
+LAZY_CODE_PATTERNS = [
+    re.compile(r"//\s*(?:implement|todo|add|write)\s+(?:logic|code|here|rest|later)", re.IGNORECASE),
+    re.compile(r"#\s*(?:implement|todo|add|write)\s+(?:logic|code|here|rest|later)", re.IGNORECASE),
+    re.compile(r"/\*\s*(?:implement|todo|add|write)\s+.*?\*/", re.IGNORECASE),
+    re.compile(r"\b(?:remaining code is straightforward|you can implement the rest|fill in the rest|left as an exercise)\b", re.IGNORECASE)
+]
+
+
+async def _verify_and_refine_draft(
+    draft: str,
+    user_text: str,
+    system: str,
+    messages: list[dict]
+) -> str:
+    """Pre-flight verification loop: catches laziness, placeholders, and action pretense before sending to user."""
+    clean_draft = _clean_asterisks(draft)
+
+    # 1. Check for Code Laziness / Placeholders
+    has_lazy_placeholder = any(p.search(clean_draft) for p in LAZY_CODE_PATTERNS)
+    if has_lazy_placeholder:
+        logger.warning("Verifier loop triggered: Found lazy placeholder in draft. Requesting full completion...")
+        critique_msg = (
+            "CRITICAL QUALITY VERIFICATION REJECTION: Your draft contained a lazy placeholder or skipped code implementation. "
+            "Provide the 100% complete, fully implemented, working solution with zero placeholders or omissions."
+        )
+        try:
+            retry_messages = list(messages) + [
+                {"role": "assistant", "content": clean_draft},
+                {"role": "user", "content": critique_msg}
+            ]
+            refined = await llm.chat(system, retry_messages)
+            clean_draft = _clean_asterisks(refined)
+        except Exception as exc:
+            logger.warning("Verification retry note: %s", exc)
+
+    # 2. Check for Task Pretense Auto-Repair (If draft claims task is scheduled but missing tag)
+    lower = clean_draft.lower()
+    claimed_task = any(p in lower for p in ("added the task", "scheduled a reminder", "i'll remind you", "set a reminder", "created a reminder", "added to your tasks"))
+    has_task_tag = bool(re.search(r"\[(?:TASK|REMINDER|SCHEDULE):", clean_draft, re.IGNORECASE))
+    if claimed_task and not has_task_tag:
+        from . import parser
+        intent = await parser.parse(user_text)
+        if intent.get("description") and intent.get("due_utc"):
+            when = intent.get("due_utc")
+            clean_draft += f" [TASK: {intent['description']} | {when}]"
+            logger.info("Verifier auto-injected missing [TASK: %s] tag into draft", intent['description'])
+
+    # 3. Check for Task Done Pretense Auto-Repair
+    claimed_done = any(p in lower for p in ("marked it as done", "marked it done", "marked as done", "checked off your task", "task is marked complete"))
+    has_done_tag = bool(re.search(r"\[(?:DONE|COMPLETE|FINISHED):", clean_draft, re.IGNORECASE))
+    if claimed_done and not has_done_tag:
+        from . import tasks as tasks_module, parser
+        pending = await tasks_module.list_pending()
+        matched_id = await parser.detect_completion(user_text, pending) if pending else None
+        if matched_id:
+            clean_draft += f" [DONE: {matched_id}]"
+            logger.info("Verifier auto-injected missing [DONE: %s] tag into draft", matched_id)
+
+    return clean_draft
+
+
+async def _generate(system: str, messages: list[dict], user_text: str = "") -> str:
     raw = await llm.chat(system, messages)
+    if user_text:
+        return await _verify_and_refine_draft(raw, user_text, system, messages)
     return _clean_asterisks(raw)
 
 
@@ -239,7 +302,7 @@ async def reply(
     else:
         messages = history + [user_msg]
 
-    return await _generate(system, messages)
+    return await _generate(system, messages, user_text=user_text)
 
 
 async def proactive(system_note: str) -> str:
