@@ -30,9 +30,15 @@ async def run_bot() -> None:
     bot._bot_instance = app.bot
 
     # 5. Run Telegram bot polling
+    from telegram import Update
     async with app:
         await app.start()
-        await app.updater.start_polling(allowed_updates=["message"])
+        try:
+            await app.bot.delete_webhook(drop_pending_updates=False)
+            logger.info("Cleared lingering Telegram webhook to ensure clean polling")
+        except Exception as wh_exc:
+            logger.debug("Webhook clear note: %s", wh_exc)
+        await app.updater.start_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=False)
         logger.info("Sofia bot is online, listening for Telegram messages...")
 
         stop_event = asyncio.Event()

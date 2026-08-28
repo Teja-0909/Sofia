@@ -36,8 +36,18 @@ async def _log_message(role: str, content: str, channel: str = "text") -> None:
 
 
 def _allowed(update: Update) -> bool:
-    if config.ALLOWED_USER_ID and update.effective_user:
-        return update.effective_user.id == config.ALLOWED_USER_ID
+    if not config.ALLOWED_USER_ID:
+        logger.warning("ALLOWED_TELEGRAM_USER_ID is not configured in environment!")
+        return False
+    if update.effective_user:
+        if update.effective_user.id == config.ALLOWED_USER_ID:
+            return True
+        logger.warning(
+            "Access denied for incoming user_id=%s (username=%s). Allowed ID is %s",
+            update.effective_user.id,
+            update.effective_user.username,
+            config.ALLOWED_USER_ID,
+        )
     return False
 
 
@@ -314,6 +324,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await update.message.reply_text(clean_reply)
     except Exception as exc:
         logger.error("Telegram reply send error: %s", exc)
+        try:
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=clean_reply)
+        except Exception as direct_exc:
+            logger.error("Direct send_message also failed: %s", direct_exc)
 
     if embedded_image_desc:
         can_send = await images.should_allow_autonomous_image()
