@@ -16,14 +16,16 @@ class AllProvidersFailed(Exception):
 
 def _provider_chain() -> list[tuple[str, str, str]]:
     chain = []
-    # Primary: Gemini 3.5 Flash Lite (500 free requests/day, relaxed human voice)
+    # Primary: Gemini 3.5 Flash Lite
     if config.GEMINI_API_KEY:
         chain.append(("gemini", config.GEMINI_MODEL, "gemini"))
         if config.GEMINI_MODEL != "gemini-3.5-flash":
             chain.append(("gemini", "gemini-3.5-flash", "gemini"))
-    # Seamless Fallback: Groq (14,400 free requests/day)
+    # Seamless Fallback / Primary on Groq (Cascading High TPM models)
     if config.GROQ_API_KEY:
-        chain.append(("groq", config.GROQ_MODEL, "openai"))
+        chain.append(("groq", "openai/gpt-oss-120b", "openai"))
+        chain.append(("groq", "qwen/qwen3.8-27b", "openai"))
+        chain.append(("groq", "openai/gpt-oss-20b", "openai"))
     # Fallback 2: OpenRouter
     if config.OPENROUTER_API_KEY:
         chain.append(("openrouter", config.OPENROUTER_MODEL, "openai"))
@@ -32,7 +34,7 @@ def _provider_chain() -> list[tuple[str, str, str]]:
 
 async def _get_best_groq_model(api_key: str, has_image: bool = False) -> str:
     global _cached_groq_model
-    if _cached_groq_model and not has_image:
+    if not has_image and _cached_groq_model:
         return _cached_groq_model
     try:
         async with httpx.AsyncClient(timeout=10) as client:
@@ -53,25 +55,16 @@ async def _get_best_groq_model(api_key: str, has_image: bool = False) -> str:
                 if has_image:
                     vision_preferred = [
                         "qwen/qwen3.6-27b",
-                        "llama-3.2-11b-vision-preview",
-                        "llama-3.2-90b-vision-preview",
+                        "qwen/qwen3.8-27b",
                     ]
                     for vp in vision_preferred:
                         if vp in chat_ids:
                             return vp
-                    for m in chat_ids:
-                        if "vision" in m.lower() or "qwen" in m.lower():
-                            return m
 
                 text_preferred = [
                     "openai/gpt-oss-120b",
-                    "qwen/qwen3.6-27b",
+                    "qwen/qwen3.8-27b",
                     "openai/gpt-oss-20b",
-                    "llama-3.3-70b-versatile",
-                    "llama-3.1-8b-instant",
-                    "llama-3.1-70b-versatile",
-                    "allam-2-7b",
-                    "gemma2-9b-it",
                 ]
                 for p in text_preferred:
                     if p in chat_ids:
@@ -79,7 +72,7 @@ async def _get_best_groq_model(api_key: str, has_image: bool = False) -> str:
                         return p
 
                 for m in chat_ids:
-                    if "gpt-oss" in m.lower() or "instant" in m.lower() or "qwen" in m.lower() or "it" in m.lower():
+                    if "gpt-oss" in m.lower() or "qwen" in m.lower():
                         _cached_groq_model = m
                         return m
 
@@ -179,8 +172,8 @@ async def _call_openai_compatible(
 ) -> tuple[str, dict]:
     has_image = any(m.get("image_bytes") for m in messages)
     target_model = model
-    if provider == "groq":
-        target_model = await _get_best_groq_model(api_key, has_image=has_image)
+    if provider == "groq" and has_image:
+        target_model = await _get_best_groq_model(api_key, has_image=True)
 
     payload_messages = [{"role": "system", "content": system}]
     for m in messages:
