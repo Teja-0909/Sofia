@@ -137,7 +137,11 @@ async def _call_gemini(system: str, messages: list[dict], model: str) -> tuple[s
     body = {
         "systemInstruction": {"parts": [{"text": system}]},
         "contents": contents,
-        "generationConfig": {"maxOutputTokens": 1024},
+        "generationConfig": {
+            "maxOutputTokens": 4096,
+            "temperature": 0.7,
+            "topP": 0.95,
+        },
         "safetySettings": [
             {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
             {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
@@ -146,7 +150,7 @@ async def _call_gemini(system: str, messages: list[dict], model: str) -> tuple[s
         ],
     }
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-    async with httpx.AsyncClient(timeout=45) as client:
+    async with httpx.AsyncClient(timeout=60) as client:
         resp = await client.post(
             url,
             params={"key": config.GEMINI_API_KEY.strip()},
@@ -193,14 +197,15 @@ async def _call_openai_compatible(
         else:
             payload_messages.append({"role": m["role"], "content": m["content"]})
 
-    async with httpx.AsyncClient(timeout=45) as client:
+    async with httpx.AsyncClient(timeout=60) as client:
         resp = await client.post(
             f"{base_url}/chat/completions",
             headers={"Authorization": f"Bearer {api_key.strip()}"},
             json={
                 "model": target_model,
                 "messages": payload_messages,
-                "max_tokens": 1024,
+                "max_tokens": 4096,
+                "temperature": 0.7,
             },
         )
         if resp.status_code != 200:
