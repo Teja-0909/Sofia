@@ -175,6 +175,74 @@ async def app_presence_reaction(
             pass
 
 
+async def check_pc_presence_5min() -> None:
+    """Checks live PC presence every 5 minutes and lets Sofia decide if she wants to text Teja."""
+    if _is_quiet_hours():
+        return
+
+    # Check last message timestamp to avoid spamming if already talking recently (within 10 mins)
+    last_msg = await db.fetch_one("SELECT timestamp FROM conversation_log ORDER BY id DESC LIMIT 1")
+    if last_msg and last_msg.get("timestamp"):
+        try:
+            ts_str = last_msg["timestamp"].replace("Z", "+00:00")
+            last_time = dt.datetime.fromisoformat(ts_str)
+            now_utc = dt.datetime.now(dt.timezone.utc)
+            if (now_utc - last_time).total_seconds() < 600:
+                return
+        except Exception:
+            pass
+
+    # Read live presence
+    app_name = await db.get_config("last_presence_app", "")
+    window_title = await db.get_config("last_presence_title", "")
+    idle_str = await db.get_config("last_presence_idle", "0")
+    media_playing = await db.get_config("last_presence_media", "")
+    presence_time = await db.get_config("last_presence_updated_at", "")
+
+    if not app_name or not presence_time:
+        return
+
+    try:
+        p_time = dt.datetime.fromisoformat(presence_time.replace("Z", "+00:00"))
+        if (dt.datetime.now(dt.timezone.utc) - p_time).total_seconds() > 600:
+            return
+    except Exception:
+        return
+
+    idle_minutes = int(idle_str) if idle_str.isdigit() else 0
+
+    note = (
+        f"[Internal 5-minute autonomous check: Teja is active on PC in '{app_name}' "
+        f"(Window: '{window_title}', Idle: {idle_minutes}m, Media: '{media_playing}'). "
+        "Observe what he is working on / studying in Chrome / coding / gaming / doing. "
+        "Decide if you want to text him right now — e.g. checking in on his progress, offering to help with what he's studying/coding, teasing him, or cheering him on. "
+        "If you want to reach out, output your message in your own natural voice (short, direct, no asterisks). "
+        "If he is deep in flow or you don't feel the need to interrupt right now, output ONLY the single word 'PASS'.]"
+    )
+
+    try:
+        raw_reply = await orchestrator.proactive(note)
+        if raw_reply and raw_reply.strip() != "PASS" and not raw_reply.strip().startswith("PASS"):
+            from . import bot as bot_module, images, memory_file, moods
+            bot_instance = bot_module.get_bot()
+            if bot_instance:
+                clean_text, _ = images.extract_embedded_image_tag(raw_reply)
+                clean_text, remember_info = memory_file.extract_remember_tag(clean_text)
+                clean_text, mood_tag = moods.extract_mood_tag(clean_text)
+                if remember_info:
+                    asyncio.create_task(memory_file.update_memory_with_new_info(remember_info))
+                if mood_tag:
+                    asyncio.create_task(moods.set_mood(mood_tag))
+                if clean_text:
+                    await bot_module.send_text(bot_instance, clean_text)
+                    await db.execute(
+                        "INSERT INTO conversation_log (role, content, channel) VALUES ('sofia', ?, 'text')",
+                        (raw_reply,),
+                    )
+    except Exception as exc:
+        pass
+
+
 async def praise(text: str) -> str:
     note = (
         f"[Internal trigger: Teja just shared a win: '{text}'. React genuinely — "

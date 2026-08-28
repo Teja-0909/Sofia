@@ -151,11 +151,27 @@ async def save_memory_md(content: str) -> None:
 
 
 async def update_memory_with_new_info(new_info: str) -> str:
-    """Uses LLM to organically incorporate a new important memory into memory.md without losing data."""
+    """Uses LLM to organically incorporate a new important memory into memory.md and database."""
+    clean_info = new_info.strip()
+    if not clean_info:
+        return await get_memory_md()
+
+    # 1. Always record in relationship_memory database table
+    try:
+        now_iso = timeutil.utc_iso()
+        await db.execute(
+            "INSERT INTO relationship_memory (category, content, reasoning, is_active, created_at) VALUES ('evolving_fact', ?, 'Learned organically from conversation', 1, ?)",
+            (clean_info, now_iso),
+        )
+        logger.info("Saved new memory to relationship_memory table: %s", clean_info[:60])
+    except Exception as exc:
+        logger.warning("Error inserting into relationship_memory table: %s", exc)
+
+    # 2. Update living notebook memory.md
     current_md = await get_memory_md()
     prompt = MEMORY_UPDATE_PROMPT.format(
         current_memory_md=current_md,
-        new_info=new_info.strip(),
+        new_info=clean_info,
     )
     try:
         updated_md = await llm.chat(
@@ -167,14 +183,21 @@ async def update_memory_with_new_info(new_info: str) -> str:
         clean = re.sub(r"^```(?:markdown)?\s*", "", clean, flags=re.IGNORECASE)
         clean = re.sub(r"\s*```$", "", clean)
         # Safety check: do not overwrite if output is abnormally truncated
-        if len(clean) >= len(current_md) * 0.8:
+        if len(clean) >= len(current_md) * 0.7:
             await save_memory_md(clean)
-            logger.info("Organically updated memory.md with new info: %s", new_info[:60])
+            logger.info("Organically updated memory.md with new info: %s", clean_info[:60])
             return clean
         else:
-            logger.warning("Rejecting truncated memory.md update (len %s vs old %s)", len(clean), len(current_md))
+            # Append as a new bullet point if LLM truncated
+            fallback_md = current_md + f"\n- {clean_info}"
+            await save_memory_md(fallback_md)
+            return fallback_md
     except Exception as exc:
         logger.warning("Failed to update memory.md with new info: %s", exc)
+        # Direct append fallback
+        fallback_md = current_md + f"\n- {clean_info}"
+        await save_memory_md(fallback_md)
+        return fallback_md
     return current_md
 
 
