@@ -9,8 +9,8 @@ FUTURE_INTENT_WORDS = (
     "message me", "check on me", "ask me at", "alert me", "tell me at",
     "call me at", "call me in", "warn me", "make sure i", "make sure to",
     "add task", "new task", "create task", "task:", "todo:", "to-do:",
-    "have to", "need to", "gotta", "plan to", "don't let me forget",
-    "dont let me forget", "remember to", "schedule", "set a reminder", "set reminder"
+    "don't let me forget", "dont let me forget", "remember to", "schedule",
+    "set a reminder", "set reminder"
 )
 
 PAST_TENSE_RE = re.compile(
@@ -27,7 +27,6 @@ DAY_WORDS = {"today": 0, "tonight": 0, "tomorrow": 1}
 PREFIX_RES = [
     re.compile(r"^\s*(?:please\s+)?(?:remind\s+me|nudge\s+me|ping\s+me|wake\s+me(?:\s+up)?|text\s+me|message\s+me|check\s+on\s+me)\s+(?:to|about|for|that|if\s+i\s+haven'?t|at|by|in)?\s*", re.IGNORECASE),
     re.compile(r"^\s*(?:please\s+)?(?:add\s+task|new\s+task|create\s+task|task|todo|to-do|set\s+reminder|set\s+a\s+reminder)\s*[:\-]?\s*(?:to|for)?\s*", re.IGNORECASE),
-    re.compile(r"^\s*(?:i\s+)?(?:have\s+to|need\s+to|gotta|plan\s+to)\s+", re.IGNORECASE),
     re.compile(r"^\s*(?:don'?t\s+let\s+me\s+forget|remember\s+to)\s+", re.IGNORECASE),
     re.compile(r"^\s*reminder\s+(?:to|about|for)?\s*", re.IGNORECASE),
     re.compile(r"^\s*remember\s+that\s+i\s+", re.IGNORECASE),
@@ -79,7 +78,7 @@ def extract_task_tag(text: str) -> tuple[str, dict | None]:
 
 def _is_past_event(text: str) -> bool:
     lower = text.lower()
-    if any(k in lower for k in ("remind me", "nudge me", "ping me", "text me", "check on me", "wake me", "make sure", "add task", "have to", "need to", "don't let me forget", "dont let me")):
+    if any(k in lower for k in ("remind me", "nudge me", "ping me", "text me", "check on me", "wake me", "make sure", "add task", "don't let me forget", "dont let me", "remember to", "set reminder")):
         return False
     return bool(PAST_TENSE_RE.search(lower))
 
@@ -155,7 +154,7 @@ def heuristic_parse(text: str) -> dict | None:
                 due = None
 
     # If an explicit task phrase was used (e.g. "add task: code backend") without explicit time:
-    if due is None and any(k in lower for k in ("add task", "new task", "create task", "task:", "todo:", "to-do:", "have to", "need to", "gotta", "plan to", "don't let me forget", "dont let me forget", "remember to")):
+    if due is None and any(k in lower for k in ("add task", "new task", "create task", "task:", "todo:", "to-do:", "don't let me forget", "dont let me forget", "remember to", "set reminder", "set a reminder")):
         local_now = timeutil.now_local()
         # Default due time to 4 hours from now or today 9pm
         due = local_now + dt.timedelta(hours=4)
