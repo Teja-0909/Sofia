@@ -116,8 +116,11 @@ async def execute_usage_upsert(provider: str, model: str, prompt_tokens: int, co
 async def _call_gemini(system: str, messages: list[dict], model: str) -> tuple[str, dict]:
     contents = []
     for m in messages:
-        role = "model" if m["role"] == "assistant" else "user"
-        parts = [{"text": m["content"]}]
+        role = "model" if m.get("role") in ("assistant", "model", "sofia", "alisa") else "user"
+        text_content = m.get("content", "")
+        parts = []
+        if text_content:
+            parts.append({"text": text_content})
         if m.get("image_bytes"):
             b64_str = base64.b64encode(m["image_bytes"]).decode("utf-8")
             parts.append({
@@ -126,7 +129,21 @@ async def _call_gemini(system: str, messages: list[dict], model: str) -> tuple[s
                     "data": b64_str,
                 }
             })
-        contents.append({"role": role, "parts": parts})
+        if not parts:
+            continue
+
+        if not contents:
+            if role == "model":
+                continue  # Gemini contents must begin with a user turn
+            contents.append({"role": "user", "parts": parts})
+        else:
+            if contents[-1]["role"] == role:
+                contents[-1]["parts"].extend(parts)
+            else:
+                contents.append({"role": role, "parts": parts})
+
+    if not contents:
+        contents.append({"role": "user", "parts": [{"text": "Hello"}]})
 
     body = {
         "systemInstruction": {"parts": [{"text": system}]},

@@ -220,6 +220,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return
 
     system_note = None
+    done_id = None
 
     try:
         # 1. Check for conversational memory correction ("forget that") (Spec §9)
@@ -279,7 +280,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         logger.error("Orchestrator error in handle_message: %s", exc)
         raw_reply = orchestrator.FALLBACK_MESSAGE
 
-    from . import images, memory_file, diary, moods, parser
+    from . import diary, images, memory_file, moods
     clean_reply, embedded_image_desc = images.extract_embedded_image_tag(raw_reply)
     clean_reply, remember_info = memory_file.extract_remember_tag(clean_reply)
     clean_reply, mood_tag = moods.extract_mood_tag(clean_reply)
