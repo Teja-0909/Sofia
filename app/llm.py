@@ -16,17 +16,18 @@ class AllProvidersFailed(Exception):
 
 def _provider_chain() -> list[tuple[str, str, str]]:
     chain = []
-    # Primary: Gemini 3.5 Flash Lite
+    # 1. Absolute Primary Brain: Gemini 3.5 / 2.5 Flash Lite
     if config.GEMINI_API_KEY:
         chain.append(("gemini", config.GEMINI_MODEL, "gemini"))
-        if config.GEMINI_MODEL != "gemini-3.5-flash":
-            chain.append(("gemini", "gemini-3.5-flash", "gemini"))
-    # Seamless Fallback / Primary on Groq (Cascading High TPM models)
+        for gm in ("gemini-2.0-flash", "gemini-1.5-flash"):
+            if gm != config.GEMINI_MODEL:
+                chain.append(("gemini", gm, "gemini"))
+    # 2. Seamless Redundancy Fallback: Groq (if Gemini API key is missing or down)
     if config.GROQ_API_KEY:
         chain.append(("groq", "openai/gpt-oss-120b", "openai"))
         chain.append(("groq", "qwen/qwen3.8-27b", "openai"))
         chain.append(("groq", "openai/gpt-oss-20b", "openai"))
-    # Fallback 2: OpenRouter
+    # 3. Fallback 2: OpenRouter
     if config.OPENROUTER_API_KEY:
         chain.append(("openrouter", config.OPENROUTER_MODEL, "openai"))
     return chain
