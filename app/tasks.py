@@ -1,22 +1,31 @@
 import datetime as dt
+import logging
 
 from . import config, db, llm, orchestrator, timeutil
 
+logger = logging.getLogger(__name__)
+
 
 async def create_task(description: str, due_utc: str, is_recurring: str | None = None) -> int:
-    """Creates a new scheduled task/reminder directly in the cloud database."""
+    """Creates a new scheduled task/reminder directly in the cloud database tasks table."""
+    desc = description.strip()
+    if not desc:
+        return 0
     try:
         await db.execute(
-            "INSERT INTO tasks (description, due_time, is_recurring) VALUES (?, ?, ?)",
-            (description, due_utc, is_recurring),
+            "INSERT INTO tasks (description, due_time, is_recurring, status) VALUES (?, ?, ?, 'pending')",
+            (desc, due_utc, is_recurring),
         )
-    except Exception:
+    except Exception as exc:
+        logger.debug("create_task retry with standard schema: %s", exc)
         await db.execute(
-            "INSERT INTO tasks (description, due_time) VALUES (?, ?)",
-            (description, due_utc),
+            "INSERT INTO tasks (description, due_time, status) VALUES (?, ?, 'pending')",
+            (desc, due_utc),
         )
     row = await db.fetch_one("SELECT MAX(id) AS id FROM tasks")
-    return row["id"] if row and row.get("id") else 1
+    task_id = row["id"] if row and row.get("id") else 1
+    logger.info("Successfully written to TASKS table: Task #%s ('%s', due %s)", task_id, desc, due_utc)
+    return task_id
 
 
 async def list_pending() -> list:

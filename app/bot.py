@@ -274,9 +274,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     clean_reply, remember_info = memory_file.extract_remember_tag(clean_reply)
     clean_reply, mood_tag = moods.extract_mood_tag(clean_reply)
     clean_reply, task_tag_data = parser.extract_task_tag(clean_reply)
-
     if task_tag_data and task_tag_data.get("description") and task_tag_data.get("due_utc"):
-        asyncio.create_task(tasks.create_task(task_tag_data["description"], task_tag_data["due_utc"]))
+        try:
+            task_id = await tasks.create_task(task_tag_data["description"], task_tag_data["due_utc"])
+            logger.info("Sofia created task #%s ('%s' due %s) in tasks table", task_id, task_tag_data["description"], task_tag_data["due_utc"])
+        except Exception as task_exc:
+            logger.error("Failed to write Sofia's task to tasks table: %s", task_exc)
 
     if remember_info:
         asyncio.create_task(memory_file.update_memory_with_new_info(remember_info))
