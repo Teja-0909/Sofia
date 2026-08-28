@@ -10,11 +10,14 @@ SEARCH_TRIGGER_PHRASES = (
     "search the web for", "search the web about", "search the web",
     "search web for", "search web about", "search web",
     "can you search", "could you search", "search for", "search online for",
-    "search about", "look up", "google for", "google",
-    "what is the latest", "what are the latest", "latest news on",
-    "latest updates on", "who won the", "who won", "who is winning",
-    "current standings", "upcoming race", "weather in", "release date of",
-    "documentation for", "docs for", "price of", "podium result", "podium"
+    "search about", "look up", "google for", "google", "find out about",
+    "find out", "check online for", "check online", "check the web for",
+    "check the web", "look into", "what is the latest", "what are the latest",
+    "latest news on", "latest news about", "latest updates on", "who won the",
+    "who won", "who is winning", "current standings", "upcoming race",
+    "weather in", "release date of", "documentation for", "documentation of",
+    "docs for", "price of", "podium result", "podium", "current version of",
+    "latest release of", "how to install", "api reference for"
 )
 
 URL_REGEX = re.compile(r"https?://[^\s<>\"']+", re.IGNORECASE)
