@@ -7,7 +7,10 @@ from . import db, llm, timeutil
 FUTURE_INTENT_WORDS = (
     "remind me", "reminder", "nudge me", "ping me", "wake me", "text me",
     "message me", "check on me", "ask me at", "alert me", "tell me at",
-    "call me at", "call me in", "warn me", "make sure i", "make sure to"
+    "call me at", "call me in", "warn me", "make sure i", "make sure to",
+    "add task", "new task", "create task", "task:", "todo:", "to-do:",
+    "have to", "need to", "gotta", "plan to", "don't let me forget",
+    "dont let me forget", "remember to", "schedule", "set a reminder", "set reminder"
 )
 
 PAST_TENSE_RE = re.compile(
@@ -23,14 +26,60 @@ DAY_WORDS = {"today": 0, "tonight": 0, "tomorrow": 1}
 
 PREFIX_RES = [
     re.compile(r"^\s*(?:please\s+)?(?:remind\s+me|nudge\s+me|ping\s+me|wake\s+me(?:\s+up)?|text\s+me|message\s+me|check\s+on\s+me)\s+(?:to|about|for|that|if\s+i\s+haven'?t|at|by|in)?\s*", re.IGNORECASE),
+    re.compile(r"^\s*(?:please\s+)?(?:add\s+task|new\s+task|create\s+task|task|todo|to-do|set\s+reminder|set\s+a\s+reminder)\s*[:\-]?\s*(?:to|for)?\s*", re.IGNORECASE),
+    re.compile(r"^\s*(?:i\s+)?(?:have\s+to|need\s+to|gotta|plan\s+to)\s+", re.IGNORECASE),
+    re.compile(r"^\s*(?:don'?t\s+let\s+me\s+forget|remember\s+to)\s+", re.IGNORECASE),
     re.compile(r"^\s*reminder\s+(?:to|about|for)?\s*", re.IGNORECASE),
     re.compile(r"^\s*remember\s+that\s+i\s+", re.IGNORECASE),
 ]
 
+TASK_TAG_REGEX = re.compile(r"\[(?:TASK|REMINDER|SCHEDULE):\s*(.*?)\]", re.IGNORECASE | re.DOTALL)
+
+
+def extract_task_tag(text: str) -> tuple[str, dict | None]:
+    """Extracts [TASK: description | time] tag emitted by Sofia."""
+    match = TASK_TAG_REGEX.search(text)
+    if not match:
+        return text, None
+
+    raw_payload = match.group(1).strip()
+    clean_text = TASK_TAG_REGEX.sub("", text).strip()
+
+    desc = raw_payload
+    due_utc = None
+
+    if "|" in raw_payload:
+        parts = raw_payload.split("|", 1)
+        desc = parts[0].strip()
+        time_part = parts[1].strip()
+        parsed_time = heuristic_parse(f"remind me {time_part}")
+        if parsed_time and parsed_time.get("due_utc"):
+            due_utc = parsed_time["due_utc"]
+    elif "@" in raw_payload:
+        parts = raw_payload.split("@", 1)
+        desc = parts[0].strip()
+        time_part = parts[1].strip()
+        parsed_time = heuristic_parse(f"remind me {time_part}")
+        if parsed_time and parsed_time.get("due_utc"):
+            due_utc = parsed_time["due_utc"]
+    else:
+        parsed_time = heuristic_parse(raw_payload)
+        if parsed_time and parsed_time.get("due_utc"):
+            due_utc = parsed_time["due_utc"]
+            desc = parsed_time.get("description", desc)
+
+    if not due_utc:
+        # Default to 4 hours from now or today 9:00 PM IST
+        local_now = timeutil.now_local()
+        target_due = local_now + dt.timedelta(hours=4)
+        due_utc = timeutil.utc_iso(target_due)
+
+    return clean_text, {"description": desc, "due_utc": due_utc}
+
 
 def _is_past_event(text: str) -> bool:
     lower = text.lower()
-    if any(k in lower for k in ("remind me", "nudge me", "ping me", "text me", "check on me", "wake me", "make sure")):
+    if any(k in lower for k in ("remind me", "nudge me", "ping me", "text me", "check on me", "wake me", "make sure", "add task", "have to", "need to", "don't let me forget", "dont let me")):
         return False
     return bool(PAST_TENSE_RE.search(lower))
 
@@ -104,6 +153,12 @@ def heuristic_parse(text: str) -> dict | None:
                         spans.append((w.start(), w.end()))
             except ValueError:
                 due = None
+
+    # If an explicit task phrase was used (e.g. "add task: code backend") without explicit time:
+    if due is None and any(k in lower for k in ("add task", "new task", "create task", "task:", "todo:", "to-do:", "have to", "need to", "gotta", "plan to", "don't let me forget", "dont let me forget", "remember to")):
+        local_now = timeutil.now_local()
+        # Default due time to 4 hours from now or today 9pm
+        due = local_now + dt.timedelta(hours=4)
 
     if due is None:
         return None

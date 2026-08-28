@@ -269,10 +269,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         logger.error("Orchestrator error in handle_message: %s", exc)
         raw_reply = orchestrator.FALLBACK_MESSAGE
 
-    from . import images, memory_file, diary, moods
+    from . import images, memory_file, diary, moods, parser
     clean_reply, embedded_image_desc = images.extract_embedded_image_tag(raw_reply)
     clean_reply, remember_info = memory_file.extract_remember_tag(clean_reply)
     clean_reply, mood_tag = moods.extract_mood_tag(clean_reply)
+    clean_reply, task_tag_data = parser.extract_task_tag(clean_reply)
+
+    if task_tag_data and task_tag_data.get("description") and task_tag_data.get("due_utc"):
+        asyncio.create_task(tasks.create_task(task_tag_data["description"], task_tag_data["due_utc"]))
 
     if remember_info:
         asyncio.create_task(memory_file.update_memory_with_new_info(remember_info))

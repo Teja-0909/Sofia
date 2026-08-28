@@ -278,6 +278,25 @@ class TestAlisaCore(unittest.IsolatedAsyncioTestCase):
         key_auto, info_auto = await moods.get_current_mood()
         self.assertIn(key_auto, moods.MOOD_PROFILES)
 
+    async def test_task_tag_and_creation(self):
+        from app import parser, tasks, db
+        msg = "I will keep track of that for you! [TASK: Study Physics Chapter 2 | 8:00 PM today] Good luck!"
+        clean, tag_data = parser.extract_task_tag(msg)
+        self.assertEqual(clean, "I will keep track of that for you!  Good luck!")
+        self.assertIsNotNone(tag_data)
+        self.assertEqual(tag_data["description"], "Study Physics Chapter 2")
+        self.assertIsNotNone(tag_data["due_utc"])
+
+        # Test creating task in DB
+        task_id = await tasks.create_task(tag_data["description"], tag_data["due_utc"])
+        self.assertGreater(task_id, 0)
+        pending = await tasks.list_pending()
+        self.assertTrue(any(t["id"] == task_id for t in pending))
+
+        # Mark done
+        marked = await tasks.mark_done(task_id)
+        self.assertTrue(marked)
+
 
 if __name__ == "__main__":
     unittest.main()
