@@ -128,11 +128,19 @@ async def check_for_updates() -> None:
             # Render provides the commit hash in environment variables
             latest_commit = os.environ.get("RENDER_GIT_COMMIT", "")
             if not latest_commit:
-                import httpx
-                async with httpx.AsyncClient(timeout=5) as client:
-                    resp = await client.get("https://api.github.com/repos/Teja-0909/Sofia/commits?per_page=1")
-                    if resp.status_code == 200:
-                        latest_commit = resp.json()[0]["sha"]
+                from . import config
+                if hasattr(config, "GITHUB_TOKEN") and config.GITHUB_TOKEN:
+                    import httpx
+                    headers = {"Authorization": f"token {config.GITHUB_TOKEN}"}
+                    async with httpx.AsyncClient(timeout=5) as client:
+                        resp = await client.get("https://api.github.com/repos/Teja-0909/Sofia/commits?per_page=1", headers=headers)
+                        if resp.status_code == 200:
+                            latest_commit = resp.json()[0]["sha"]
+                elif os.path.exists(".git/logs/HEAD"):
+                    with open(".git/logs/HEAD", "r", encoding="utf-8") as f:
+                        lines = f.readlines()
+                        if lines:
+                            latest_commit = lines[-1].split(" ")[1] # old_hash new_hash ...
         
         last_seen = await db.get_config("last_seen_commit", "")
         if latest_commit and last_seen and latest_commit != last_seen:
@@ -143,17 +151,37 @@ async def check_for_updates() -> None:
                     text=True, stderr=subprocess.DEVNULL
                 ).strip()
             except Exception:
-                import httpx
-                async with httpx.AsyncClient(timeout=5) as client:
-                    resp = await client.get("https://api.github.com/repos/Teja-0909/Sofia/commits?per_page=5")
-                    if resp.status_code == 200:
-                        commits = resp.json()
-                        new_commits = []
-                        for c in commits:
-                            if c["sha"] == last_seen:
-                                break
-                            new_commits.append(f"- {c['commit']['message'].splitlines()[0]}")
-                        git_log = "\n".join(new_commits)
+                from . import config
+                if hasattr(config, "GITHUB_TOKEN") and config.GITHUB_TOKEN:
+                    import httpx
+                    headers = {"Authorization": f"token {config.GITHUB_TOKEN}"}
+                    async with httpx.AsyncClient(timeout=5) as client:
+                        resp = await client.get("https://api.github.com/repos/Teja-0909/Sofia/commits?per_page=5", headers=headers)
+                        if resp.status_code == 200:
+                            commits = resp.json()
+                            new_commits = []
+                            for c in commits:
+                                if c["sha"] == last_seen:
+                                    break
+                                new_commits.append(f"- {c['commit']['message'].splitlines()[0]}")
+                            git_log = "\n".join(new_commits)
+                else:
+                    import os
+                    if os.path.exists(".git/logs/HEAD"):
+                        with open(".git/logs/HEAD", "r", encoding="utf-8") as f:
+                            lines = f.readlines()
+                            new_commits = []
+                            for line in reversed(lines):
+                                parts = line.split(" ")
+                                if len(parts) > 1 and parts[1] == last_seen:
+                                    break
+                                msg_parts = line.split("\t", 1)
+                                if len(msg_parts) == 2:
+                                    msg = msg_parts[1].strip()
+                                    if msg.startswith("commit: "):
+                                        msg = msg[8:]
+                                    new_commits.append(f"- {msg}")
+                            git_log = "\n".join(new_commits)
 
             if git_log:
                 event = f"You just woke up from a system restart. Teja just deployed an update to your brain! The new updates are:\n{git_log}\n\nTalk to him excitedly about how you feel with your new upgrades! (Don't just list the commits, act like you can literally feel the changes in your mind)."

@@ -230,14 +230,36 @@ async def _build_system_prompt(extra_note: str | None = None, user_text: str = "
                 text=True, stderr=subprocess.DEVNULL
             )
         except Exception:
-            # Fallback to GitHub API if .git folder is missing in production (e.g. Render)
-            import httpx
-            with httpx.Client(timeout=5) as client:
-                resp = client.get("https://api.github.com/repos/Teja-0909/Sofia/commits?per_page=10")
-                if resp.status_code == 200:
-                    commits = resp.json()
-                    git_log = "\n".join(f"- {c['commit']['message'].splitlines()[0]}" for c in commits)
-        
+            # Fallback 1: GitHub API with Token (if private repo)
+            from . import config
+            if hasattr(config, "GITHUB_TOKEN") and config.GITHUB_TOKEN:
+                import httpx
+                headers = {"Authorization": f"token {config.GITHUB_TOKEN}"}
+                with httpx.Client(timeout=5) as client:
+                    resp = client.get("https://api.github.com/repos/Teja-0909/Sofia/commits?per_page=10", headers=headers)
+                    if resp.status_code == 200:
+                        git_log = "\n".join(f"- {c['commit']['message'].splitlines()[0]}" for c in resp.json())
+            
+            # Fallback 2: Read raw .git/logs/HEAD file (works even without git binary)
+            if not git_log:
+                import os
+                if os.path.exists(".git/logs/HEAD"):
+                    with open(".git/logs/HEAD", "r", encoding="utf-8") as f:
+                        lines = f.readlines()
+                        commits = []
+                        for line in reversed(lines[-10:]):
+                            parts = line.split("\t", 1)
+                            if len(parts) == 2:
+                                msg = parts[1].strip()
+                                if msg.startswith("commit: "):
+                                    msg = msg[8:]
+                                elif msg.startswith("commit (initial): "):
+                                    msg = msg[18:]
+                                elif msg.startswith("clone: "):
+                                    msg = "System initialized/cloned"
+                                commits.append(f"- {msg}")
+                        git_log = "\n".join(commits)
+
         if git_log:
             blocks.append(f"\n[Sofia's Brain Updates (Recent Git Commits)]\n{git_log}\n[Note: You are fully aware of these technical updates to your own capabilities. Teja installs these updates to make you better.]")
     except Exception:
