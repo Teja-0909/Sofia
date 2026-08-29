@@ -234,7 +234,7 @@ async def generate_image_bytes(visual_prompt: str) -> bytes | None:
         async with httpx.AsyncClient(timeout=35, follow_redirects=True) as client:
             resp = await client.get(url, headers=headers)
             if resp.status_code == 200 and len(resp.content) > 5000:
-                logger.info("Successfully generated %s bytes image (model: %s, res: %sx%s, seed: %s) for prompt: %s", len(resp.content), model_name, width, height, seed, visual_prompt[:50])
+                logger.info("Successfully generated %s bytes image (model: %s, seed: %s) for prompt: %s", len(resp.content), model_name, seed, visual_prompt[:50])
                 return resp.content
             else:
                 return b"DEBUG_ERROR: Pollinations HTTP " + str(resp.status_code).encode() + b" Len: " + str(len(resp.content)).encode()
