@@ -181,7 +181,11 @@ async def generate_image_hf(visual_prompt: str, token: str) -> bytes | None:
         for model in models:
             url = f"https://router.huggingface.co/hf-inference/models/{model}"
             try:
-                resp = await client.post(url, headers=headers, json={"inputs": visual_prompt})
+                payload = {
+                    "inputs": visual_prompt,
+                    "parameters": {"width": 1024, "height": 576}
+                }
+                resp = await client.post(url, headers=headers, json=payload)
                 if resp.status_code == 200 and len(resp.content) > 5000:
                     content_type = resp.headers.get("content-type", "")
                     if "image" in content_type or not resp.content.startswith(b"{"):
