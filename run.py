@@ -41,6 +41,12 @@ async def run_bot() -> None:
         await app.updater.start_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=False)
         logger.info("Sofia bot is online, listening for Telegram messages...")
 
+        try:
+            from app import triggers
+            asyncio.create_task(triggers.check_for_updates())
+        except Exception as e:
+            logger.error("Update check failed: %s", e)
+
         stop_event = asyncio.Event()
         try:
             await stop_event.wait()

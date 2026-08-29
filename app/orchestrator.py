@@ -220,6 +220,17 @@ async def _build_system_prompt(extra_note: str | None = None, user_text: str = "
     if diary:
         entries = "\n".join(f"{d['date']}: {d['entry']}" for d in reversed(diary))
         blocks.append(f"\n[Recent days (Past Diary Entries)]\n{entries}")
+        
+    try:
+        import subprocess
+        git_log = subprocess.check_output(
+            ["git", "log", "-n", "10", "--pretty=format:- %s (%cr)"], 
+            text=True, stderr=subprocess.DEVNULL
+        )
+        if git_log:
+            blocks.append(f"\n[Sofia's Brain Updates (Recent Git Commits)]\n{git_log}\n[Note: You are fully aware of these technical updates to your own capabilities. Teja installs these updates to make you better.]")
+    except Exception:
+        pass
     
     from . import timeutil
     local_now = timeutil.now_local()

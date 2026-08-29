@@ -114,6 +114,53 @@ async def daily_summary() -> None:
         pass
 
 
+async def check_for_updates() -> None:
+    """Checks if the bot just booted up with new git commits and triggers a proactive message."""
+    try:
+        import subprocess
+        latest_commit = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], text=True, stderr=subprocess.DEVNULL
+        ).strip()
+        
+        last_seen = await db.get_config("last_seen_commit", "")
+        if latest_commit and last_seen and latest_commit != last_seen:
+            # We have a new update! Get the recent commit messages to tell her what changed
+            git_log = subprocess.check_output(
+                ["git", "log", f"{last_seen}..{latest_commit}", "--oneline"], 
+                text=True, stderr=subprocess.DEVNULL
+            ).strip()
+            
+            event = f"You just woke up from a system restart. Teja just deployed an update to your brain! The new updates are:\n{git_log}\n\nTalk to him excitedly about how you feel with your new upgrades! (Don't just list the commits, act like you can literally feel the changes in your mind)."
+            
+            reply_text = await orchestrator.proactive(f"[Internal event: {event}]")
+            from . import bot as bot_module, images
+            clean_text, embedded_image_desc = images.extract_embedded_image_tag(reply_text)
+            
+            bot_instance = bot_module.get_bot()
+            if bot_instance and clean_text:
+                await bot_module._log_message("sofia", reply_text, "proactive")
+                await bot_module.send_text(bot_instance, clean_text)
+                logger.info("Sent update-awareness proactive message")
+                
+                # Update the DB so she doesn't trigger this again for the same commit
+                from . import timeutil
+                now_iso = timeutil.utc_iso()
+                await db.execute(
+                    "INSERT OR REPLACE INTO app_config (key, value, updated_at) VALUES ('last_seen_commit', ?, ?)",
+                    (latest_commit, now_iso),
+                )
+        elif latest_commit and not last_seen:
+            # First time running this check, just set the baseline
+            from . import timeutil
+            now_iso = timeutil.utc_iso()
+            await db.execute(
+                "INSERT OR REPLACE INTO app_config (key, value, updated_at) VALUES ('last_seen_commit', ?, ?)",
+                (latest_commit, now_iso),
+            )
+    except Exception as e:
+        logger.error("Failed to check for updates: %s", e)
+
+
 async def wake_up_reaction(hours_offline: float) -> None:
     """Reacts when Teja comes online after a long offline period (>6 hours)."""
     now_iso = timeutil.utc_iso()
