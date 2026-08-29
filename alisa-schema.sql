@@ -122,3 +122,12 @@ CREATE TABLE IF NOT EXISTS app_config (
     value      TEXT NOT NULL,
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
+
+CREATE TABLE IF NOT EXISTS conversation_summaries (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    summary_text    TEXT NOT NULL,
+    until_timestamp TEXT NOT NULL,
+    embedding       TEXT,
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_conv_summ_ts ON conversation_summaries(until_timestamp);

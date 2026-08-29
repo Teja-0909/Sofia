@@ -153,6 +153,23 @@ async def init() -> None:
             await client.execute("CREATE INDEX IF NOT EXISTS idx_proactive_due ON proactive_messages(status, due_time)")
         except Exception:
             pass
+        try:
+            await client.execute("""
+            CREATE TABLE IF NOT EXISTS conversation_summaries (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                summary_text    TEXT NOT NULL,
+                until_timestamp TEXT NOT NULL,
+                embedding       TEXT,
+                created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+            )
+            """)
+            await client.execute("CREATE INDEX IF NOT EXISTS idx_conv_summ_ts ON conversation_summaries(until_timestamp)")
+        except Exception:
+            pass
+        try:
+            await client.execute("ALTER TABLE conversation_summaries ADD COLUMN embedding TEXT")
+        except Exception:
+            pass
         logger.info("Turso cloud database initialized successfully")
     else:
         conn = await connect()
@@ -182,6 +199,23 @@ async def init() -> None:
                 )
                 """)
                 await conn.execute("CREATE INDEX IF NOT EXISTS idx_proactive_due ON proactive_messages(status, due_time)")
+            except Exception:
+                pass
+            try:
+                await conn.execute("""
+                CREATE TABLE IF NOT EXISTS conversation_summaries (
+                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                    summary_text    TEXT NOT NULL,
+                    until_timestamp TEXT NOT NULL,
+                    embedding       TEXT,
+                    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+                )
+                """)
+                await conn.execute("CREATE INDEX IF NOT EXISTS idx_conv_summ_ts ON conversation_summaries(until_timestamp)")
+            except Exception:
+                pass
+            try:
+                await conn.execute("ALTER TABLE conversation_summaries ADD COLUMN embedding TEXT")
             except Exception:
                 pass
             await conn.commit()

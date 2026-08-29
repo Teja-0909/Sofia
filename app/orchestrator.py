@@ -14,13 +14,27 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "search_web",
-            "description": "Searches the live internet for up-to-date facts, news, and information. Use this to answer questions about the current world.",
+            "description": "Searches the web and returns a list of titles, snippets, and URLs. Use this first to find relevant links.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "query": {"type": "string", "description": "The search query (e.g. 'F1 race results 2024')"}
                 },
                 "required": ["query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_webpage",
+            "description": "Reads the full content of a specific webpage URL. Use this to dive deeper into a link found via search_web.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "The full URL of the page to read (e.g. 'https://en.wikipedia.org/wiki/...')"}
+                },
+                "required": ["url"]
             }
         }
     },
@@ -72,6 +86,7 @@ async def _build_system_prompt(extra_note: str | None = None, user_text: str = "
 
     top_k = int(await db.get_config("memory_top_k", "30"))
     memories = []
+    past_conversations = []
     
     if user_text:
         try:
@@ -110,6 +125,41 @@ async def _build_system_prompt(extra_note: str | None = None, user_text: str = "
                 
                 scored_mems.sort(key=lambda x: x[0], reverse=True)
                 memories = [x[1] for x in scored_mems[:top_k]]
+
+                # Conversation Summaries Vector Search
+                try:
+                    import datetime as dt_m
+                    from . import timeutil
+                    cutoff_dt = timeutil.utc_now() - dt_m.timedelta(hours=48)
+                    cutoff_iso = timeutil.utc_iso(cutoff_dt)
+
+                    all_summaries = await db.fetch_all("SELECT summary_text, until_timestamp, embedding FROM conversation_summaries WHERE until_timestamp < ?", (cutoff_iso,))
+                    scored_summaries = []
+                    for row in all_summaries:
+                        try:
+                            emb = json.loads(row["embedding"]) if row["embedding"] else []
+                            if emb and len(emb) == len(user_embedding):
+                                import math
+                                dot = sum(a*b for a, b in zip(user_embedding, emb))
+                                normA = math.sqrt(sum(a*a for a in user_embedding))
+                                normB = math.sqrt(sum(b*b for b in emb))
+                                sim = dot / (normA * normB) if normA and normB else 0.0
+                            else:
+                                sim = 0.0
+                            
+                            t_val = dt_m.datetime.fromisoformat(row["until_timestamp"].replace("Z", "+00:00"))
+                            days_old = (dt_m.datetime.now(dt_m.timezone.utc) - t_val).total_seconds() / 86400
+                            time_factor = 1.0 / (1.0 + days_old / 30.0)
+                            
+                            final_score = sim * time_factor
+                            scored_summaries.append((final_score, row))
+                        except Exception:
+                            pass
+                    
+                    scored_summaries.sort(key=lambda x: x[0], reverse=True)
+                    past_conversations = [x[1] for x in scored_summaries[:3] if x[0] > 0.4]
+                except Exception as e:
+                    logger.warning("Vector summary retrieval failed: %s", e)
         except Exception as e:
             logger.warning("Vector memory retrieval failed: %s", e)
     
@@ -142,6 +192,11 @@ async def _build_system_prompt(extra_note: str | None = None, user_text: str = "
     if memories:
         lines = "\n".join(f"- [{m['category']}] {m['content']}" for m in memories)
         blocks.append(f"\n[Things you remember about Teja (Permanent Memories)]\n{lines}")
+    
+    if past_conversations:
+        from . import timeutil
+        lines = "\n".join(f"- {timeutil.format_local(c['until_timestamp'])}: {c['summary_text']}" for c in past_conversations)
+        blocks.append(f"\n[Relevant Past Conversations (Vector Retrieved)]\n{lines}")
     if diary:
         entries = "\n".join(f"{d['date']}: {d['entry']}" for d in reversed(diary))
         blocks.append(f"\n[Recent days (Past Diary Entries)]\n{entries}")
@@ -227,27 +282,59 @@ async def _build_system_prompt(extra_note: str | None = None, user_text: str = "
 
 
 async def _history(limit: int = 200) -> list[dict]:
-    """Fetches full 48-hour conversation history so Sofia seamlessly remembers morning/afternoon context."""
-    rows = await db.fetch_all(
+    """Fetches full 48-hour conversation history, using summaries for older blocks to save tokens."""
+    import datetime as dt_m
+    from . import timeutil
+
+    cutoff_dt = timeutil.utc_now() - dt_m.timedelta(hours=48)
+    cutoff_iso = timeutil.utc_iso(cutoff_dt)
+
+    summaries = await db.fetch_all(
+        """
+        SELECT summary_text, until_timestamp FROM conversation_summaries
+        WHERE until_timestamp >= ?
+        ORDER BY until_timestamp ASC
+        """,
+        (cutoff_iso,)
+    )
+
+    messages = []
+    last_summary_ts = cutoff_iso
+
+    for s in summaries:
+        messages.append({
+            "role": "system",
+            "content": f"[Summary of earlier conversation up to {timeutil.format_local(s['until_timestamp'])}]:\n{s['summary_text']}"
+        })
+        last_summary_ts = s["until_timestamp"]
+
+    raw_rows = await db.fetch_all(
         """
         SELECT role, content FROM conversation_log
-        WHERE timestamp >= datetime('now', '-48 hours')
+        WHERE timestamp > ?
         ORDER BY timestamp ASC
         LIMIT ?
         """,
-        (limit,),
+        (last_summary_ts, limit),
     )
-    # If fewer than 30 messages in last 48h, fall back to recent messages across all time
-    if len(rows) < 30:
-        recent_rows = await db.fetch_all(
-            "SELECT role, content FROM conversation_log ORDER BY timestamp DESC LIMIT 50"
-        )
-        rows = list(reversed(recent_rows))
 
-    return [
-        {"role": "assistant" if r["role"] in ("sofia", "alisa") else "user", "content": r["content"]}
-        for r in rows
-    ]
+    for r in raw_rows:
+        messages.append({
+            "role": "assistant" if r["role"] in ("sofia", "alisa") else "user",
+            "content": r["content"]
+        })
+
+    if not messages:
+        recent_rows = await db.fetch_all(
+            "SELECT role, content FROM conversation_log ORDER BY timestamp DESC LIMIT 10"
+        )
+        for r in reversed(recent_rows):
+            messages.append({
+                "role": "assistant" if r["role"] in ("sofia", "alisa") else "user",
+                "content": r["content"]
+            })
+
+    return messages
 
 
 LAZY_CODE_PATTERNS = [
@@ -316,7 +403,7 @@ async def _generate(system: str, messages: list[dict], user_text: str = "") -> s
     from . import tasks as tasks_module
 
     current_messages = list(messages)
-    max_tool_turns = 3
+    max_tool_turns = 6
     
     for _ in range(max_tool_turns):
         text, tool_calls = await llm.chat(system, current_messages, tools=TOOLS)
@@ -337,9 +424,15 @@ async def _generate(system: str, messages: list[dict], user_text: str = "") -> s
                 args = json.loads(func["arguments"])
                 result = ""
                 if name == "search_web":
-                    result = await search_module.deep_research(args["query"])
-                    if not result:
+                    search_results = await search_module.search_web(args["query"])
+                    if not search_results:
                         result = "No useful results found for this query."
+                    else:
+                        result = "\n".join(f"[{i+1}] {r['title']}\nURL: {r['url']}\nSnippet: {r['snippet']}\n" for i, r in enumerate(search_results))
+                elif name == "read_webpage":
+                    result = await search_module.fetch_page_content(args["url"], max_chars=4000)
+                    if not result:
+                        result = "Could not fetch content from this URL or page is empty."
                 elif name == "schedule_proactive_message":
                     await tasks_module.schedule_proactive_message(args["message"], args["due_time"])
                     result = "Successfully scheduled the proactive message."

@@ -1,3 +1,4 @@
+import datetime as dt
 import json
 import logging
 import re
@@ -222,3 +223,63 @@ async def try_handle_correction(user_text: str) -> dict | None:
     except Exception as exc:
         logger.warning("Error during memory correction matching: %s", exc)
         return None
+
+async def summarize_old_messages() -> None:
+    """Summarizes chat history older than 6 hours into conversation_summaries."""
+    cutoff_dt = timeutil.utc_now() - dt.timedelta(hours=6)
+    cutoff_iso = timeutil.utc_iso(cutoff_dt)
+
+    last_summary = await db.fetch_one("SELECT until_timestamp FROM conversation_summaries ORDER BY id DESC LIMIT 1")
+    start_ts = last_summary["until_timestamp"] if last_summary else "1970-01-01T00:00:00Z"
+
+    rows = await db.fetch_all(
+        """
+        SELECT role, content, timestamp FROM conversation_log
+        WHERE timestamp > ? AND timestamp <= ?
+        ORDER BY timestamp ASC
+        """,
+        (start_ts, cutoff_iso)
+    )
+
+    if not rows:
+        return
+
+    if not any(r["role"] in ("user", "sofia") for r in rows):
+        await db.execute(
+            "INSERT INTO conversation_summaries (summary_text, until_timestamp) VALUES (?, ?)",
+            ("[No active conversation in this period]", rows[-1]["timestamp"])
+        )
+        return
+
+    transcript = "\n".join(f"{r['role']}: {r['content']}" for r in rows)
+    prompt = (
+        "Please summarize this chunk of conversation history objectively and concisely. "
+        "Keep all important facts, commitments, and emotional context. If there is a mix of topics, summarize them clearly.\n\n"
+        f"Transcript:\n{transcript}"
+    )
+
+    try:
+        raw, _ = await llm.chat(
+            "You are a helpful context summarizer.",
+            [{"role": "user", "content": prompt}],
+        )
+        if raw:
+            last_ts = rows[-1]["timestamp"]
+            clean_summary = raw.strip()
+            
+            embedding_json = "[]"
+            try:
+                embedding_vector = await llm.embed_text(clean_summary)
+                if embedding_vector:
+                    embedding_json = json.dumps(embedding_vector)
+            except Exception as e:
+                logger.warning(f"Failed to generate embedding for summary: {e}")
+
+            await db.execute(
+                "INSERT INTO conversation_summaries (summary_text, until_timestamp, embedding) VALUES (?, ?, ?)",
+                (clean_summary, last_ts, embedding_json)
+            )
+            logger.info("Summarized %d messages up to %s", len(rows), last_ts)
+    except Exception as exc:
+        logger.warning("Failed to summarize old messages: %s", exc)
+

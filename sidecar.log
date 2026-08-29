@@ -1,0 +1,1160 @@
+20:42:30 [INFO] Sofia Desktop Presence Sidecar started
+20:42:30 [INFO] Syncing with: https://sofia-va07.onrender.com/api/presence
+20:42:30 [INFO] Presence: App='File Explorer' | Title='Startup - File Explorer' | Idle=0 min
+20:43:31 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+20:45:43 [INFO] Presence: App='Google Chrome' | Title='teja-0909 | Turso App - Google Chrome' | Idle=0 min
+20:46:44 [INFO] Presence: App='Discord' | Title='Lobby | Anand Sagar's server - Discord' | Idle=0 min
+20:48:46 [INFO] Presence: App='Google Chrome' | Title='Praja-RTI · Voice-first RTI drafting, calmly done - Google Chrome' | Idle=0 min
+20:49:47 [INFO] Presence: App='Google Chrome' | Title='Sofia ・ Web Service ・ Render Dashboard - Google Chrome' | Idle=0 min
+20:50:48 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=0 min
+20:51:49 [INFO] Presence: App='Google Chrome' | Title='Praja-RTI · Voice-first RTI drafting, calmly done - Google Chrome' | Idle=0 min
+20:52:50 [INFO] Presence: App='Google Chrome' | Title='sagarkothapalli/rit: rit - Google Chrome' | Idle=0 min
+20:53:52 [INFO] Presence: App='Visual Studio Code' | Title='GitHub Repository Code Re...' | Idle=0 min
+20:55:54 [INFO] Presence: App='Discord' | Title='Pvt | Anand Sagar's server - Discord' | Idle=0 min
+20:56:55 [INFO] Presence: App='Google Chrome' | Title='Praja-RTI · Voice-first RTI drafting, calmly done - Google Chrome' | Idle=0 min
+20:57:56 [INFO] Presence: App='Visual Studio Code' | Title='GitHub Repository Code Re...' | Idle=0 min
+20:58:58 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+20:59:58 [INFO] Presence: App='Google Chrome' | Title='Praja-RTI · Voice-first RTI drafting, calmly done - Google Chrome' | Idle=0 min
+21:02:01 [INFO] Presence: App='WhatsApp' | Title='WhatsApp' | Idle=0 min
+21:05:04 [INFO] Presence: App='Google Chrome' | Title='Praja-RTI · Voice-first RTI drafting, calmly done - Google Chrome' | Idle=0 min
+21:08:06 [INFO] Presence: App='WhatsApp' | Title='WhatsApp' | Idle=0 min
+21:10:08 [INFO] Presence: App='Google Chrome' | Title='Praja-RTI · Voice-first RTI drafting, calmly done - Google Chrome' | Idle=0 min
+21:12:10 [INFO] Presence: App='Discord' | Title='Lobby | Pavan's Room - Discord' | Idle=0 min
+21:14:11 [INFO] Presence: App='Discord' | Title='Quests - Discord' | Idle=0 min
+21:15:12 [INFO] Presence: App='Discord' | Title='Lobby | Pavan's Room - Discord' | Idle=0 min
+21:17:14 [INFO] Presence: App='Marvel' | Title='Marvel Rivals' | Idle=0 min
+21:18:15 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=0 min
+21:19:16 [INFO] Presence: App='Marvel' | Title='Marvel Rivals' | Idle=0 min
+21:21:18 [INFO] Presence: App='Discord' | Title='Lobby | Pavan's Room - Discord' | Idle=0 min
+21:22:20 [INFO] Presence: App='Marvel' | Title='Marvel Rivals' | Idle=0 min
+23:03:19 [INFO] Presence: App='Desktop' | Title='' | Idle=0 min
+00:30:37 [WARNING] Could not reach Sofia endpoint (https://sofia-va07.onrender.com/api/presence): <urlopen error [WinError 10065] A socket operation was attempted to an unreachable host>
+00:31:38 [INFO] Presence: App='Genshin' | Title='Genshin Impact' | Idle=0 min
+00:40:46 [INFO] Presence: App='Google Chrome' | Title='Praja-RTI · Voice-first RTI drafting, calmly done - Google Chrome' | Idle=0 min
+00:41:48 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=0 min
+00:48:56 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=6 min
+00:49:57 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=7 min
+00:50:58 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=8 min
+00:51:59 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=9 min
+00:53:01 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=10 min
+00:57:04 [INFO] Presence: App='WhatsApp' | Title='WhatsApp' | Idle=0 min
+00:58:05 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=0 min
+01:01:08 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+01:02:09 [INFO] Presence: App='Discord' | Title='@Anand Sagar - Discord' | Idle=0 min
+01:03:10 [INFO] Presence: App='Google Chrome' | Title='RTI Online :: Home | Submit RTI Request | Submit RTI First Appeal | View RTI Status | RTI FAQ - Google Chrome' | Idle=0 min
+01:04:11 [INFO] Presence: App='Google Chrome' | Title='Praja RTI | Independent citizen assistance - Google Chrome' | Idle=0 min
+01:06:13 [INFO] Presence: App='Google Chrome' | Title='Understanding the RTI 30-Day Deadline - Google Gemini - Google Chrome' | Idle=0 min
+01:09:16 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+01:10:17 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=0 min
+01:11:17 [INFO] Presence: App='Google Chrome' | Title='Rate Limit | Google AI Studio - Google Chrome' | Idle=0 min
+01:12:19 [INFO] Presence: App='Google Chrome' | Title='Understanding the RTI 30-Day Deadline - Google Gemini - Google Chrome' | Idle=0 min
+01:15:21 [INFO] Presence: App='Google Chrome' | Title='Praja RTI | Independent citizen assistance - Google Chrome' | Idle=0 min
+01:16:22 [INFO] Presence: App='deep-kayak-z3ek.here.now' | Title='deep-kayak-z3ek.here.now wants to' | Idle=0 min
+01:17:23 [INFO] Presence: App='Google Chrome' | Title='Praja RTI | Independent citizen assistance - Google Chrome' | Idle=0 min
+01:18:24 [INFO] Presence: App='Google Chrome' | Title='Understanding the RTI 30-Day Deadline - Google Gemini - Google Chrome' | Idle=0 min
+01:19:25 [INFO] Presence: App='Google Chrome' | Title='Praja RTI | Independent citizen assistance - Google Chrome' | Idle=0 min
+01:24:30 [INFO] Presence: App='Notepad' | Title='praja-rti-request.txt - Notepad' | Idle=0 min
+01:25:31 [INFO] Presence: App='Google Chrome' | Title='Praja RTI | Independent citizen assistance - Google Chrome' | Idle=0 min
+01:34:51 [INFO] Presence: App='Google Chrome' | Title='Praja RTI | Independent citizen assistance - Google Chrome' | Idle=6 min
+01:35:52 [INFO] Presence: App='Google Chrome' | Title='Praja RTI | Independent citizen assistance - Google Chrome' | Idle=7 min
+01:36:53 [INFO] Presence: App='Google Chrome' | Title='Praja RTI | Independent citizen assistance - Google Chrome' | Idle=8 min
+01:37:55 [INFO] Presence: App='Google Chrome' | Title='Praja RTI | Independent citizen assistance - Google Chrome' | Idle=9 min
+01:38:55 [INFO] Presence: App='Google Chrome' | Title='Praja RTI | Independent citizen assistance - Google Chrome' | Idle=10 min
+01:39:56 [INFO] Presence: App='Google Chrome' | Title='Praja RTI | Independent citizen assistance - Google Chrome' | Idle=11 min
+01:40:57 [INFO] Presence: App='Google Chrome' | Title='Praja RTI | Independent citizen assistance - Google Chrome' | Idle=12 min
+01:41:58 [INFO] Presence: App='Google Chrome' | Title='Praja RTI | Independent citizen assistance - Google Chrome' | Idle=13 min
+01:42:59 [INFO] Presence: App='Google Chrome' | Title='Praja RTI | Independent citizen assistance - Google Chrome' | Idle=14 min
+01:44:01 [INFO] Presence: App='Discord' | Title='Pvt | Anand Sagar's server - Discord' | Idle=0 min
+01:47:04 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+01:48:05 [INFO] Presence: App='Desktop' | Title='' | Idle=0 min
+01:49:06 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=0 min
+01:50:17 [INFO] Presence: App='Discord' | Title='Pvt | Anand Sagar's server - Discord' | Idle=0 min
+01:51:18 [INFO] Presence: App='Google Chrome' | Title='Praja RTI | Independent citizen assistance - Google Chrome' | Idle=0 min
+01:53:20 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=0 min
+01:54:21 [INFO] Presence: App='Discord' | Title='Pvt | Anand Sagar's server - Discord' | Idle=0 min
+01:55:21 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+01:56:22 [INFO] Presence: App='Google Chrome' | Title='Praja RTI | Independent citizen assistance - Google Chrome' | Idle=0 min
+01:57:23 [INFO] Presence: App='Discord' | Title='Pvt | Anand Sagar's server - Discord' | Idle=0 min
+01:58:24 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=0 min
+01:59:25 [INFO] Presence: App='Visual Studio Code' | Title='GitHub Repository Code Re...' | Idle=0 min
+02:01:26 [INFO] Presence: App='H&M's' | Title='H&M's Dil Chahta Hai drop' | Idle=0 min
+02:02:27 [INFO] Presence: App='Visual Studio Code' | Title='GitHub Repository Code Re...' | Idle=0 min
+02:03:28 [INFO] Presence: App='Discord' | Title='Pvt | Anand Sagar's server - Discord' | Idle=0 min
+02:04:30 [INFO] Presence: App='Visual Studio Code' | Title='GitHub Repository Code Re...' | Idle=0 min
+02:05:31 [INFO] Presence: App='Google Chrome' | Title='Praja RTI | Independent citizen assistance - Google Chrome' | Idle=0 min
+02:06:32 [INFO] Presence: App='Visual Studio Code' | Title='GitHub Repository Code Re...' | Idle=0 min
+02:07:33 [INFO] Presence: App='Google Chrome' | Title='Praja RTI | Independent citizen assistance - Google Chrome' | Idle=0 min
+02:11:38 [INFO] Presence: App='Visual Studio Code' | Title='GitHub Repository Code Re...' | Idle=0 min
+02:12:39 [INFO] Presence: App='Google Chrome' | Title='Praja RTI | Independent citizen assistance - Google Chrome' | Idle=0 min
+02:14:41 [INFO] Presence: App='Google Chrome' | Title='Understanding the RTI 30-Day Deadline - Google Gemini - Google Chrome' | Idle=0 min
+02:15:42 [INFO] Presence: App='Visual Studio Code' | Title='GitHub Repository Code Re...' | Idle=0 min
+02:19:46 [INFO] Presence: App='Google Chrome' | Title='Praja RTI | Independent citizen assistance - Google Chrome' | Idle=0 min
+02:20:47 [INFO] Presence: App='Discord' | Title='Pvt | Anand Sagar's server - Discord' | Idle=0 min
+02:21:48 [INFO] Presence: App='Google Chrome' | Title='Understanding the RTI 30-Day Deadline - Google Gemini - Google Chrome' | Idle=0 min
+02:22:48 [INFO] Presence: App='Google Chrome' | Title='Praja RTI | Independent citizen assistance - Google Chrome' | Idle=0 min
+02:23:49 [INFO] Presence: App='Visual Studio Code' | Title='GitHub Repository Code Re...' | Idle=0 min
+02:24:50 [INFO] Presence: App='Discord' | Title='Pvt | Anand Sagar's server - Discord' | Idle=0 min
+02:25:51 [INFO] Presence: App='Google Chrome' | Title='Praja RTI | Independent citizen assistance - Google Chrome' | Idle=0 min
+02:26:52 [INFO] Presence: App='Visual Studio Code' | Title='GitHub Repository Code Re...' | Idle=0 min
+02:30:55 [INFO] Presence: App='Google Chrome' | Title='Praja RTI | Independent citizen assistance - Google Chrome' | Idle=0 min
+02:36:01 [INFO] Presence: App='Discord' | Title='Pvt | Anand Sagar's server - Discord' | Idle=0 min
+02:41:06 [INFO] Presence: App='Google Chrome' | Title='Praja RTI | Independent citizen assistance - Google Chrome' | Idle=0 min
+02:42:08 [INFO] Presence: App='Discord' | Title='Pvt | Anand Sagar's server - Discord' | Idle=0 min
+02:44:10 [INFO] Presence: App='Visual Studio Code' | Title='GitHub Repository Code Re...' | Idle=0 min
+02:47:14 [INFO] Presence: App='Discord' | Title='Pvt | Anand Sagar's server - Discord' | Idle=0 min
+03:08:33 [INFO] Presence: App='Google Chrome' | Title='Praja RTI | Independent citizen assistance - Google Chrome' | Idle=0 min
+03:09:34 [INFO] Presence: App='Discord' | Title='Pvt | Anand Sagar's server - Discord' | Idle=0 min
+03:10:35 [INFO] Presence: App='Google Chrome' | Title='Praja RTI | Independent citizen assistance - Google Chrome' | Idle=0 min
+03:11:36 [INFO] Presence: App='Discord' | Title='Pvt | Anand Sagar's server - Discord' | Idle=0 min
+03:18:44 [INFO] Presence: App='Google Chrome' | Title='Praja RTI | Independent citizen assistance - Google Chrome' | Idle=0 min
+03:25:50 [INFO] Presence: App='Discord' | Title='Pvt | Anand Sagar's server - Discord' | Idle=0 min
+03:31:55 [INFO] Presence: App='Google Chrome' | Title='Rate Limit | Google AI Studio - Google Chrome' | Idle=0 min
+03:33:57 [INFO] Presence: App='Google Chrome' | Title='New Tab - Google Chrome' | Idle=0 min
+03:34:58 [INFO] Presence: App='Discord' | Title='Pvt | Anand Sagar's server - Discord' | Idle=0 min
+03:35:59 [INFO] Presence: App='Google Chrome' | Title='Rate Limit | Google AI Studio - Google Chrome' | Idle=0 min
+03:37:00 [INFO] Presence: App='Discord' | Title='Pvt | Anand Sagar's server - Discord' | Idle=0 min
+03:48:12 [INFO] Presence: App='Discord' | Title='Pvt | Anand Sagar's server - Discord' | Idle=6 min
+03:49:13 [INFO] Presence: App='Discord' | Title='Pvt | Anand Sagar's server - Discord' | Idle=7 min
+03:50:14 [INFO] Presence: App='Discord' | Title='Pvt | Anand Sagar's server - Discord' | Idle=8 min
+03:51:15 [INFO] Presence: App='Discord' | Title='Pvt | Anand Sagar's server - Discord' | Idle=9 min
+03:52:16 [INFO] Presence: App='Discord' | Title='Pvt | Anand Sagar's server - Discord' | Idle=10 min
+03:53:17 [INFO] Presence: App='Discord' | Title='Pvt | Anand Sagar's server - Discord' | Idle=11 min
+03:54:18 [INFO] Presence: App='Discord' | Title='Pvt | Anand Sagar's server - Discord' | Idle=12 min
+04:00:23 [INFO] Presence: App='Google Chrome' | Title='Praja RTI | Independent citizen assistance - Google Chrome' | Idle=0 min
+04:01:24 [INFO] Presence: App='Discord' | Title='Pvt | Anand Sagar's server - Discord' | Idle=0 min
+04:02:25 [INFO] Presence: App='Google Chrome' | Title='Praja RTI | Independent citizen assistance - Google Chrome' | Idle=0 min
+04:04:27 [INFO] Presence: App='Discord' | Title='Pvt | Anand Sagar's server - Discord' | Idle=0 min
+04:07:30 [INFO] Presence: App='Google Chrome' | Title='teja-0909 | Turso App - Google Chrome' | Idle=0 min
+04:10:34 [INFO] Presence: App='Google Chrome' | Title='telegram - Google Search - Google Chrome' | Idle=0 min
+04:16:41 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+04:17:42 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=0 min
+04:18:43 [INFO] Presence: App='Google Chrome' | Title='Google Gemini - Google Chrome' | Idle=0 min
+04:19:44 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=0 min
+04:21:46 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+04:22:48 [INFO] Presence: App='Google Chrome' | Title='Telegram Bot Features - Google Chrome' | Idle=0 min
+04:24:51 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+04:26:53 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=0 min
+04:39:03 [INFO] Presence: App='Google Chrome' | Title='Sofia ・ Web Service ・ Render Dashboard - Google Chrome' | Idle=0 min
+04:41:05 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+04:47:10 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=0 min
+04:48:11 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+04:49:12 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=0 min
+04:52:14 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+04:57:20 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=0 min
+05:03:25 [INFO] Presence: App='Antigravity' | Title='Antigravity' | Idle=0 min
+05:04:26 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=0 min
+05:05:27 [INFO] Presence: App='Antigravity' | Title='Antigravity Setup' | Idle=0 min
+05:06:28 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=0 min
+05:15:36 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+05:24:43 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=0 min
+05:28:47 [INFO] Presence: App='Google Chrome' | Title='Sofia ・ Web Service ・ Render Dashboard - Google Chrome' | Idle=0 min
+05:29:48 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+05:30:49 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=0 min
+05:36:56 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=6 min
+05:37:57 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=7 min
+05:38:58 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=8 min
+05:39:59 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=9 min
+05:41:00 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=10 min
+05:42:01 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=11 min
+05:43:02 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=12 min
+05:44:03 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=13 min
+05:45:04 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=14 min
+05:46:05 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=15 min
+05:47:06 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=16 min
+05:48:06 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=17 min
+05:49:07 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=18 min
+05:50:08 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=19 min
+05:51:09 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=20 min
+05:52:10 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=21 min
+05:53:13 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=22 min
+05:54:14 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=23 min
+05:55:15 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=24 min
+05:56:16 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=25 min
+05:57:17 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=26 min
+05:58:18 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=27 min
+05:59:19 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=28 min
+06:00:20 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=29 min
+06:01:21 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=30 min
+06:02:22 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=31 min
+06:03:24 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=32 min
+06:04:25 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=33 min
+06:05:26 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=34 min
+06:06:27 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=35 min
+06:07:28 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=36 min
+06:08:29 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=37 min
+06:09:31 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=38 min
+06:10:32 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=39 min
+06:11:33 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=40 min
+06:12:34 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=41 min
+06:13:34 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=42 min
+06:14:35 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=43 min
+06:15:36 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=44 min
+06:16:37 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=45 min
+06:17:38 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=46 min
+06:18:39 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=47 min
+06:19:40 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=48 min
+06:20:40 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=49 min
+06:21:41 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=51 min
+06:22:42 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=52 min
+06:23:43 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=53 min
+06:24:44 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=54 min
+06:25:45 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=55 min
+06:26:45 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=56 min
+06:27:46 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=57 min
+06:28:47 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=58 min
+06:29:48 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=59 min
+06:30:49 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=60 min
+06:31:50 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=61 min
+06:32:51 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=62 min
+06:33:52 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=63 min
+06:34:53 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=64 min
+06:35:54 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=65 min
+06:36:56 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=66 min
+06:37:57 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=67 min
+06:38:58 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=68 min
+06:39:59 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=69 min
+06:41:01 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=70 min
+06:42:02 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=71 min
+06:43:03 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=72 min
+06:44:03 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=73 min
+06:45:04 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=74 min
+06:46:05 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=75 min
+06:47:06 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=76 min
+06:48:07 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=77 min
+06:49:08 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=78 min
+06:50:09 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=79 min
+06:51:10 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=80 min
+06:52:10 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=81 min
+06:53:11 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=82 min
+06:54:12 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=83 min
+06:55:13 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=84 min
+06:56:14 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=85 min
+06:57:15 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=86 min
+06:58:15 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=87 min
+06:59:16 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=88 min
+07:00:17 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=89 min
+07:01:18 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=90 min
+07:02:19 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=91 min
+07:03:20 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=92 min
+07:04:22 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=93 min
+07:05:23 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=94 min
+07:06:24 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=95 min
+07:07:25 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=96 min
+07:08:26 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=97 min
+07:09:27 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=98 min
+07:10:28 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=99 min
+07:11:29 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=100 min
+07:12:30 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=101 min
+07:13:32 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=102 min
+07:14:32 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=103 min
+07:15:33 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=104 min
+07:16:34 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=105 min
+07:17:35 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=106 min
+07:18:36 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=107 min
+07:19:37 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=108 min
+07:20:37 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=109 min
+07:21:38 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=110 min
+07:22:39 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=111 min
+07:23:40 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=112 min
+07:24:41 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=113 min
+07:25:42 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=115 min
+07:26:42 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=116 min
+07:27:43 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=117 min
+07:28:44 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=118 min
+07:29:45 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=119 min
+07:30:46 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=120 min
+07:31:47 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=121 min
+07:32:48 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=122 min
+07:33:49 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=123 min
+07:34:50 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=124 min
+07:35:51 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=125 min
+07:36:52 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=126 min
+07:37:53 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=127 min
+07:38:54 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=128 min
+07:39:56 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=129 min
+07:40:57 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=130 min
+07:41:58 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=131 min
+07:42:59 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=132 min
+07:44:00 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=133 min
+07:45:01 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=134 min
+07:46:02 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=135 min
+07:47:03 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=136 min
+07:48:04 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=137 min
+07:49:05 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=138 min
+07:50:06 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=139 min
+07:51:07 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=140 min
+07:52:07 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=141 min
+07:53:08 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=142 min
+07:54:09 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=143 min
+07:55:10 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=144 min
+07:56:11 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=145 min
+07:57:12 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=146 min
+07:58:13 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=147 min
+07:59:13 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=148 min
+08:00:14 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=149 min
+08:01:15 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=150 min
+08:02:16 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=151 min
+08:03:17 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=152 min
+08:04:18 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=153 min
+08:05:19 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=154 min
+08:06:21 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=155 min
+08:07:22 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=156 min
+08:08:23 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=157 min
+08:09:24 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=158 min
+08:10:25 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=159 min
+08:11:26 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=160 min
+08:12:27 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=161 min
+08:13:28 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=162 min
+08:14:30 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=163 min
+08:15:31 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=164 min
+08:16:32 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=165 min
+08:17:33 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=166 min
+08:18:33 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=167 min
+08:19:34 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=168 min
+08:20:35 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=169 min
+08:21:36 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=170 min
+08:22:37 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=171 min
+08:23:38 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=172 min
+08:24:39 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=173 min
+08:25:39 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=174 min
+08:26:40 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=175 min
+08:27:41 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=177 min
+08:28:42 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=178 min
+08:29:43 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=179 min
+08:30:44 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=180 min
+08:31:44 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=181 min
+08:32:45 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=182 min
+08:33:46 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=183 min
+08:34:48 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=184 min
+08:35:49 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=185 min
+08:36:50 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=186 min
+08:37:51 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=187 min
+08:38:52 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=188 min
+08:39:53 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=189 min
+08:40:55 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=190 min
+08:41:56 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=191 min
+08:42:57 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=192 min
+08:43:58 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=193 min
+08:44:59 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=194 min
+08:46:01 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=195 min
+08:47:02 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=196 min
+08:48:02 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=197 min
+08:49:04 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=198 min
+08:50:04 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=199 min
+08:51:05 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=200 min
+08:52:06 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=201 min
+08:53:07 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=202 min
+08:54:08 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=203 min
+08:55:09 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=204 min
+08:56:10 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=205 min
+08:57:10 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=206 min
+08:58:11 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=207 min
+08:59:12 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=208 min
+09:00:13 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=209 min
+09:01:14 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=210 min
+09:02:15 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=211 min
+09:03:16 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=212 min
+09:04:17 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=213 min
+09:05:18 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=214 min
+09:06:19 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=215 min
+09:07:20 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=216 min
+09:08:21 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=217 min
+09:09:23 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=218 min
+09:10:24 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=219 min
+09:11:25 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=220 min
+09:12:26 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=221 min
+09:13:27 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=222 min
+09:14:29 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=223 min
+09:15:30 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=224 min
+09:16:31 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=225 min
+09:17:32 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=226 min
+09:18:33 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=227 min
+09:19:34 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=228 min
+09:20:35 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=229 min
+09:21:36 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=230 min
+09:22:37 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=231 min
+09:23:37 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=232 min
+09:24:38 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=233 min
+09:25:39 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=234 min
+09:26:40 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=235 min
+09:27:41 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=237 min
+09:28:42 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=238 min
+09:29:43 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=239 min
+09:30:44 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=240 min
+09:31:45 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=241 min
+09:32:46 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=242 min
+09:33:47 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=243 min
+09:34:48 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=244 min
+09:35:49 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=245 min
+09:36:50 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=246 min
+09:37:52 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=247 min
+09:38:53 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=248 min
+09:39:54 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=249 min
+09:40:55 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=250 min
+09:41:56 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=251 min
+09:42:57 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=252 min
+09:43:59 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=253 min
+09:45:00 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=254 min
+09:46:01 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=255 min
+09:47:02 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=256 min
+09:48:03 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=257 min
+09:49:04 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=258 min
+09:50:04 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=259 min
+09:51:05 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=260 min
+09:52:06 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=261 min
+09:53:07 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=262 min
+09:54:11 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=263 min
+09:55:12 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=264 min
+09:56:13 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=265 min
+09:57:14 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=266 min
+09:58:15 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=267 min
+09:59:16 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=268 min
+10:00:17 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=269 min
+10:01:18 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=270 min
+10:02:19 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=271 min
+10:03:20 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=272 min
+10:04:21 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=273 min
+10:05:22 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=274 min
+10:06:24 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=275 min
+10:07:25 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=276 min
+10:08:26 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=277 min
+10:09:27 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=278 min
+10:10:29 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=279 min
+10:11:30 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=280 min
+10:12:31 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=281 min
+10:13:32 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=282 min
+10:14:33 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=283 min
+10:15:34 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=284 min
+10:16:35 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=285 min
+10:17:35 [INFO] Presence: App='Google Chrome' | Title='New Tab - Google Chrome' | Idle=0 min
+10:18:36 [INFO] Presence: App='Google Chrome' | Title='IITGN - IMS Payment Portal Service - Google Chrome' | Idle=0 min
+10:19:40 [INFO] Presence: App='Google Chrome' | Title='Payment Receipt for Order ID : PRF26082719 - 23110366@iitgn.ac.in - IIT Gandhinagar Mail - Google Chrome' | Idle=0 min
+10:20:41 [INFO] Presence: App='Google Chrome' | Title='IITGN - IMS Payment Portal Service - Google Chrome' | Idle=0 min
+10:21:41 [INFO] Presence: App='Google Chrome' | Title='Payment Receipt for Order ID : PRF26082719 - 23110366@iitgn.ac.in - IIT Gandhinagar Mail - Google Chrome' | Idle=0 min
+10:22:42 [INFO] Presence: App='Snipping' | Title='Snipping Tool Overlay' | Idle=0 min
+10:23:43 [INFO] Presence: App='Google Chrome' | Title='Student Portal - Google Chrome' | Idle=0 min
+10:24:44 [INFO] Presence: App='Microsoft' | Title='Microsoft OneDrive' | Idle=0 min
+10:25:45 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+10:26:46 [INFO] Presence: App='Google Chrome' | Title='teja-0909 | Turso App - Google Chrome' | Idle=0 min
+10:27:49 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=0 min
+10:32:54 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+10:35:58 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=0 min
+10:49:14 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+11:00:25 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=0 min
+11:12:40 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=6 min
+11:13:40 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=7 min
+11:14:41 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=8 min
+11:15:42 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=9 min
+11:16:43 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=10 min
+11:17:44 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=11 min
+11:18:45 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=12 min
+11:19:46 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=13 min
+11:20:47 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=14 min
+11:21:49 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=15 min
+11:22:49 [INFO] Presence: App='Visual Studio Code' | Title='Encoded by @The_Cultured_Alliance - Telegram - VLC media player' | Idle=0 min
+11:26:54 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=0 min
+11:30:58 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+18:38:45 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=0 min
+18:40:47 [INFO] Presence: App='I Love You, I'm Sorry' | Title='Gracie Abrams - I Love You, I'm Sorry' | Idle=0 min
+18:41:48 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=0 min
+18:42:49 [INFO] Presence: App='Visual Studio Code' | Title='NeetCode 150 - Coding Interview Questions - Google Chrome' | Idle=0 min
+18:43:50 [INFO] Presence: App='Drag Path' | Title='Twenty One Pilots - Drag Path' | Idle=0 min
+18:44:51 [INFO] Presence: App='Visual Studio Code' | Title='Same Binary Tree - NeetCode - Google Chrome' | Idle=0 min
+18:47:54 [INFO] Presence: App='Visual Studio Code' | Title='Subtree of Another Tree - NeetCode - Google Chrome' | Idle=0 min
+18:51:59 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=0 min
+18:55:02 [INFO] Presence: App='Visual Studio Code' | Title='Subtree of Another Tree - NeetCode - Google Chrome' | Idle=0 min
+19:01:09 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+19:02:10 [INFO] Presence: App='Visual Studio Code' | Title='Subtree of Another Tree - NeetCode - Google Chrome' | Idle=0 min
+19:05:14 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+19:07:16 [INFO] Presence: App='Visual Studio Code' | Title='Lowest Common Ancestor in Binary Search Tree - NeetCode - Google Chrome' | Idle=0 min
+19:11:20 [INFO] Presence: App='Google Chrome' | Title='teja-0909 | Turso App - Google Chrome' | Idle=0 min
+19:13:21 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=0 min
+19:16:24 [INFO] Presence: App='Atlantis' | Title='Seafret - Atlantis' | Idle=0 min
+19:17:25 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=0 min
+19:20:28 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+19:21:29 [INFO] Presence: App='Google Chrome' | Title='teja-0909 | Turso App - Google Chrome' | Idle=0 min
+19:22:30 [INFO] Presence: App='Visual Studio Code' | Title='Lowest Common Ancestor in Binary Search Tree - NeetCode - Google Chrome' | Idle=0 min
+19:28:37 [INFO] Presence: App='Visual Studio Code' | Title='Binary Tree Level Order Traversal - NeetCode - Google Chrome' | Idle=0 min
+19:31:41 [INFO] Presence: App='Visual Studio Code' | Title='Binary Tree Right Side View - NeetCode - Google Chrome' | Idle=0 min
+19:35:44 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+19:40:49 [INFO] Presence: App='Google Chrome' | Title='teja-0909 | Turso App - Google Chrome' | Idle=0 min
+19:41:50 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=0 min
+19:47:56 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=6 min
+19:48:57 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=7 min
+19:49:58 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=8 min
+19:51:00 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=9 min
+19:52:01 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=10 min
+19:53:02 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=11 min
+19:54:03 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=12 min
+19:55:04 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=13 min
+19:56:06 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=14 min
+19:57:07 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=15 min
+19:58:08 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=16 min
+19:59:09 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=17 min
+20:00:10 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=18 min
+20:01:11 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=19 min
+20:02:12 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=20 min
+20:03:13 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=21 min
+20:04:14 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=22 min
+20:05:15 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=23 min
+20:06:16 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=24 min
+20:07:16 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=25 min
+20:08:17 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=26 min
+20:09:18 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=27 min
+20:10:19 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=28 min
+20:11:20 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=29 min
+20:12:21 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=31 min
+20:13:22 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=32 min
+20:14:23 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=33 min
+20:15:24 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=34 min
+20:16:25 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=35 min
+20:17:26 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=36 min
+20:18:27 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=37 min
+20:19:28 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=38 min
+20:20:30 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=39 min
+20:21:32 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=40 min
+20:22:33 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=41 min
+20:23:34 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=42 min
+20:24:35 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=43 min
+20:25:37 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=44 min
+20:26:38 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=45 min
+20:27:39 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=46 min
+20:28:40 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=47 min
+20:29:41 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=48 min
+20:30:42 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=49 min
+20:31:43 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=50 min
+20:32:44 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=51 min
+20:33:44 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=52 min
+20:34:45 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=53 min
+20:35:46 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=54 min
+20:36:47 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=55 min
+20:37:48 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=56 min
+20:38:49 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=57 min
+20:39:50 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=58 min
+20:40:51 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=59 min
+20:41:52 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=60 min
+20:42:53 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=61 min
+20:43:54 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=62 min
+20:44:55 [INFO] Presence: App='Google Chrome' | Title='Untitled spreadsheet - Google Sheets - Google Chrome' | Idle=0 min
+20:45:56 [INFO] Presence: App='Google Chrome' | Title='teja-0909 | Turso App - Google Chrome' | Idle=0 min
+20:46:57 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+20:57:09 [INFO] Presence: App='Visual Studio Code' | Title='Binary Tree Right Side View - NeetCode - Google Chrome' | Idle=0 min
+20:58:10 [INFO] Presence: App='Google Chrome' | Title='teja-0909 | Turso App - Google Chrome' | Idle=0 min
+21:00:12 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+21:06:17 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=6 min
+21:07:18 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=7 min
+21:08:18 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=8 min
+21:09:19 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=9 min
+21:10:20 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=11 min
+21:11:22 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=12 min
+21:12:23 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=13 min
+21:13:24 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=14 min
+21:14:24 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=15 min
+21:15:25 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=16 min
+21:16:27 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=17 min
+21:17:28 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=18 min
+21:18:29 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=19 min
+21:19:30 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=20 min
+21:20:31 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=21 min
+21:21:32 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=22 min
+21:22:34 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=23 min
+21:23:35 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=24 min
+21:24:36 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=25 min
+21:25:37 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=26 min
+21:26:39 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=27 min
+21:27:40 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=28 min
+21:28:41 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=29 min
+21:29:42 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=30 min
+21:30:43 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=31 min
+21:31:43 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=32 min
+21:32:44 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=33 min
+21:33:45 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=34 min
+21:34:46 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=35 min
+21:35:47 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=36 min
+21:36:48 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=37 min
+21:50:01 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=6 min
+21:51:02 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=7 min
+21:52:03 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=8 min
+21:53:05 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=9 min
+21:54:06 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=10 min
+21:55:07 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=11 min
+21:56:08 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=12 min
+21:57:09 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=13 min
+21:58:10 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=14 min
+21:59:11 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=15 min
+22:00:12 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=16 min
+22:01:13 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=17 min
+22:02:14 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=18 min
+22:03:15 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=19 min
+22:04:16 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=20 min
+22:05:17 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=21 min
+22:06:17 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=22 min
+22:07:18 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=23 min
+22:08:19 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=25 min
+22:09:20 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=26 min
+22:11:22 [INFO] Presence: App='Google Chrome' | Title='Google Gemini - Google Chrome' | Idle=0 min
+22:15:26 [INFO] Presence: App='Google Chrome' | Title='teja-0909 | Turso App - Google Chrome' | Idle=0 min
+22:17:29 [INFO] Presence: App='Desktop' | Title='' | Idle=0 min
+22:23:36 [INFO] Presence: App='Desktop' | Title='' | Idle=6 min
+22:24:37 [INFO] Presence: App='Desktop' | Title='' | Idle=7 min
+22:25:38 [INFO] Presence: App='Desktop' | Title='' | Idle=8 min
+22:26:39 [INFO] Presence: App='Desktop' | Title='' | Idle=9 min
+22:27:41 [INFO] Presence: App='Desktop' | Title='' | Idle=10 min
+22:28:42 [INFO] Presence: App='Desktop' | Title='' | Idle=11 min
+22:29:42 [INFO] Presence: App='Desktop' | Title='' | Idle=12 min
+22:30:43 [INFO] Presence: App='Desktop' | Title='' | Idle=13 min
+22:31:44 [INFO] Presence: App='Desktop' | Title='' | Idle=14 min
+22:32:45 [INFO] Presence: App='Desktop' | Title='' | Idle=15 min
+22:33:46 [INFO] Presence: App='Desktop' | Title='' | Idle=16 min
+22:34:47 [INFO] Presence: App='Desktop' | Title='' | Idle=17 min
+22:35:47 [INFO] Presence: App='Desktop' | Title='' | Idle=18 min
+22:36:48 [INFO] Presence: App='Desktop' | Title='' | Idle=19 min
+22:37:49 [INFO] Presence: App='Desktop' | Title='' | Idle=20 min
+22:38:50 [INFO] Presence: App='Desktop' | Title='' | Idle=21 min
+22:39:51 [INFO] Presence: App='Desktop' | Title='' | Idle=22 min
+22:40:52 [INFO] Presence: App='Desktop' | Title='' | Idle=23 min
+22:41:53 [INFO] Presence: App='Desktop' | Title='' | Idle=24 min
+22:42:54 [INFO] Presence: App='Google Chrome' | Title='Sofia ・ Web Service ・ Render Dashboard - Google Chrome' | Idle=0 min
+22:43:55 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+22:59:12 [INFO] Presence: App='Discord' | Title='Pvt | Anand Sagar's server - Discord' | Idle=0 min
+23:00:13 [INFO] Presence: App='Genshin' | Title='Genshin Impact' | Idle=0 min
+23:18:31 [INFO] Presence: App='Desktop' | Title='' | Idle=0 min
+23:19:33 [INFO] Presence: App='Google Chrome' | Title='Praja RTI | Independent citizen assistance - Google Chrome' | Idle=0 min
+23:21:35 [INFO] Presence: App='Google Chrome' | Title='New Tab - Google Chrome' | Idle=0 min
+23:22:36 [INFO] Presence: App='Google Chrome' | Title='Rate Limit | Google AI Studio - Google Chrome' | Idle=0 min
+23:23:37 [INFO] Presence: App='Google Chrome' | Title='Praja RTI | Independent citizen assistance - Google Chrome' | Idle=0 min
+23:30:44 [INFO] Presence: App='Desktop' | Title='' | Idle=0 min
+23:31:45 [INFO] Presence: App='Notepad' | Title='PRTI-2026-343379.txt - Notepad' | Idle=0 min
+23:32:46 [INFO] Presence: App='Notepad' | Title='PRTI-2026-343379 (1).txt - Notepad' | Idle=0 min
+23:33:47 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=0 min
+23:34:48 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+23:38:51 [INFO] Presence: App='Google Chrome' | Title='Praja RTI | Independent citizen assistance - Google Chrome' | Idle=0 min
+23:39:52 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+23:41:54 [INFO] Presence: App='Google Chrome' | Title='Praja RTI | Independent citizen assistance - Google Chrome' | Idle=0 min
+23:45:59 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+23:47:00 [INFO] Presence: App='Google Chrome' | Title='Rate Limit | Google AI Studio - Google Chrome' | Idle=0 min
+23:48:01 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+23:50:04 [INFO] Presence: App='Google Chrome' | Title='Rate Limit | Google AI Studio - Google Chrome' | Idle=0 min
+23:51:05 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+23:54:09 [INFO] Presence: App='Discord' | Title='Pvt | Anand Sagar's server - Discord' | Idle=0 min
+00:00:14 [INFO] Presence: App='Discord' | Title='Pvt | Anand Sagar's server - Discord' | Idle=6 min
+00:01:15 [INFO] Presence: App='Discord' | Title='Pvt | Anand Sagar's server - Discord' | Idle=7 min
+00:02:16 [INFO] Presence: App='Discord' | Title='Pvt | Anand Sagar's server - Discord' | Idle=8 min
+00:03:17 [INFO] Presence: App='Discord' | Title='Pvt | Anand Sagar's server - Discord' | Idle=9 min
+00:04:18 [INFO] Presence: App='Discord' | Title='Pvt | Anand Sagar's server - Discord' | Idle=10 min
+00:05:19 [INFO] Presence: App='Discord' | Title='Pvt | Anand Sagar's server - Discord' | Idle=11 min
+00:06:20 [INFO] Presence: App='Discord' | Title='Pvt | Anand Sagar's server - Discord' | Idle=12 min
+00:07:21 [INFO] Presence: App='Discord' | Title='Pvt | Anand Sagar's server - Discord' | Idle=13 min
+00:08:22 [INFO] Presence: App='Discord' | Title='Pvt | Anand Sagar's server - Discord' | Idle=14 min
+00:09:23 [INFO] Presence: App='Discord' | Title='Pvt | Anand Sagar's server - Discord' | Idle=15 min
+00:10:24 [INFO] Presence: App='Discord' | Title='Pvt | Anand Sagar's server - Discord' | Idle=16 min
+00:11:25 [INFO] Presence: App='Discord' | Title='Pvt | Anand Sagar's server - Discord' | Idle=17 min
+00:12:26 [INFO] Presence: App='Discord' | Title='Pvt | Anand Sagar's server - Discord' | Idle=18 min
+00:13:27 [INFO] Presence: App='Discord' | Title='Pvt | Anand Sagar's server - Discord' | Idle=19 min
+00:14:28 [INFO] Presence: App='Discord' | Title='Pvt | Anand Sagar's server - Discord' | Idle=20 min
+00:15:29 [INFO] Presence: App='Discord' | Title='Pvt | Anand Sagar's server - Discord' | Idle=21 min
+00:16:31 [INFO] Presence: App='Discord' | Title='Pvt | Anand Sagar's server - Discord' | Idle=22 min
+00:17:32 [INFO] Presence: App='Discord' | Title='Pvt | Anand Sagar's server - Discord' | Idle=23 min
+00:18:33 [INFO] Presence: App='Discord' | Title='Pvt | Anand Sagar's server - Discord' | Idle=24 min
+00:19:34 [INFO] Presence: App='Discord' | Title='Pvt | Anand Sagar's server - Discord' | Idle=25 min
+00:20:36 [INFO] Presence: App='Discord' | Title='Pvt | Anand Sagar's server - Discord' | Idle=26 min
+00:21:37 [INFO] Presence: App='Discord' | Title='Pvt | Anand Sagar's server - Discord' | Idle=27 min
+00:22:38 [INFO] Presence: App='Discord' | Title='Pvt | Anand Sagar's server - Discord' | Idle=28 min
+00:23:39 [INFO] Presence: App='Discord' | Title='Pvt | Anand Sagar's server - Discord' | Idle=29 min
+00:24:40 [INFO] Presence: App='Google Chrome' | Title='Praja RTI | Independent citizen assistance - Google Chrome' | Idle=0 min
+00:37:51 [INFO] Presence: App='Desktop' | Title='' | Idle=0 min
+00:38:53 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=0 min
+00:47:01 [INFO] Presence: App='Google Chrome' | Title='Teams and Channels | 2026-27 Sem 1 CS 331 - Computer Networks | General | Microsoft Teams - Google Chrome' | Idle=0 min
+00:49:04 [INFO] Presence: App='Google Chrome' | Title='New chat - Claude - Google Chrome' | Idle=0 min
+00:51:06 [INFO] Presence: App='Google Chrome' | Title='Computer networks fundamentals tutorial - Claude - Google Chrome' | Idle=0 min
+00:54:10 [INFO] Presence: App='Google Chrome' | Title='teja-0909 | Turso App - Google Chrome' | Idle=0 min
+00:58:14 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+00:59:14 [INFO] Presence: App='Google Chrome' | Title='teja-0909 | Turso App - Google Chrome' | Idle=0 min
+01:00:15 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+01:01:16 [INFO] Presence: App='Google Chrome' | Title='teja-0909 | Turso App - Google Chrome' | Idle=0 min
+01:02:17 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+01:20:34 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=0 min
+01:21:35 [INFO] Presence: App='Google Chrome' | Title='Teams and Channels | 2026-27 Sem 1 CS 331 - Computer Networks | General | Microsoft Teams - Google Chrome' | Idle=0 min
+01:28:43 [INFO] Presence: App='Google Chrome' | Title='Teams and Channels | 2026-27 Sem 1 CS 331 - Computer Networks | General | Microsoft Teams - Google Chrome' | Idle=6 min
+01:29:46 [INFO] Presence: App='Google Chrome' | Title='Teams and Channels | 2026-27 Sem 1 CS 331 - Computer Networks | General | Microsoft Teams - Google Chrome' | Idle=7 min
+01:30:47 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+01:41:58 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=6 min
+01:43:00 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=7 min
+01:44:01 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=8 min
+01:45:02 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=9 min
+01:46:03 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=10 min
+01:47:04 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=11 min
+01:48:06 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=12 min
+01:50:08 [INFO] Presence: App='Google Chrome' | Title='Computer networks fundamentals tutorial - Claude - Google Chrome' | Idle=0 min
+02:02:19 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=0 min
+02:04:21 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+02:06:23 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=0 min
+02:09:26 [INFO] Presence: App='Google Chrome' | Title='teja-0909 | Turso App - Google Chrome' | Idle=0 min
+02:11:28 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=0 min
+02:12:29 [INFO] Presence: App='WhatsApp' | Title='WhatsApp' | Idle=0 min
+02:13:30 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=0 min
+02:15:31 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+02:16:32 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=0 min
+02:17:33 [INFO] Presence: App='Google Chrome' | Title='Computer networks fundamentals tutorial - Claude - Google Chrome' | Idle=0 min
+02:20:36 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+02:33:48 [INFO] Presence: App='Google Chrome' | Title='teja-0909 | Turso App - Google Chrome' | Idle=0 min
+02:34:49 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+02:42:58 [INFO] Presence: App='Google Chrome' | Title='teja-0909 | Turso App - Google Chrome' | Idle=0 min
+02:43:59 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+02:58:11 [INFO] Presence: App='Google Chrome' | Title='Computer networks fundamentals tutorial - Claude - Google Chrome' | Idle=0 min
+02:59:12 [INFO] Presence: App='Google Chrome' | Title='New Incognito Tab - Google Chrome' | Idle=0 min
+03:00:13 [INFO] Presence: App='Google Chrome' | Title='together ai or hugging face which is better for creating human images better and free - Google Search - Google Chrome' | Idle=0 min
+03:01:14 [INFO] Presence: App='Google Chrome' | Title='Rate Limit | Google AI Studio - Google Chrome' | Idle=0 min
+03:02:15 [INFO] Presence: App='Google Chrome' | Title='Computer networks fundamentals tutorial - Claude - Google Chrome' | Idle=0 min
+03:03:16 [INFO] Presence: App='Google Chrome' | Title='teja-0909 | Turso App - Google Chrome' | Idle=0 min
+03:04:17 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+03:05:19 [INFO] Presence: App='Google Chrome' | Title='teja-0909 | Turso App - Google Chrome' | Idle=0 min
+03:06:20 [INFO] Presence: App='Google Chrome' | Title='Hugging Face – The AI community building the future. - Google Chrome' | Idle=0 min
+03:07:21 [INFO] Presence: App='Google Chrome' | Title='Teams and Channels | 2026-27 Sem 1 CS 331 - Computer Networks | General | Microsoft Teams - Google Chrome' | Idle=0 min
+03:08:22 [INFO] Presence: App='Google Chrome' | Title='Monitors | UptimeRobot - Google Chrome' | Idle=0 min
+03:09:23 [INFO] Presence: App='Google Chrome' | Title='Welcome to UptimeRobot - Google Chrome' | Idle=0 min
+03:10:24 [INFO] Presence: App='Google Chrome' | Title='Hugging Face – The AI community building the future. - Google Chrome' | Idle=0 min
+03:11:25 [INFO] Presence: App='Google Chrome' | Title='Models – Hugging Face - Google Chrome' | Idle=0 min
+03:12:26 [INFO] Presence: App='Google Chrome' | Title='Hugging Face – The AI community building the future. - Google Chrome' | Idle=0 min
+03:13:27 [INFO] Presence: App='Google Chrome' | Title='Render Dashboard - Google Chrome' | Idle=0 min
+03:14:28 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=0 min
+03:17:31 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+03:23:36 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=0 min
+03:24:37 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+03:25:38 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=0 min
+03:36:47 [INFO] Presence: App='Google Chrome' | Title='Teams and Channels | 2026-27 Sem 1 CS 331 - Computer Networks | General | Microsoft Teams - Google Chrome' | Idle=0 min
+03:37:48 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=0 min
+03:39:50 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+03:41:51 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=0 min
+03:43:53 [INFO] Presence: App='Google Chrome' | Title='teja-0909 | Turso App - Google Chrome' | Idle=0 min
+03:44:54 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+03:45:55 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=0 min
+03:46:56 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+03:47:57 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=0 min
+03:48:58 [INFO] Presence: App='Google Chrome' | Title='Computer networks fundamentals tutorial - Claude - Google Chrome' | Idle=0 min
+03:49:59 [INFO] Presence: App='Visual Studio Code' | Title='Encoded by @The_Cultured_Alliance - Telegram - VLC media player' | Idle=0 min
+03:55:04 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=0 min
+03:57:07 [INFO] Presence: App='Google Chrome' | Title='teja-0909 | Turso App - Google Chrome' | Idle=0 min
+03:58:08 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+04:02:12 [INFO] Presence: App='Google Chrome' | Title='Computer networks fundamentals tutorial - Claude - Google Chrome' | Idle=0 min
+04:05:15 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=0 min
+04:06:16 [INFO] Presence: App='Google Chrome' | Title='Computer networks fundamentals tutorial - Claude - Google Chrome' | Idle=0 min
+04:07:17 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+04:15:24 [INFO] Presence: App='Google Chrome' | Title='New Tab - Google Chrome' | Idle=0 min
+04:16:25 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+04:18:27 [INFO] Presence: App='Discord' | Title='Pvt | Anand Sagar's server - Discord' | Idle=0 min
+04:19:28 [INFO] Presence: App='Google Chrome' | Title='teja-0909 | Turso App - Google Chrome' | Idle=0 min
+04:20:29 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+04:22:31 [INFO] Presence: App='Google Chrome' | Title='teja-0909 | Turso App - Google Chrome' | Idle=0 min
+04:23:32 [INFO] Presence: App='Discord' | Title='Pvt | Anand Sagar's server - Discord' | Idle=0 min
+04:24:33 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+04:29:39 [INFO] Presence: App='Google Chrome' | Title='Computer networks fundamentals tutorial - Claude - Google Chrome' | Idle=0 min
+04:30:40 [INFO] Presence: App='Discord' | Title='Pvt | Anand Sagar's server - Discord' | Idle=0 min
+04:31:41 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+04:32:42 [INFO] Presence: App='Google Chrome' | Title='Computer networks fundamentals tutorial - Claude - Google Chrome' | Idle=0 min
+04:40:49 [INFO] Presence: App='Google Chrome' | Title='Computer networks fundamentals tutorial - Claude - Google Chrome' | Idle=6 min
+04:41:50 [INFO] Presence: App='Discord' | Title='Pvt | Anand Sagar's server - Discord' | Idle=0 min
+04:42:50 [INFO] Presence: App='Google Chrome' | Title='Praja RTI | Independent citizen assistance - Google Chrome' | Idle=0 min
+04:55:02 [INFO] Presence: App='Google Chrome' | Title='Inbox (500) - saitejayalla0909@gmail.com - Gmail - Google Chrome' | Idle=0 min
+04:56:03 [INFO] Presence: App='Google Chrome' | Title='Praja RTI | Independent citizen assistance - Google Chrome' | Idle=0 min
+05:04:12 [INFO] Presence: App='Discord' | Title='Pvt | Anand Sagar's server - Discord' | Idle=0 min
+05:16:22 [INFO] Presence: App='Google Chrome' | Title='Praja RTI | Independent citizen assistance - Google Chrome' | Idle=0 min
+05:19:25 [INFO] Presence: App='Discord' | Title='Pvt | Anand Sagar's server - Discord' | Idle=0 min
+05:28:35 [INFO] Presence: App='Google Chrome' | Title='Free Trial and Free Tier Services and Products | Google Cloud - Google Chrome' | Idle=0 min
+05:30:37 [INFO] Presence: App='Google Chrome' | Title='Search results for "api" | Google Cloud - Google Chrome' | Idle=0 min
+05:31:38 [INFO] Presence: App='Google Chrome' | Title='Google Cloud console - Google Chrome' | Idle=0 min
+05:35:42 [INFO] Presence: App='Google Chrome' | Title='Model Garden – Agent Platform – hahaha – Google Cloud console - Google Chrome' | Idle=0 min
+05:41:47 [INFO] Presence: App='Google Chrome' | Title='Computer networks fundamentals tutorial - Claude - Google Chrome' | Idle=0 min
+05:42:48 [INFO] Presence: App='Discord' | Title='Pvt | Anand Sagar's server - Discord' | Idle=0 min
+05:45:51 [INFO] Presence: App='Google Chrome' | Title='Rate Limit | Google AI Studio - Google Chrome' | Idle=0 min
+05:48:53 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=0 min
+05:57:01 [INFO] Presence: App='Discord' | Title='Pvt | Anand Sagar's server - Discord' | Idle=0 min
+05:58:02 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=0 min
+06:01:06 [INFO] Presence: App='Discord' | Title='Pvt | Anand Sagar's server - Discord' | Idle=0 min
+06:03:08 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=0 min
+06:06:11 [INFO] Presence: App='Google Chrome' | Title='BAI - Google Chrome' | Idle=0 min
+06:07:12 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=0 min
+06:08:13 [INFO] Presence: App='Google Chrome' | Title='teja-0909 | Turso App - Google Chrome' | Idle=0 min
+06:10:14 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=0 min
+06:11:16 [INFO] Presence: App='Google Chrome' | Title='Computer networks fundamentals tutorial - Claude - Google Chrome' | Idle=0 min
+06:12:16 [INFO] Presence: App='Microsoft​ Edge' | Title='CS-331 Mid-Sem S0-Soln 1.pdf - Personal - Microsoft​ Edge' | Idle=0 min
+06:13:17 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=0 min
+06:15:19 [INFO] Presence: App='Google Chrome' | Title='Computer networks fundamentals tutorial - Claude - Google Chrome' | Idle=0 min
+06:16:20 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=0 min
+06:21:24 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+06:23:26 [INFO] Presence: App='Google Chrome' | Title='teja-0909 | Turso App - Google Chrome' | Idle=0 min
+06:24:27 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+06:27:30 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=0 min
+06:28:31 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+06:29:32 [INFO] Presence: App='Google Chrome' | Title='teja-0909 | Turso App - Google Chrome' | Idle=0 min
+06:30:33 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=0 min
+06:31:34 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+06:32:35 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=0 min
+06:35:38 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+06:36:39 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=0 min
+06:38:41 [INFO] Presence: App='Google Chrome' | Title='Sofia ・ Web Service ・ Render Dashboard - Google Chrome' | Idle=0 min
+06:39:42 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=0 min
+06:44:46 [INFO] Presence: App='Google Chrome' | Title='teja-0909 | Turso App - Google Chrome' | Idle=0 min
+06:45:47 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=0 min
+06:46:49 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+06:47:49 [INFO] Presence: App='Google Chrome' | Title='Sofia ・ Web Service ・ Render Dashboard - Google Chrome' | Idle=0 min
+06:48:50 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+06:50:52 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=0 min
+06:52:54 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+06:54:56 [INFO] Presence: App='Resuming' | Title='Resuming Alisa Companion ...' | Idle=0 min
+06:55:57 [INFO] Presence: App='Google Chrome' | Title='Computer networks fundamentals tutorial - Claude - Google Chrome' | Idle=0 min
+06:57:59 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+06:58:59 [INFO] Presence: App='Google Chrome' | Title='Teams and Channels | 2026-27 Sem 1 CS 331 - Computer Networks | General | Microsoft Teams - Google Chrome' | Idle=0 min
+07:00:01 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+07:02:03 [INFO] Presence: App='Google Chrome' | Title='Computer networks fundamentals tutorial - Claude - Google Chrome' | Idle=0 min
+07:03:04 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+07:08:09 [INFO] Presence: App='Google Chrome' | Title='Teams and Channels | 2026-27 Sem 1 CS 331 - Computer Networks | General | Microsoft Teams - Google Chrome' | Idle=0 min
+07:11:12 [INFO] Presence: App='Google Chrome' | Title='Computer networks fundamentals tutorial - Claude - Google Chrome' | Idle=0 min
+07:12:13 [INFO] Presence: App='Google Chrome' | Title='Teams and Channels | 2026-27 Sem 1 CS 331 - Computer Networks | General | Microsoft Teams - Google Chrome' | Idle=0 min
+07:16:16 [INFO] Presence: App='Google Chrome' | Title='Computer networks fundamentals tutorial - Claude - Google Chrome' | Idle=0 min
+07:22:22 [INFO] Presence: App='Google Chrome' | Title='Teams and Channels | 2026-27 Sem 1 CS 331 - Computer Networks | General | Microsoft Teams - Google Chrome' | Idle=0 min
+07:23:23 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+07:24:24 [INFO] Presence: App='Google Chrome' | Title='Teams and Channels | 2026-27 Sem 1 CS 331 - Computer Networks | General | Microsoft Teams - Google Chrome' | Idle=0 min
+07:27:37 [WARNING] Could not reach Sofia endpoint (https://sofia-va07.onrender.com/api/presence): The read operation timed out
+07:36:46 [INFO] Presence: App='Google Chrome' | Title='Computer networks fundamentals tutorial - Claude - Google Chrome' | Idle=0 min
+07:39:49 [INFO] Presence: App='Google Chrome' | Title='Teams and Channels | 2026-27 Sem 1 CS 331 - Computer Networks | General | Microsoft Teams - Google Chrome' | Idle=0 min
+07:40:50 [INFO] Presence: App='WhatsApp' | Title='WhatsApp Image 2026-08-27 at 20.04.04.jpeg' | Idle=0 min
+07:41:51 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+07:42:52 [INFO] Presence: App='WhatsApp' | Title='WhatsApp Image 2026-08-27 at 20.04.04.jpeg' | Idle=0 min
+07:45:54 [INFO] Presence: App='Google Chrome' | Title='Teams and Channels | 2026-27 Sem 1 CS 331 - Computer Networks | General | Microsoft Teams - Google Chrome' | Idle=0 min
+08:05:13 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+08:16:24 [INFO] Presence: App='Google Chrome' | Title='Teams and Channels | 2026-27 Sem 1 CS 331 - Computer Networks | General | Microsoft Teams - Google Chrome' | Idle=0 min
+08:23:30 [INFO] Presence: App='Google Chrome' | Title='teja-0909 | Turso App - Google Chrome' | Idle=0 min
+08:26:33 [INFO] Presence: App='Google Chrome' | Title='Teams and Channels | 2026-27 Sem 1 CS 331 - Computer Networks | General | Microsoft Teams - Google Chrome' | Idle=0 min
+08:27:34 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+08:29:36 [INFO] Presence: App='Google Chrome' | Title='Teams and Channels | 2026-27 Sem 1 CS 331 - Computer Networks | General | Microsoft Teams - Google Chrome' | Idle=0 min
+08:31:39 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+08:34:42 [INFO] Presence: App='Google Chrome' | Title='Teams and Channels | 2026-27 Sem 1 CS 331 - Computer Networks | General | Microsoft Teams - Google Chrome' | Idle=0 min
+08:35:43 [INFO] Presence: App='Google Chrome' | Title='What is Hypertext? - Google Chrome' | Idle=0 min
+08:36:44 [INFO] Presence: App='Google Chrome' | Title='Teams and Channels | 2026-27 Sem 1 CS 331 - Computer Networks | General | Microsoft Teams - Google Chrome' | Idle=0 min
+08:39:48 [INFO] Presence: App='Microsoft​ Edge' | Title='CS-331 Mid-Sem S0-Soln 1.pdf - Personal - Microsoft​ Edge' | Idle=0 min
+08:40:49 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+08:43:52 [INFO] Presence: App='Google Chrome' | Title='Teams and Channels | 2026-27 Sem 1 CS 331 - Computer Networks | General | Microsoft Teams - Google Chrome' | Idle=0 min
+08:44:52 [INFO] Presence: App='Google Chrome' | Title='teja-0909 | Turso App - Google Chrome' | Idle=0 min
+08:45:53 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+08:47:55 [INFO] Presence: App='Google Chrome' | Title='Teams and Channels | 2026-27 Sem 1 CS 331 - Computer Networks | General | Microsoft Teams - Google Chrome' | Idle=0 min
+08:48:56 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+08:51:59 [INFO] Presence: App='Google Chrome' | Title='Teams and Channels | 2026-27 Sem 1 CS 331 - Computer Networks | General | Microsoft Teams - Google Chrome' | Idle=0 min
+08:53:00 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+08:54:00 [INFO] Presence: App='Google Chrome' | Title='Teams and Channels | 2026-27 Sem 1 CS 331 - Computer Networks | General | Microsoft Teams - Google Chrome' | Idle=0 min
+08:55:01 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+08:57:03 [INFO] Presence: App='Google Chrome' | Title='teja-0909 | Turso App - Google Chrome' | Idle=0 min
+08:58:04 [INFO] Presence: App='Google Chrome' | Title='Teams and Channels | 2026-27 Sem 1 CS 331 - Computer Networks | General | Microsoft Teams - Google Chrome' | Idle=0 min
+09:30:37 [INFO] Presence: App='Google Chrome' | Title='Teams and Channels | 2026-27 Sem 1 CS 331 - Computer Networks | General | Microsoft Teams - Google Chrome' | Idle=6 min
+09:31:39 [INFO] Presence: App='Google Chrome' | Title='Teams and Channels | 2026-27 Sem 1 CS 331 - Computer Networks | General | Microsoft Teams - Google Chrome' | Idle=7 min
+09:32:40 [INFO] Presence: App='Google Chrome' | Title='Teams and Channels | 2026-27 Sem 1 CS 331 - Computer Networks | General | Microsoft Teams - Google Chrome' | Idle=9 min
+09:33:41 [INFO] Presence: App='Google Chrome' | Title='Teams and Channels | 2026-27 Sem 1 CS 331 - Computer Networks | General | Microsoft Teams - Google Chrome' | Idle=10 min
+09:34:42 [INFO] Presence: App='Google Chrome' | Title='Teams and Channels | 2026-27 Sem 1 CS 331 - Computer Networks | General | Microsoft Teams - Google Chrome' | Idle=11 min
+09:35:43 [INFO] Presence: App='Google Chrome' | Title='Teams and Channels | 2026-27 Sem 1 CS 331 - Computer Networks | General | Microsoft Teams - Google Chrome' | Idle=12 min
+09:36:44 [INFO] Presence: App='Google Chrome' | Title='Teams and Channels | 2026-27 Sem 1 CS 331 - Computer Networks | General | Microsoft Teams - Google Chrome' | Idle=13 min
+09:37:45 [INFO] Presence: App='Google Chrome' | Title='Teams and Channels | 2026-27 Sem 1 CS 331 - Computer Networks | General | Microsoft Teams - Google Chrome' | Idle=14 min
+09:38:47 [INFO] Presence: App='Google Chrome' | Title='Teams and Channels | 2026-27 Sem 1 CS 331 - Computer Networks | General | Microsoft Teams - Google Chrome' | Idle=15 min
+09:39:48 [INFO] Presence: App='Google Chrome' | Title='Teams and Channels | 2026-27 Sem 1 CS 331 - Computer Networks | General | Microsoft Teams - Google Chrome' | Idle=16 min
+09:40:49 [INFO] Presence: App='Google Chrome' | Title='Teams and Channels | 2026-27 Sem 1 CS 331 - Computer Networks | General | Microsoft Teams - Google Chrome' | Idle=17 min
+09:41:50 [INFO] Presence: App='Google Chrome' | Title='Teams and Channels | 2026-27 Sem 1 CS 331 - Computer Networks | General | Microsoft Teams - Google Chrome' | Idle=18 min
+09:42:51 [INFO] Presence: App='Google Chrome' | Title='Teams and Channels | 2026-27 Sem 1 CS 331 - Computer Networks | General | Microsoft Teams - Google Chrome' | Idle=19 min
+09:50:58 [INFO] Presence: App='Desktop' | Title='' | Idle=0 min
+09:58:05 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+10:07:14 [INFO] Presence: App='Google Chrome' | Title='‎Google Gemini - Google Chrome' | Idle=0 min
+10:08:16 [INFO] Presence: App='Google Chrome' | Title='Google Gemini - Google Chrome' | Idle=0 min
+10:10:18 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=0 min
+10:12:20 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+10:14:22 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=0 min
+10:16:23 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+10:19:26 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=0 min
+10:26:33 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=6 min
+10:27:34 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=7 min
+10:28:35 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=8 min
+10:29:36 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=9 min
+10:30:37 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=10 min
+10:31:38 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=11 min
+10:32:40 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=12 min
+10:33:41 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=13 min
+10:34:42 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=14 min
+10:35:43 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=15 min
+10:36:44 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=16 min
+10:37:46 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=17 min
+10:38:47 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=18 min
+10:39:58 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=19 min
+10:40:59 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=20 min
+10:42:00 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=21 min
+10:43:01 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=22 min
+10:51:10 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=6 min
+10:52:11 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=8 min
+10:53:12 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=9 min
+10:54:13 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=10 min
+10:55:14 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=11 min
+10:56:16 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=12 min
+10:57:17 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=13 min
+10:58:18 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=14 min
+10:59:19 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=15 min
+11:00:20 [INFO] Presence: App='We've' | Title='We've got an update for you' | Idle=16 min
+11:01:21 [INFO] Presence: App='We've' | Title='We've got an update for you' | Idle=17 min
+11:02:22 [INFO] Presence: App='We've' | Title='We've got an update for you' | Idle=18 min
+11:03:23 [INFO] Presence: App='We've' | Title='We've got an update for you' | Idle=19 min
+11:04:23 [INFO] Presence: App='We've' | Title='We've got an update for you' | Idle=20 min
+11:05:24 [INFO] Presence: App='We've' | Title='We've got an update for you' | Idle=21 min
+11:06:25 [INFO] Presence: App='We've' | Title='We've got an update for you' | Idle=22 min
+11:07:26 [INFO] Presence: App='We've' | Title='We've got an update for you' | Idle=23 min
+11:08:27 [INFO] Presence: App='We've' | Title='We've got an update for you' | Idle=24 min
+11:09:28 [INFO] Presence: App='We've' | Title='We've got an update for you' | Idle=25 min
+11:10:29 [INFO] Presence: App='We've' | Title='We've got an update for you' | Idle=26 min
+11:11:30 [INFO] Presence: App='We've' | Title='We've got an update for you' | Idle=27 min
+11:12:31 [INFO] Presence: App='We've' | Title='We've got an update for you' | Idle=28 min
+11:13:32 [INFO] Presence: App='We've' | Title='We've got an update for you' | Idle=29 min
+11:14:33 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=30 min
+11:15:34 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=31 min
+11:16:35 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=32 min
+11:17:36 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=33 min
+11:18:38 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=34 min
+11:19:39 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=35 min
+11:20:40 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=36 min
+11:30:51 [INFO] Presence: App='We've' | Title='We've got an update for you' | Idle=6 min
+11:31:52 [INFO] Presence: App='We've' | Title='We've got an update for you' | Idle=7 min
+11:32:53 [INFO] Presence: App='We've' | Title='We've got an update for you' | Idle=8 min
+11:33:54 [INFO] Presence: App='We've' | Title='We've got an update for you' | Idle=9 min
+11:34:55 [INFO] Presence: App='We've' | Title='We've got an update for you' | Idle=10 min
+11:35:56 [INFO] Presence: App='We've' | Title='We've got an update for you' | Idle=11 min
+11:36:57 [INFO] Presence: App='We've' | Title='We've got an update for you' | Idle=12 min
+11:37:58 [INFO] Presence: App='We've' | Title='We've got an update for you' | Idle=13 min
+11:38:58 [INFO] Presence: App='We've' | Title='We've got an update for you' | Idle=14 min
+11:40:00 [INFO] Presence: App='We've' | Title='We've got an update for you' | Idle=15 min
+11:41:00 [INFO] Presence: App='We've' | Title='We've got an update for you' | Idle=16 min
+11:42:01 [INFO] Presence: App='We've' | Title='We've got an update for you' | Idle=17 min
+11:43:03 [INFO] Presence: App='We've' | Title='We've got an update for you' | Idle=18 min
+11:44:04 [INFO] Presence: App='We've' | Title='We've got an update for you' | Idle=19 min
+11:45:05 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=20 min
+11:46:06 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=21 min
+11:47:07 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=22 min
+11:48:09 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=23 min
+11:49:10 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=24 min
+11:50:11 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=25 min
+11:51:12 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=26 min
+11:52:14 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=27 min
+11:53:15 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=28 min
+11:54:16 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=29 min
+11:55:17 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=30 min
+11:56:19 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=32 min
+11:57:20 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=33 min
+11:58:20 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=34 min
+11:59:21 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=35 min
+12:00:22 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=36 min
+12:01:23 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=37 min
+12:02:24 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=38 min
+12:03:25 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=39 min
+12:04:26 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=40 min
+12:05:27 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=41 min
+12:06:28 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=42 min
+12:07:29 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=43 min
+12:08:30 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=44 min
+12:09:31 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=45 min
+12:10:32 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=46 min
+12:11:33 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=47 min
+12:12:34 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=48 min
+12:13:35 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=49 min
+12:14:36 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=50 min
+12:15:37 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=51 min
+12:16:38 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=52 min
+12:17:40 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=53 min
+12:18:41 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=54 min
+12:19:42 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=55 min
+12:20:43 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=56 min
+12:21:44 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=57 min
+12:22:46 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=58 min
+12:23:47 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=59 min
+12:24:48 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=60 min
+12:25:49 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=61 min
+12:26:50 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=62 min
+12:27:51 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=63 min
+12:28:52 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=64 min
+12:29:53 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=65 min
+12:30:54 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=66 min
+12:31:55 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=67 min
+12:32:55 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=68 min
+12:33:56 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=69 min
+12:34:57 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=70 min
+12:35:58 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=71 min
+12:36:59 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=72 min
+12:38:00 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=73 min
+12:39:01 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=74 min
+12:40:02 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=75 min
+12:41:04 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=76 min
+12:42:05 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=77 min
+12:43:06 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=78 min
+12:44:07 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=79 min
+12:45:08 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=80 min
+12:46:10 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=81 min
+12:47:11 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=82 min
+12:48:12 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=83 min
+12:49:14 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=84 min
+12:50:15 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=85 min
+12:51:16 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=86 min
+12:52:17 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=87 min
+12:53:18 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=89 min
+12:54:19 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=90 min
+12:55:20 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=91 min
+12:56:21 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=92 min
+12:57:22 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=93 min
+12:58:23 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=94 min
+12:59:24 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=95 min
+13:00:25 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=96 min
+13:01:25 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=97 min
+13:02:26 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=98 min
+13:03:27 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=99 min
+13:04:28 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=100 min
+13:05:29 [INFO] Presence: App='Google Chrome' | Title='Predicting Quiz 2 Questions - Google Gemini - Google Chrome' | Idle=101 min
+13:07:31 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+13:10:34 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=0 min
+18:22:38 [INFO] Presence: App='Google Chrome' | Title='New Tab - Google Chrome' | Idle=0 min
+18:23:39 [INFO] Presence: App='Google Chrome' | Title='Praja RTI | Independent citizen assistance - Google Chrome' | Idle=0 min
+18:31:49 [INFO] Presence: App='Quick' | Title='Quick settings' | Idle=0 min
+18:32:50 [INFO] Presence: App='Discord' | Title='Lobby | Anand Sagar's server - Discord' | Idle=0 min
+18:34:52 [INFO] Presence: App='File Explorer' | Title='Home - File Explorer' | Idle=0 min
+18:35:52 [INFO] Presence: App='Desktop' | Title='' | Idle=0 min
+18:36:53 [INFO] Presence: App='Start' | Title='Start' | Idle=0 min
+18:37:54 [INFO] Presence: App='Google Chrome' | Title='(32) Build What Moves India: Rules & How to Participate - YouTube - Google Chrome' | Idle=0 min
+18:39:56 [INFO] Presence: App='Google Chrome' | Title='Build What Moves India - Google Chrome' | Idle=0 min
+18:40:57 [INFO] Presence: App='Google Chrome' | Title='(32) Build What Moves India: Rules & How to Participate - YouTube - Google Chrome' | Idle=0 min
+18:41:58 [INFO] Presence: App='Google Chrome' | Title='Search results - saitejayalla0909@gmail.com - Gmail - Google Chrome' | Idle=0 min
+18:42:59 [INFO] Presence: App='Discord' | Title='Lobby | Anand Sagar's server - Discord' | Idle=0 min
+19:01:20 [INFO] Presence: App='Shower' | Title='Becky G - Shower' | Idle=0 min
+19:02:21 [INFO] Presence: App='Discord' | Title='Lobby | Anand Sagar's server - Discord' | Idle=0 min
+19:06:25 [INFO] Presence: App='Google Chrome' | Title='Praja RTI | Independent citizen assistance - Google Chrome' | Idle=0 min
+19:11:30 [INFO] Presence: App='Discord' | Title='Lobby | Anand Sagar's server - Discord' | Idle=0 min
+19:12:30 [INFO] Presence: App='Google Chrome' | Title='Praja RTI | Independent citizen assistance - Google Chrome' | Idle=0 min
+19:27:48 [INFO] Presence: App='Discord' | Title='Lobby | Anand Sagar's server - Discord' | Idle=0 min
+19:29:50 [INFO] Presence: App='Google Chrome' | Title='Tencent Hy - Google Chrome' | Idle=0 min
+19:31:51 [INFO] Presence: App='Google Chrome' | Title='tencent/Hy3 · Hugging Face - Google Chrome' | Idle=0 min
+19:33:53 [INFO] Presence: App='Discord' | Title='Lobby | Anand Sagar's server - Discord' | Idle=0 min
+19:43:02 [INFO] Presence: App='Discord' | Title='Lobby | Anand Sagar's server - Discord' | Idle=6 min
+19:44:03 [INFO] Presence: App='Discord' | Title='Lobby | Anand Sagar's server - Discord' | Idle=7 min
+19:45:04 [INFO] Presence: App='Discord' | Title='Lobby | Anand Sagar's server - Discord' | Idle=8 min
+19:46:06 [INFO] Presence: App='Discord' | Title='Lobby | Anand Sagar's server - Discord' | Idle=9 min
+19:47:07 [INFO] Presence: App='Discord' | Title='Lobby | Anand Sagar's server - Discord' | Idle=10 min
+19:48:08 [INFO] Presence: App='Discord' | Title='Lobby | Anand Sagar's server - Discord' | Idle=11 min
+19:49:09 [INFO] Presence: App='Discord' | Title='Lobby | Anand Sagar's server - Discord' | Idle=12 min
+19:50:10 [INFO] Presence: App='Discord' | Title='Lobby | Anand Sagar's server - Discord' | Idle=13 min
+19:51:12 [INFO] Presence: App='Discord' | Title='Lobby | Anand Sagar's server - Discord' | Idle=14 min
+19:53:14 [INFO] Presence: App='Google Chrome' | Title='Praja RTI | Independent citizen assistance - Google Chrome' | Idle=0 min
+19:57:18 [INFO] Presence: App='Discord' | Title='Lobby | Anand Sagar's server - Discord' | Idle=0 min
+20:01:22 [INFO] Presence: App='Google Chrome' | Title='Praja RTI | Independent citizen assistance - Google Chrome' | Idle=0 min
+20:10:31 [INFO] Presence: App='Google Chrome' | Title='Google Gemini - Google Chrome' | Idle=0 min
+20:11:32 [INFO] Presence: App='Discord' | Title='@Anand Sagar - Discord' | Idle=0 min
+20:12:32 [INFO] Presence: App='Google Chrome' | Title='Praja RTI | Independent citizen assistance - Google Chrome' | Idle=0 min
+20:13:34 [INFO] Presence: App='Google Chrome' | Title='Inbox (501) - saitejayalla0909@gmail.com - Gmail - Google Chrome' | Idle=0 min
+20:14:35 [INFO] Presence: App='Discord' | Title='Lobby | Anand Sagar's server - Discord' | Idle=0 min
+20:15:36 [INFO] Presence: App='Shower' | Title='Becky G - Shower' | Idle=0 min
+20:16:37 [INFO] Presence: App='Drag Path' | Title='Twenty One Pilots - Drag Path' | Idle=0 min
+20:17:38 [INFO] Presence: App='Spotify' | Title='Spotify Free' | Idle=0 min
+20:18:40 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=0 min
+20:28:50 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=6 min
+20:29:51 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=7 min
+20:30:52 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=8 min
+20:31:53 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=9 min
+20:32:54 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=10 min
+20:33:55 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=11 min
+20:34:56 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=12 min
+20:35:57 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=13 min
+20:36:58 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=14 min
+20:45:17 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=7 min
+20:46:18 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=8 min
+20:50:21 [INFO] Presence: App='Google Chrome' | Title='Hackathon Ideas for Public Services - Google Gemini - Google Chrome' | Idle=0 min
+20:58:28 [INFO] Presence: App='WhatsApp' | Title='WhatsApp' | Idle=0 min
+21:04:34 [INFO] Presence: App='WhatsApp' | Title='WhatsApp' | Idle=6 min
+21:05:36 [INFO] Presence: App='WhatsApp' | Title='WhatsApp' | Idle=7 min
+21:06:37 [INFO] Presence: App='WhatsApp' | Title='WhatsApp' | Idle=8 min
+21:07:38 [INFO] Presence: App='WhatsApp' | Title='WhatsApp' | Idle=9 min
+21:08:39 [INFO] Presence: App='WhatsApp' | Title='WhatsApp' | Idle=10 min
+21:09:40 [INFO] Presence: App='WhatsApp' | Title='WhatsApp' | Idle=11 min
+21:10:42 [INFO] Presence: App='WhatsApp' | Title='WhatsApp' | Idle=12 min
+21:11:43 [INFO] Presence: App='WhatsApp' | Title='WhatsApp' | Idle=13 min
+21:12:44 [INFO] Presence: App='WhatsApp' | Title='WhatsApp' | Idle=14 min
+21:13:45 [INFO] Presence: App='WhatsApp' | Title='WhatsApp' | Idle=15 min
+21:14:47 [INFO] Presence: App='WhatsApp' | Title='WhatsApp' | Idle=16 min
+21:15:48 [INFO] Presence: App='WhatsApp' | Title='WhatsApp' | Idle=17 min
+21:16:48 [INFO] Presence: App='WhatsApp' | Title='WhatsApp' | Idle=18 min
+21:17:49 [INFO] Presence: App='WhatsApp' | Title='WhatsApp' | Idle=19 min
+21:18:50 [INFO] Presence: App='WhatsApp' | Title='WhatsApp' | Idle=20 min
+21:19:51 [INFO] Presence: App='WhatsApp' | Title='WhatsApp' | Idle=21 min
+21:20:53 [INFO] Presence: App='WhatsApp' | Title='WhatsApp' | Idle=22 min
+21:21:53 [INFO] Presence: App='WhatsApp' | Title='WhatsApp' | Idle=23 min
+21:22:54 [INFO] Presence: App='WhatsApp' | Title='WhatsApp' | Idle=24 min
+21:23:55 [INFO] Presence: App='WhatsApp' | Title='WhatsApp' | Idle=25 min
+21:24:56 [INFO] Presence: App='WhatsApp' | Title='WhatsApp' | Idle=26 min
+21:25:58 [INFO] Presence: App='WhatsApp' | Title='WhatsApp' | Idle=27 min
+21:26:59 [INFO] Presence: App='WhatsApp' | Title='WhatsApp' | Idle=28 min
+21:28:00 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=0 min
+21:29:01 [INFO] Presence: App='WhatsApp' | Title='WhatsApp' | Idle=0 min
+21:31:03 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=0 min
+21:32:04 [INFO] Presence: App='Google Chrome' | Title='teja-0909 | Turso App - Google Chrome' | Idle=0 min
+21:35:08 [INFO] Presence: App='Google Chrome' | Title='Hackathon Ideas for Public Services - Google Gemini - Google Chrome' | Idle=0 min
+21:41:15 [INFO] Presence: App='Google Chrome' | Title='Hackathon Ideas for Public Services - Google Gemini - Google Chrome' | Idle=6 min
+21:42:16 [INFO] Presence: App='Google Chrome' | Title='Hackathon Ideas for Public Services - Google Gemini - Google Chrome' | Idle=7 min
+21:43:17 [INFO] Presence: App='Google Chrome' | Title='Hackathon Ideas for Public Services - Google Gemini - Google Chrome' | Idle=8 min
+21:44:18 [INFO] Presence: App='Google Chrome' | Title='Hackathon Ideas for Public Services - Google Gemini - Google Chrome' | Idle=9 min
+21:45:19 [INFO] Presence: App='Google Chrome' | Title='Hackathon Ideas for Public Services - Google Gemini - Google Chrome' | Idle=10 min
+21:46:20 [INFO] Presence: App='Google Chrome' | Title='Hackathon Ideas for Public Services - Google Gemini - Google Chrome' | Idle=11 min
+21:47:20 [INFO] Presence: App='Google Chrome' | Title='Hackathon Ideas for Public Services - Google Gemini - Google Chrome' | Idle=12 min
+21:48:21 [INFO] Presence: App='Google Chrome' | Title='Hackathon Ideas for Public Services - Google Gemini - Google Chrome' | Idle=13 min
+21:49:22 [INFO] Presence: App='Google Chrome' | Title='Hackathon Ideas for Public Services - Google Gemini - Google Chrome' | Idle=14 min
+21:50:23 [INFO] Presence: App='Google Chrome' | Title='Hackathon Ideas for Public Services - Google Gemini - Google Chrome' | Idle=15 min
+21:51:24 [INFO] Presence: App='Google Chrome' | Title='Hackathon Ideas for Public Services - Google Gemini - Google Chrome' | Idle=16 min
+21:52:25 [INFO] Presence: App='Google Chrome' | Title='Hackathon Ideas for Public Services - Google Gemini - Google Chrome' | Idle=17 min
+21:53:26 [INFO] Presence: App='Google Chrome' | Title='Hackathon Ideas for Public Services - Google Gemini - Google Chrome' | Idle=18 min
+21:54:27 [INFO] Presence: App='Google Chrome' | Title='Hackathon Ideas for Public Services - Google Gemini - Google Chrome' | Idle=19 min
+21:55:27 [INFO] Presence: App='Google Chrome' | Title='Hackathon Ideas for Public Services - Google Gemini - Google Chrome' | Idle=20 min
+21:56:28 [INFO] Presence: App='Google Chrome' | Title='Hackathon Ideas for Public Services - Google Gemini - Google Chrome' | Idle=21 min
+21:57:29 [INFO] Presence: App='Google Chrome' | Title='Hackathon Ideas for Public Services - Google Gemini - Google Chrome' | Idle=22 min
+22:18:53 [INFO] Presence: App='Desktop' | Title='' | Idle=0 min
+22:26:00 [INFO] Presence: App='Desktop' | Title='' | Idle=6 min
+02:48:22 [INFO] Presence: App='Google Chrome' | Title='What's New - Google Chrome' | Idle=0 min
+02:49:23 [INFO] Presence: App='Google Chrome' | Title='tencent/Hy3 · Hugging Face - Google Chrome' | Idle=0 min
+02:50:24 [INFO] Presence: App='Google Chrome' | Title='teja-0909 | Turso App - Google Chrome' | Idle=0 min
+02:53:27 [INFO] Presence: App='Google Chrome' | Title='Settings - Autofill and passwords - Google Chrome' | Idle=0 min
+02:54:27 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+03:07:41 [INFO] Presence: App='Desktop' | Title='' | Idle=0 min
+03:08:43 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+03:12:47 [INFO] Presence: App='Google Chrome' | Title='teja-0909 | Turso App - Google Chrome' | Idle=0 min
+03:13:48 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+04:08:42 [INFO] Presence: App='Google Chrome' | Title='teja-0909 | Turso App - Google Chrome' | Idle=0 min
+04:09:43 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+04:23:56 [INFO] Presence: App='Google Chrome' | Title='teja-0909 | Turso App - Google Chrome' | Idle=0 min
+04:24:57 [INFO] Presence: App='Search' | Title='Search' | Idle=0 min
+04:25:58 [INFO] Presence: App='F1 Game' | Title='F1 22 (DirectX 12)' | Idle=0 min
+06:13:47 [INFO] Presence: App='Google Chrome' | Title='Telegram Web - Google Chrome' | Idle=0 min
+06:14:49 [INFO] Presence: App='Program' | Title='Program Manager' | Idle=0 min
+06:15:50 [INFO] Presence: App='Visual Studio Code' | Title='OpenCode | The open source AI coding agent - Google Chrome' | Idle=0 min
+06:16:51 [INFO] Presence: App='Visual Studio Code' | Title='opencode - Google Chrome' | Idle=0 min
+06:18:52 [INFO] Presence: App='Google Chrome' | Title='Step 2 of 2 – Free trial – Google Cloud console - Google Chrome' | Idle=0 min
+06:23:57 [INFO] Presence: App='Google Chrome' | Title='My First Project – Google Cloud console - Google Chrome' | Idle=0 min
+06:24:57 [INFO] Presence: App='Google Chrome' | Title='My Billing Account – Overview – Billing – My First Project – Google Cloud console - Google Chrome' | Idle=0 min
+06:26:59 [INFO] Presence: App='Google Chrome' | Title='My Billing Account – Credits – Billing – My First Project – Google Cloud console - Google Chrome' | Idle=0 min
+06:28:00 [INFO] Presence: App='Google Chrome' | Title='My Billing Account – Overview – Billing – My First Project – Google Cloud console - Google Chrome' | Idle=0 min
+06:32:05 [INFO] Presence: App='Google Chrome' | Title='My Billing Account – Credits – Billing – My First Project – Google Cloud console - Google Chrome' | Idle=0 min
+06:34:07 [INFO] Presence: App='Google Chrome' | Title='APIs and services – APIs and services – My First Project – Google Cloud console - Google Chrome' | Idle=0 min
+06:35:08 [INFO] Presence: App='Desktop' | Title='' | Idle=0 min
+06:36:16 [INFO] Presence: App='Antigravity' | Title='Antigravity' | Idle=0 min
+06:37:17 [INFO] Presence: App='Using' | Title='Using Google Cloud API' | Idle=0 min
+06:38:18 [INFO] Presence: App='Google Chrome' | Title='APIs and services – APIs and services – My First Project – Google Cloud console - Google Chrome' | Idle=0 min
+06:39:19 [INFO] Presence: App='Google Chrome' | Title='Cursor · Download - Google Chrome' | Idle=0 min
+06:40:19 [INFO] Presence: App='Setup' | Title='Setup' | Idle=0 min
+06:41:20 [INFO] Presence: App='Google Chrome' | Title='My First Project – Google Cloud console - Google Chrome' | Idle=0 min
+06:43:22 [INFO] Presence: App='Cursor' | Title='Cursor Agents' | Idle=0 min
+06:44:23 [INFO] Presence: App='Google Chrome' | Title='Sign in to Cursor desktop — Cursor - Google Chrome' | Idle=0 min
+06:45:24 [INFO] Presence: App='Visual Studio Code' | Title='Cursor - The best way to code with AI - Google Chrome' | Idle=0 min
+06:46:24 [INFO] Presence: App='Cursor' | Title='Cursor Agents' | Idle=0 min
+06:47:25 [INFO] Presence: App='Google Chrome' | Title='Settings – API keys – Agent Platform – My First Project – Google Cloud console - Google Chrome' | Idle=0 min
+06:48:26 [INFO] Presence: App='Google Chrome' | Title='APIs and services – My First Project – Google Cloud console - Google Chrome' | Idle=0 min
+06:49:27 [INFO] Presence: App='Google Chrome' | Title='Project configuration – Google Auth Platform – My First Project – Google Cloud console - Google Chrome' | Idle=0 min
+06:50:28 [INFO] Presence: App='Google Chrome' | Title='OAuth overview – Google Auth Platform – My First Project – Google Cloud console - Google Chrome' | Idle=0 min
+06:51:29 [INFO] Presence: App='Google Chrome' | Title='API Library – APIs and services – My First Project – Google Cloud console - Google Chrome' | Idle=0 min
+06:52:30 [INFO] Presence: App='Google Chrome' | Title='My First Project – Google Cloud console - Google Chrome' | Idle=0 min
+06:53:31 [INFO] Presence: App='Google Chrome' | Title='Claude Opus 5 enablement – Agent Platform – My First Project – Google Cloud console - Google Chrome' | Idle=0 min
+06:54:32 [INFO] Presence: App='Google Chrome' | Title='Claude Opus 5 – Agent Platform – My First Project – Google Cloud console - Google Chrome' | Idle=0 min
+06:55:33 [INFO] Presence: App='Google Chrome' | Title='Claude Opus 5 enablement – Agent Platform – My First Project – Google Cloud console - Google Chrome' | Idle=0 min
+06:58:37 [INFO] Presence: App='Antigravity' | Title='Antigravity' | Idle=0 min
