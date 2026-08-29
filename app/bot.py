@@ -174,12 +174,16 @@ async def _handle_image_generation(update: Update, context: ContextTypes.DEFAULT
         visual_prompt = await images.craft_visual_prompt(user_text, context_note=context_note)
         img_bytes = await images.generate_image_bytes(visual_prompt)
         if img_bytes:
+            if img_bytes.startswith(b"DEBUG_ERROR:"):
+                await update.message.reply_text(f"[DEBUG: Image API failed: {img_bytes.decode()}]")
+                raise Exception("DEBUG API FAILURE")
             caption = await images.craft_image_caption(user_text, visual_prompt)
             await _log_message("sofia", f"[Generated Image: '{visual_prompt}'] {caption}")
             await update.message.reply_photo(photo=img_bytes, caption=caption)
             return
     except Exception as exc:
         logger.error("Image generation handler error: %s", exc)
+        await update.message.reply_text(f"[DEBUG: Telegram failed to send the photo. Error: {exc}]")
 
     # If we reached here, the image failed to generate (API down, dimension error, etc)
     error_note = "[Internal System Error: Teja asked for an image, but your FLUX image generation API just crashed or timed out. DO NOT emit an [IMAGE] tag. Apologize to him naturally and let him know your camera/image engine is temporarily unavailable.]"
@@ -381,10 +385,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         logger.error("Failed to send split messages: %s", exc)
 
     if img_bytes:
-        try:
-            await update.message.reply_photo(photo=img_bytes)
-        except Exception as e:
-            logger.error("Failed to send photo: %s", e)
+        if img_bytes.startswith(b"DEBUG_ERROR:"):
+            await update.message.reply_text(f"[DEBUG: Image generation failed! Details: {img_bytes.decode()}]")
+            image_failed = True
+        else:
+            try:
+                await update.message.reply_photo(photo=img_bytes)
+            except Exception as e:
+                logger.error("Failed to send photo: %s", e)
+                await update.message.reply_text(f"[DEBUG: Telegram failed to send autonomous photo. Error: {e}]")
 
 
 async def cmd_memory(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

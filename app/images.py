@@ -159,8 +159,10 @@ async def generate_image_together(visual_prompt: str, token: str) -> bytes | Non
                 return img_bytes
             else:
                 logger.warning("Together AI returned %s: %s", resp.status_code, resp.text[:100])
+                return b"DEBUG_ERROR: Together HTTP " + str(resp.status_code).encode() + b" " + resp.text[:50].encode()
     except Exception as exc:
         logger.warning("Together AI generation error: %s", exc)
+        return b"DEBUG_ERROR: Together Exception " + str(exc).encode()
     return None
 
 
@@ -235,6 +237,9 @@ async def generate_image_bytes(visual_prompt: str) -> bytes | None:
             if resp.status_code == 200 and len(resp.content) > 5000:
                 logger.info("Successfully generated %s bytes image (model: %s, res: %sx%s, seed: %s) for prompt: %s", len(resp.content), model_name, width, height, seed, visual_prompt[:50])
                 return resp.content
+            else:
+                return b"DEBUG_ERROR: Pollinations HTTP " + str(resp.status_code).encode() + b" Len: " + str(len(resp.content)).encode()
     except Exception as exc:
         logger.error("Image generation HTTP error: %s", exc)
+        return b"DEBUG_ERROR: Pollinations Exception " + str(exc).encode()
     return None
