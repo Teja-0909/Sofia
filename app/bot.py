@@ -181,7 +181,9 @@ async def _handle_image_generation(update: Update, context: ContextTypes.DEFAULT
     except Exception as exc:
         logger.error("Image generation handler error: %s", exc)
 
-    reply = await orchestrator.reply(user_text)
+    # If we reached here, the image failed to generate (API down, dimension error, etc)
+    error_note = "[Internal System Error: Teja asked for an image, but your FLUX image generation API just crashed or timed out. DO NOT emit an [IMAGE] tag. Apologize to him naturally and let him know your camera/image engine is temporarily unavailable.]"
+    reply = await orchestrator.reply(user_text, system_note=error_note)
     await _log_message("sofia", reply)
     await update.message.reply_text(reply)
 
@@ -327,6 +329,32 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     except Exception:
         pass
 
+    image_failed = False
+    img_bytes = None
+    if embedded_image_desc:
+        can_send = await images.should_allow_autonomous_image()
+        if can_send:
+            try:
+                await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_PHOTO)
+                mood_key, mood_info = await moods.get_current_mood()
+                current_time = timeutil.format_local(timeutil.utc_iso())
+                context_note = f"Time: {current_time}. Sofia's current mood: {mood_info.get('name', 'cozy')}"
+                visual_prompt = await images.craft_visual_prompt(embedded_image_desc, context_note=context_note)
+                img_bytes = await images.generate_image_bytes(visual_prompt)
+                if not img_bytes:
+                    image_failed = True
+                else:
+                    await images.record_autonomous_image_sent()
+            except Exception as img_exc:
+                logger.error("Embedded image render error: %s", img_exc)
+                image_failed = True
+        else:
+            logger.info("Autonomous embedded image skipped due to cooldown")
+            image_failed = True
+            
+    if image_failed:
+        raw_reply += " [System Note: Your autonomous image generation FAILED. The image did not send. Do not pretend it did.]"
+
     try:
         await _log_message("sofia", raw_reply)
     except Exception:
@@ -343,7 +371,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     await context.bot.send_message(chat_id=update.effective_chat.id, text=part)
                 
                 if i < len(parts) - 1:
-                    # Realistic typing delay based on the length of the next message (approx 1 sec per 20 chars, max 4s)
                     delay = min(4.0, max(1.5, len(parts[i+1]) / 20.0))
                     try:
                         await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
@@ -353,23 +380,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     except Exception as exc:
         logger.error("Failed to send split messages: %s", exc)
 
-    if embedded_image_desc:
-        can_send = await images.should_allow_autonomous_image()
-        if can_send:
-            await images.record_autonomous_image_sent()
-            try:
-                await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_PHOTO)
-                mood_key, mood_info = await moods.get_current_mood()
-                current_time = timeutil.format_local(timeutil.utc_iso())
-                context_note = f"Time: {current_time}. Sofia's current mood: {mood_info.get('name', 'cozy')}"
-                visual_prompt = await images.craft_visual_prompt(embedded_image_desc, context_note=context_note)
-                img_bytes = await images.generate_image_bytes(visual_prompt)
-                if img_bytes:
-                    await update.message.reply_photo(photo=img_bytes)
-            except Exception as img_exc:
-                logger.error("Embedded image render error: %s", img_exc)
-        else:
-            logger.info("Autonomous embedded image skipped due to cooldown")
+    if img_bytes:
+        try:
+            await update.message.reply_photo(photo=img_bytes)
+        except Exception as e:
+            logger.error("Failed to send photo: %s", e)
 
 
 async def cmd_memory(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
