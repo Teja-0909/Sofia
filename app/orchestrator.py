@@ -87,6 +87,7 @@ async def _build_system_prompt(extra_note: str | None = None, user_text: str = "
     top_k = int(await db.get_config("memory_top_k", "30"))
     memories = []
     past_conversations = []
+    recent_summaries = []
     
     if user_text:
         try:
@@ -162,6 +163,19 @@ async def _build_system_prompt(extra_note: str | None = None, user_text: str = "
                     logger.warning("Vector summary retrieval failed: %s", e)
         except Exception as e:
             logger.warning("Vector memory retrieval failed: %s", e)
+            
+    # Always fetch recent summaries (from the last 48 hours) for context
+    try:
+        import datetime as dt_m
+        from . import timeutil
+        cutoff_dt = timeutil.utc_now() - dt_m.timedelta(hours=48)
+        cutoff_iso = timeutil.utc_iso(cutoff_dt)
+        recent_summaries = await db.fetch_all(
+            "SELECT summary_text, until_timestamp FROM conversation_summaries WHERE until_timestamp >= ? ORDER BY until_timestamp ASC",
+            (cutoff_iso,)
+        )
+    except Exception as e:
+        logger.warning("Recent summary retrieval failed: %s", e)
     
     if not memories:
         memories = await db.fetch_all(
@@ -197,6 +211,12 @@ async def _build_system_prompt(extra_note: str | None = None, user_text: str = "
         from . import timeutil
         lines = "\n".join(f"- {timeutil.format_local(c['until_timestamp'])}: {c['summary_text']}" for c in past_conversations)
         blocks.append(f"\n[Relevant Past Conversations (Vector Retrieved)]\n{lines}")
+        
+    if recent_summaries:
+        from . import timeutil
+        lines = "\n".join(f"- Up to {timeutil.format_local(s['until_timestamp'])}: {s['summary_text']}" for s in recent_summaries)
+        blocks.append(f"\n[Recent Chat Summaries (Past 48 Hours)]\n{lines}")
+        
     if diary:
         entries = "\n".join(f"{d['date']}: {d['entry']}" for d in reversed(diary))
         blocks.append(f"\n[Recent days (Past Diary Entries)]\n{entries}")
@@ -281,59 +301,23 @@ async def _build_system_prompt(extra_note: str | None = None, user_text: str = "
     return "\n".join(blocks)
 
 
-async def _history(limit: int = 200) -> list[dict]:
-    """Fetches full 48-hour conversation history, using summaries for older blocks to save tokens."""
-    import datetime as dt_m
-    from . import timeutil
-
-    cutoff_dt = timeutil.utc_now() - dt_m.timedelta(hours=48)
-    cutoff_iso = timeutil.utc_iso(cutoff_dt)
-
-    summaries = await db.fetch_all(
-        """
-        SELECT summary_text, until_timestamp FROM conversation_summaries
-        WHERE until_timestamp >= ?
-        ORDER BY until_timestamp ASC
-        """,
-        (cutoff_iso,)
-    )
-
-    messages = []
-    last_summary_ts = cutoff_iso
-
-    for s in summaries:
-        messages.append({
-            "role": "system",
-            "content": f"[Summary of earlier conversation up to {timeutil.format_local(s['until_timestamp'])}]:\n{s['summary_text']}"
-        })
-        last_summary_ts = s["until_timestamp"]
-
+async def _history(limit: int = 100) -> list[dict]:
+    """Fetches recent raw conversation history."""
     raw_rows = await db.fetch_all(
         """
         SELECT role, content FROM conversation_log
-        WHERE timestamp > ?
-        ORDER BY timestamp ASC
+        ORDER BY timestamp DESC
         LIMIT ?
         """,
-        (last_summary_ts, limit),
+        (limit,),
     )
-
-    for r in raw_rows:
+    
+    messages = []
+    for r in reversed(raw_rows):
         messages.append({
             "role": "assistant" if r["role"] in ("sofia", "alisa") else "user",
             "content": r["content"]
         })
-
-    if not messages:
-        recent_rows = await db.fetch_all(
-            "SELECT role, content FROM conversation_log ORDER BY timestamp DESC LIMIT 10"
-        )
-        for r in reversed(recent_rows):
-            messages.append({
-                "role": "assistant" if r["role"] in ("sofia", "alisa") else "user",
-                "content": r["content"]
-            })
-
     return messages
 
 
