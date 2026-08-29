@@ -231,7 +231,6 @@ async def _build_system_prompt(extra_note: str | None = None, user_text: str = "
             )
         except Exception:
             # Fallback 1: GitHub API with Token (if private repo)
-            from . import config
             if hasattr(config, "GITHUB_TOKEN") and config.GITHUB_TOKEN:
                 import httpx
                 headers = {"Authorization": f"token {config.GITHUB_TOKEN}"}

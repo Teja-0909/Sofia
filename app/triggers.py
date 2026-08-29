@@ -128,7 +128,6 @@ async def check_for_updates() -> None:
             # Render provides the commit hash in environment variables
             latest_commit = os.environ.get("RENDER_GIT_COMMIT", "")
             if not latest_commit:
-                from . import config
                 if hasattr(config, "GITHUB_TOKEN") and config.GITHUB_TOKEN:
                     import httpx
                     headers = {"Authorization": f"token {config.GITHUB_TOKEN}"}
@@ -151,7 +150,6 @@ async def check_for_updates() -> None:
                     text=True, stderr=subprocess.DEVNULL
                 ).strip()
             except Exception:
-                from . import config
                 if hasattr(config, "GITHUB_TOKEN") and config.GITHUB_TOKEN:
                     import httpx
                     headers = {"Authorization": f"token {config.GITHUB_TOKEN}"}
