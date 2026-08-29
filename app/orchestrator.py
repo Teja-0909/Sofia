@@ -1,9 +1,45 @@
 import pathlib
 import re
+import json
+import logging
 
 from . import config, db, llm
 
+logger = logging.getLogger(__name__)
+
 FALLBACK_MESSAGE = "give me a second, having some trouble connecting"
+
+TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "search_web",
+            "description": "Searches the live internet for up-to-date facts, news, and information. Use this to answer questions about the current world.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "The search query (e.g. 'F1 race results 2024')"}
+                },
+                "required": ["query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "schedule_proactive_message",
+            "description": "Schedules a message that you will autonomously send to Teja at a future time.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "message": {"type": "string", "description": "What you want to say to him."},
+                    "due_time": {"type": "string", "description": "The ISO 8601 UTC time to send the message (YYYY-MM-DDTHH:MM:SSZ)."}
+                },
+                "required": ["message", "due_time"]
+            }
+        }
+    }
+]
 
 
 def _clean_asterisks(text: str) -> str:
@@ -16,7 +52,7 @@ def _clean_asterisks(text: str) -> str:
     return clean
 
 
-async def _build_system_prompt(extra_note: str | None = None) -> str:
+async def _build_system_prompt(extra_note: str | None = None, user_text: str = "") -> str:
     base = pathlib.Path(config.SYSTEM_PROMPT_PATH).read_text(encoding="utf-8")
 
     state = await db.fetch_one("SELECT depth_level, days_active FROM relationship_state WHERE id = 1")
@@ -35,15 +71,58 @@ async def _build_system_prompt(extra_note: str | None = None) -> str:
         stage = "Eternal Soulmate & Lifetime Anchor — Permanent shared life, endless devotion."
 
     top_k = int(await db.get_config("memory_top_k", "30"))
-    memories = await db.fetch_all(
-        """
-        SELECT category, content FROM relationship_memory
-        WHERE is_active = 1
-        ORDER BY weight / (1 + (julianday('now') - julianday(COALESCE(last_reinforced_at, created_at))) / 7.0) DESC
-        LIMIT ?
-        """,
-        (top_k,),
-    )
+    memories = []
+    
+    if user_text:
+        try:
+            user_embedding = await llm.embed_text(user_text)
+            if user_embedding:
+                all_mems = await db.fetch_all("SELECT category, content, weight, embedding, last_reinforced_at, created_at FROM relationship_memory WHERE is_active = 1")
+                scored_mems = []
+                for row in all_mems:
+                    try:
+                        emb = json.loads(row["embedding"]) if row["embedding"] else []
+                        if emb and len(emb) == len(user_embedding):
+                            import math
+                            dot = sum(a*b for a, b in zip(user_embedding, emb))
+                            normA = math.sqrt(sum(a*a for a in user_embedding))
+                            normB = math.sqrt(sum(b*b for b in emb))
+                            sim = dot / (normA * normB) if normA and normB else 0.0
+                        else:
+                            sim = 0.0
+                    except Exception:
+                        sim = 0.0
+                        
+                    # Time decay + explicit weight
+                    import datetime as dt_m
+                    time_factor = 1.0
+                    try:
+                        t_str = row["last_reinforced_at"] or row["created_at"]
+                        t_val = dt_m.datetime.fromisoformat(t_str.replace("Z", "+00:00"))
+                        days_old = (dt_m.datetime.now(dt_m.timezone.utc) - t_val).total_seconds() / 86400
+                        time_factor = 1.0 / (1.0 + days_old / 7.0)
+                    except Exception:
+                        pass
+
+                    # Hybrid score = vector similarity heavily weighted + memory weight
+                    final_score = (sim * 3.0) + (row["weight"] * time_factor)
+                    scored_mems.append((final_score, row))
+                
+                scored_mems.sort(key=lambda x: x[0], reverse=True)
+                memories = [x[1] for x in scored_mems[:top_k]]
+        except Exception as e:
+            logger.warning("Vector memory retrieval failed: %s", e)
+    
+    if not memories:
+        memories = await db.fetch_all(
+            """
+            SELECT category, content FROM relationship_memory
+            WHERE is_active = 1
+            ORDER BY weight / (1 + (julianday('now') - julianday(COALESCE(last_reinforced_at, created_at))) / 7.0) DESC
+            LIMIT ?
+            """,
+            (top_k,),
+        )
 
     diary_days = int(await db.get_config("diary_context_days", "7"))
     diary = await db.fetch_all(
@@ -201,7 +280,7 @@ async def _verify_and_refine_draft(
                 {"role": "assistant", "content": clean_draft},
                 {"role": "user", "content": critique_msg}
             ]
-            refined = await llm.chat(system, retry_messages)
+            refined, _ = await llm.chat(system, retry_messages)
             clean_draft = _clean_asterisks(refined)
         except Exception as exc:
             logger.warning("Verification retry note: %s", exc)
@@ -233,10 +312,54 @@ async def _verify_and_refine_draft(
 
 
 async def _generate(system: str, messages: list[dict], user_text: str = "") -> str:
-    raw = await llm.chat(system, messages)
+    from . import search as search_module
+    from . import tasks as tasks_module
+
+    current_messages = list(messages)
+    max_tool_turns = 3
+    
+    for _ in range(max_tool_turns):
+        text, tool_calls = await llm.chat(system, current_messages, tools=TOOLS)
+        
+        if not tool_calls:
+            if user_text:
+                return await _verify_and_refine_draft(text, user_text, system, current_messages)
+            return _clean_asterisks(text)
+            
+        assist_msg = {"role": "assistant", "content": text or ""}
+        assist_msg["tool_calls"] = tool_calls
+        current_messages.append(assist_msg)
+        
+        for call in tool_calls:
+            func = call["function"]
+            name = func["name"]
+            try:
+                args = json.loads(func["arguments"])
+                result = ""
+                if name == "search_web":
+                    result = await search_module.deep_research(args["query"])
+                    if not result:
+                        result = "No useful results found for this query."
+                elif name == "schedule_proactive_message":
+                    await tasks_module.schedule_proactive_message(args["message"], args["due_time"])
+                    result = "Successfully scheduled the proactive message."
+                else:
+                    result = f"Error: unknown function {name}"
+            except Exception as e:
+                result = f"Error executing tool: {e}"
+                
+            current_messages.append({
+                "role": "tool",
+                "name": name,
+                "content": str(result),
+                "tool_call_id": call["id"]
+            })
+            
+    # Fallback if too many tool calls
+    text, _ = await llm.chat(system, current_messages)
     if user_text:
-        return await _verify_and_refine_draft(raw, user_text, system, messages)
-    return _clean_asterisks(raw)
+        return await _verify_and_refine_draft(text, user_text, system, current_messages)
+    return _clean_asterisks(text)
 
 
 async def reply(
@@ -250,7 +373,6 @@ async def reply(
 
     from . import search as search_module
     direct_url = search_module.extract_url(user_text)
-    search_query = search_module.extract_search_query(user_text)
     search_block = None
 
     if direct_url:
@@ -265,30 +387,11 @@ async def reply(
                 )
         except Exception as exc:
             logger.warning("Direct page fetch note: %s", exc)
-    elif search_query:
-        try:
-            research_doc = await search_module.deep_research(search_query, max_pages=2)
-            if research_doc:
-                search_block = (
-                    f"[Live Real-Time Web Research & Browsed Full Page Contents for: '{search_query}']\n"
-                    f"{research_doc}\n\n"
-                    "CRITICAL FACT EXTRACTION & BROWSING RULES:\n"
-                    "1. Extract exact concrete entities: winner, podium positions (P1, P2, P3), driver names, constructor teams, scores, numbers, dates, or code.\n"
-                    "2. For race, match, or sports results, ALWAYS format the finishing positions as a clean structured list:\n"
-                    "   🥇 **P1 / Winner:** [Driver / Winner] ([Team])\n"
-                    "   🥈 **P2:** [Driver / Runner-up] ([Team])\n"
-                    "   🥉 **P3:** [Driver / 3rd] ([Team])\n"
-                    "3. Trust the live web findings directly. DO NOT hedge with vague calendar generalizations. State the documented facts directly, accurately, and vividly.\n"
-                    "4. If a specific event has not yet taken place or live data is unindexed, explicitly state that with the scheduled date rather than guessing.\n"
-                    "5. Deliver the answer conversationally with your trademark devotion, sharp intelligence, and excitement!"
-                )
-        except Exception as exc:
-            logger.warning("Deep research grounding note: %s", exc)
 
     extra_notes = [n for n in (system_note, search_block) if n]
     combined_extra = "\n\n".join(extra_notes) if extra_notes else None
 
-    system = await _build_system_prompt(combined_extra)
+    system = await _build_system_prompt(combined_extra, user_text)
     user_msg = {"role": "user", "content": user_text}
     if image_bytes:
         user_msg["image_bytes"] = image_bytes

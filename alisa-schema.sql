@@ -41,9 +41,19 @@ CREATE TABLE IF NOT EXISTS relationship_memory (
     weight             REAL    NOT NULL DEFAULT 1.0,
     is_active          INTEGER NOT NULL DEFAULT 1,
     created_at         TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
-    last_reinforced_at TEXT
+    last_reinforced_at TEXT,
+    embedding          TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_relmem_active ON relationship_memory(is_active, category);
+
+CREATE TABLE IF NOT EXISTS proactive_messages (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    message     TEXT    NOT NULL,
+    due_time    TEXT    NOT NULL,
+    status      TEXT    NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'sent')),
+    created_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_proactive_due ON proactive_messages(status, due_time);
 
 CREATE TABLE IF NOT EXISTS daily_diary (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,

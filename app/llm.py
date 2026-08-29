@@ -1,5 +1,6 @@
 import logging
 import base64
+import json
 import re
 import httpx
 
@@ -113,22 +114,38 @@ async def execute_usage_upsert(provider: str, model: str, prompt_tokens: int, co
     )
 
 
-async def _call_gemini(system: str, messages: list[dict], model: str) -> tuple[str, dict]:
+async def _call_gemini(
+    system: str, 
+    messages: list[dict], 
+    model: str, 
+    response_format: dict | None = None,
+    tools: list[dict] | None = None
+) -> tuple[str, dict, list[dict]]:
     contents = []
     for m in messages:
-        role = "model" if m.get("role") in ("assistant", "model", "sofia", "alisa") else "user"
-        text_content = m.get("content", "")
+        role = "model" if m.get("role") in ("assistant", "model", "sofia", "alisa", "tool") else "user"
+        
         parts = []
-        if text_content:
-            parts.append({"text": text_content})
-        if m.get("image_bytes"):
-            b64_str = base64.b64encode(m["image_bytes"]).decode("utf-8")
+        if m.get("role") == "tool":
             parts.append({
-                "inlineData": {
-                    "mimeType": m.get("mime_type", "image/jpeg"),
-                    "data": b64_str,
+                "functionResponse": {
+                    "name": m.get("name"),
+                    "response": {"result": m.get("content")}
                 }
             })
+        else:
+            text_content = m.get("content", "")
+            if text_content:
+                parts.append({"text": text_content})
+            if m.get("image_bytes"):
+                b64_str = base64.b64encode(m["image_bytes"]).decode("utf-8")
+                parts.append({
+                    "inlineData": {
+                        "mimeType": m.get("mime_type", "image/jpeg"),
+                        "data": b64_str,
+                    }
+                })
+        
         if not parts:
             continue
 
@@ -160,6 +177,23 @@ async def _call_gemini(system: str, messages: list[dict], model: str) -> tuple[s
             {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
         ],
     }
+    
+    if response_format:
+        body["generationConfig"]["responseMimeType"] = "application/json"
+        if "schema" in response_format.get("json_schema", {}):
+            body["generationConfig"]["responseSchema"] = response_format["json_schema"]["schema"]
+
+    if tools:
+        # Convert OpenAI tool format to Gemini tool format
+        gemini_tools = []
+        for t in tools:
+            gemini_tools.append({
+                "name": t["function"]["name"],
+                "description": t["function"]["description"],
+                "parameters": t["function"]["parameters"]
+            })
+        body["tools"] = [{"functionDeclarations": gemini_tools}]
+
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
     async with httpx.AsyncClient(timeout=60) as client:
         resp = await client.post(
@@ -175,19 +209,42 @@ async def _call_gemini(system: str, messages: list[dict], model: str) -> tuple[s
     candidates = data.get("candidates", [])
     if not candidates or "content" not in candidates[0] or "parts" not in candidates[0]["content"]:
         raise ValueError(f"Gemini returned invalid or blocked candidate structure: {data}")
-    raw_text = candidates[0]["content"]["parts"][0].get("text", "")
+    
+    parts = candidates[0]["content"]["parts"]
+    raw_text = parts[0].get("text", "")
     text = re.sub(r"<think>.*?</think>", "", raw_text, flags=re.DOTALL).strip() or raw_text.strip()
+    
+    tool_calls = []
+    for part in parts:
+        if "functionCall" in part:
+            fc = part["functionCall"]
+            tool_calls.append({
+                "id": "call_gemini_" + fc["name"],
+                "type": "function",
+                "function": {
+                    "name": fc["name"],
+                    "arguments": json.dumps(fc.get("args", {}))
+                }
+            })
+
     usage_raw = data.get("usageMetadata", {})
     usage = {
         "prompt_tokens": usage_raw.get("promptTokenCount", 0),
         "completion_tokens": usage_raw.get("candidatesTokenCount", 0),
     }
-    return text, usage
+    return text, usage, tool_calls
 
 
 async def _call_openai_compatible(
-    provider: str, base_url: str, api_key: str, system: str, messages: list[dict], model: str
-) -> tuple[str, dict]:
+    provider: str, 
+    base_url: str, 
+    api_key: str, 
+    system: str, 
+    messages: list[dict], 
+    model: str,
+    response_format: dict | None = None,
+    tools: list[dict] | None = None
+) -> tuple[str, dict, list[dict]]:
     has_image = any(m.get("image_bytes") for m in messages)
     target_model = model
     if provider == "groq" and has_image:
@@ -195,6 +252,14 @@ async def _call_openai_compatible(
 
     payload_messages = [{"role": "system", "content": system}]
     for m in messages:
+        if m.get("role") == "tool":
+            payload_messages.append({
+                "role": "tool",
+                "content": m.get("content"),
+                "tool_call_id": m.get("tool_call_id", "")
+            })
+            continue
+
         if m.get("image_bytes"):
             b64_str = base64.b64encode(m["image_bytes"]).decode("utf-8")
             mime = m.get("mime_type", "image/jpeg")
@@ -206,29 +271,49 @@ async def _call_openai_compatible(
                 ],
             })
         else:
-            payload_messages.append({"role": m["role"], "content": m["content"]})
+            msg_payload = {"role": m["role"], "content": m["content"]}
+            if "tool_calls" in m:
+                msg_payload["tool_calls"] = m["tool_calls"]
+            payload_messages.append(msg_payload)
+
+    json_payload = {
+        "model": target_model,
+        "messages": payload_messages,
+        "max_tokens": 4096,
+        "temperature": 0.7,
+    }
+    
+    if response_format:
+        json_payload["response_format"] = response_format
+    if tools:
+        json_payload["tools"] = tools
 
     async with httpx.AsyncClient(timeout=60) as client:
         resp = await client.post(
             f"{base_url}/chat/completions",
             headers={"Authorization": f"Bearer {api_key.strip()}"},
-            json={
-                "model": target_model,
-                "messages": payload_messages,
-                "max_tokens": 4096,
-                "temperature": 0.7,
-            },
+            json=json_payload,
         )
         if resp.status_code != 200:
             logger.error("Provider '%s' (model %s) error (HTTP %s): %s", provider, target_model, resp.status_code, resp.text)
         resp.raise_for_status()
         data = resp.json()
-    raw_text = data["choices"][0]["message"]["content"]
+        
+    choice = data["choices"][0]["message"]
+    raw_text = choice.get("content") or ""
     text = re.sub(r"<think>.*?</think>", "", raw_text, flags=re.DOTALL).strip() or raw_text.strip()
-    return text, data.get("usage", {})
+    tool_calls = choice.get("tool_calls") or []
+    
+    return text, data.get("usage", {}), tool_calls
 
 
-async def chat(system: str, messages: list[dict]) -> str:
+async def chat(
+    system: str, 
+    messages: list[dict],
+    response_format: dict | None = None,
+    tools: list[dict] | None = None
+) -> tuple[str, list[dict]]:
+    """Returns a tuple of (text_response, tool_calls). If response_format is used, text_response will be JSON string."""
     chain = _provider_chain()
     if not chain:
         logger.error("No LLM API keys configured! Set GROQ_API_KEY, OPENROUTER_API_KEY, or GEMINI_API_KEY")
@@ -238,24 +323,50 @@ async def chat(system: str, messages: list[dict]) -> str:
     for provider, model, kind in chain:
         try:
             if kind == "gemini":
-                text, usage = await _call_gemini(system, messages, model)
+                text, usage, tool_calls = await _call_gemini(system, messages, model, response_format, tools)
             else:
                 base_url = (
                     "https://api.groq.com/openai/v1"
                     if provider == "groq"
                     else "https://openrouter.ai/api/v1"
                 )
-                text, usage = await _call_openai_compatible(
+                text, usage, tool_calls = await _call_openai_compatible(
                     provider,
                     base_url,
                     getattr(config, f"{provider.upper()}_API_KEY"),
                     system,
                     messages,
                     model,
+                    response_format,
+                    tools
                 )
             await _log_usage(provider, model, usage)
-            return text
+            return text, tool_calls
         except Exception as exc:
             logger.error("Provider '%s' (%s) failed: %s", provider, model, exc)
             errors.append(f"{provider}: {exc}")
     raise AllProvidersFailed("; ".join(errors))
+
+
+async def embed_text(text: str) -> list[float]:
+    """Generates an embedding vector using Gemini text-embedding-004."""
+    if not text or not config.GEMINI_API_KEY:
+        return []
+    
+    url = "https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent"
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.post(
+                url,
+                params={"key": config.GEMINI_API_KEY.strip()},
+                json={
+                    "model": "models/text-embedding-004",
+                    "content": {"parts": [{"text": text}]}
+                }
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            return data["embedding"]["values"]
+    except Exception as exc:
+        logger.error("Embedding generation failed: %s", exc)
+        return []

@@ -74,6 +74,7 @@ async def create_scheduler() -> AsyncIOScheduler:
 
     # 2. Tasks and reminder polling
     scheduler.add_job(tasks_module.poll_due_tasks, "interval", seconds=30)
+    scheduler.add_job(tasks_module.poll_proactive_messages, "interval", seconds=30)
 
     # 3. Proactive check-ins, PC presence monitoring & memory curation
     scheduler.add_job(run_memory_curation, "interval", minutes=15)

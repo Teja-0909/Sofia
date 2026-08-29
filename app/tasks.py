@@ -203,6 +203,46 @@ async def poll_due_tasks() -> None:
             )
 
 
+async def schedule_proactive_message(message: str, due_time: str) -> None:
+    """Inserts a proactive message to be sent at due_time."""
+    await db.execute(
+        "INSERT INTO proactive_messages (message, due_time, status) VALUES (?, ?, 'pending')",
+        (message, due_time)
+    )
+    logger.info("Scheduled proactive message: '%s' at %s", message, due_time)
+
+
+async def poll_proactive_messages() -> None:
+    """Polls the proactive_messages table and sends them if due."""
+    now_iso = timeutil.utc_iso()
+    rows = await db.fetch_all(
+        "SELECT id, message, due_time FROM proactive_messages WHERE status = 'pending' AND due_time <= ?",
+        (now_iso,)
+    )
+    for row in rows:
+        job_key = f"proactive:{row['id']}"
+        existing = await db.fetch_one(
+            "SELECT id FROM job_runs WHERE job_key = ?", (job_key,)
+        )
+        if existing:
+            continue
+        await db.execute(
+            "INSERT INTO job_runs (job_key, kind) VALUES (?, 'proactive_send')",
+            (job_key,),
+        )
+        
+        note = (
+            f"[Internal trigger: You previously scheduled a proactive message to send to Teja right now.\n"
+            f"Your scheduled intent: '{row['message']}']\n"
+            "Send this proactive message to him now naturally and warmly. Do not say 'I scheduled this' or 'as planned', just speak directly."
+        )
+        try:
+            await _send_via_alisa(note)
+            await db.execute("UPDATE proactive_messages SET status = 'sent' WHERE id = ?", (row['id'],))
+        except llm.AllProvidersFailed:
+            continue
+
+
 async def add_temp_mention(content: str) -> None:
     expires = timeutil.utc_iso(timeutil.utc_now() + dt.timedelta(days=7))
     await db.execute(

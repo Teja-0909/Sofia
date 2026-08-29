@@ -195,36 +195,42 @@ Current Local Time: {curr_time_str} (Asia/Kolkata timezone). Current UTC: {curr_
 
 Analyze the user's message.
 CRITICAL RULES:
-- If the user is describing a PAST or COMPLETED event (e.g. "I completed my dinner at 8 PM", "I reached home at 8", "I finished my exam"), output: {{"is_reminder": false}}.
+- If the user is describing a PAST or COMPLETED event (e.g. "I completed my dinner at 8 PM"), output: {{"is_reminder": false}}.
 - ONLY extract FUTURE requests where the user explicitly asks to be reminded, texted, nudged, or checked on at a future time.
-
-If it is a future scheduled reminder:
-Output ONLY a JSON object:
-{{
-  "description": "<concise description of the reminder or task>",
-  "iso_time": "<YYYY-MM-DDTHH:MM:SSZ in UTC>",
-  "is_reminder": true
-}}
-
-If the message is casual chatting or a past event, output:
-{{"is_reminder": false}}
-
-Output ONLY raw JSON with no markdown formatting."""
+- Set iso_time to null if it's not a future reminder or if no time is specified.
+"""
+    
+    schema = {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "reminder_extraction",
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "is_reminder": {"type": "boolean"},
+                    "description": {"type": "string"},
+                    "iso_time": {"type": ["string", "null"]}
+                },
+                "required": ["is_reminder", "description", "iso_time"]
+            }
+        }
+    }
 
     try:
-        raw = await llm.chat(
-            "You are a raw JSON extractor. Output valid JSON only.",
-            [{"role": "user", "content": f"{extract_prompt}\n\nUser Message: \"{text}\""}],
+        raw, _ = await llm.chat(
+            extract_prompt,
+            [{"role": "user", "content": text}],
+            response_format=schema
         )
-        match = re.search(r"\{.*\}", raw, re.DOTALL)
-        if not match:
-            return {}
-        data = json.loads(match.group(0))
+        data = json.loads(raw)
         if not data.get("is_reminder", True):
             return {}
 
         description = (data.get("description") or "").strip()
-        iso_time = (data.get("iso_time") or "").strip()
+        iso_time = (data.get("iso_time") or "")
+        if isinstance(iso_time, str):
+            iso_time = iso_time.strip()
+            
         if not description:
             return {}
         if not iso_time or iso_time.lower() == "null":
@@ -260,7 +266,7 @@ async def detect_completion(text: str, pending_tasks: list[dict]) -> int | None:
 
     lower = text.lower().strip()
 
-    # 1. Direct task number reference (e.g. "mark task 1 as done", "mark #2 done", "task 1 completed")
+    # 1. Direct task number reference
     num_match = re.search(r"\b(?:task\s*#?|#)(\d+)\b", lower)
     if num_match:
         target_id = int(num_match.group(1))
@@ -287,34 +293,43 @@ async def detect_completion(text: str, pending_tasks: list[dict]) -> int | None:
         if len(overlap) >= max(1, len(desc_words) // 2) and any(w in lower for w in ("done", "did", "finish", "complete", "ate", "had", "mark", "checked")):
             return t["id"]
 
-    # 4. Semantic matching via LLM if available
+    # 4. Semantic matching via LLM
     tasks_text = "\n".join(f"- ID #{t['id']}: '{t['description']}' (due {timeutil.format_local(t['due_time'])})" for t in pending_tasks)
     prompt = f"""You are an intelligent task completion detector for Sofia AI companion.
 Teja's active pending tasks:
 {tasks_text}
 
-Teja just said: "{text}"
+Determine if Teja is stating that he completed or finished any of his active tasks.
+- If he completed a specific task, return the completed task ID.
+- If he is NOT indicating completion, return null.
+"""
 
-Determine if Teja is stating that he completed or finished any of his active tasks (e.g. "the task is finished", "I have completed my dinner", "I ate dinner", "called mom", "finished the practice", "done with it", "mark it done").
-- If he completed a specific task or indicated completion of a pending task, pick the completed task ID.
-- If he is NOT indicating completion of any task, set completed_task_id to null.
-
-Output strictly JSON:
-{{"completed_task_id": <int or null>}}"""
+    schema = {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "task_completion",
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "completed_task_id": {"type": ["integer", "null"]}
+                },
+                "required": ["completed_task_id"]
+            }
+        }
+    }
 
     try:
-        raw = await llm.chat(
-            "You are a task completion matcher. Output valid JSON only.",
-            [{"role": "user", "content": prompt}],
+        raw, _ = await llm.chat(
+            prompt,
+            [{"role": "user", "content": text}],
+            response_format=schema
         )
-        match = re.search(r"\{.*\}", raw, re.DOTALL)
-        if match:
-            data = json.loads(match.group(0))
-            val = data.get("completed_task_id")
-            if val is not None:
-                valid_ids = {t["id"] for t in pending_tasks}
-                if int(val) in valid_ids:
-                    return int(val)
+        data = json.loads(raw)
+        val = data.get("completed_task_id")
+        if val is not None:
+            valid_ids = {t["id"] for t in pending_tasks}
+            if int(val) in valid_ids:
+                return int(val)
     except Exception:
         pass
 

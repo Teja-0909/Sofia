@@ -136,6 +136,23 @@ async def init() -> None:
             await client.execute("ALTER TABLE tasks ADD COLUMN is_recurring TEXT")
         except Exception:
             pass
+        try:
+            await client.execute("ALTER TABLE relationship_memory ADD COLUMN embedding TEXT")
+        except Exception:
+            pass
+        try:
+            await client.execute("""
+            CREATE TABLE IF NOT EXISTS proactive_messages (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                message     TEXT    NOT NULL,
+                due_time    TEXT    NOT NULL,
+                status      TEXT    NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'sent')),
+                created_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+            )
+            """)
+            await client.execute("CREATE INDEX IF NOT EXISTS idx_proactive_due ON proactive_messages(status, due_time)")
+        except Exception:
+            pass
         logger.info("Turso cloud database initialized successfully")
     else:
         conn = await connect()
@@ -148,6 +165,23 @@ async def init() -> None:
                 )
             try:
                 await conn.execute("ALTER TABLE tasks ADD COLUMN is_recurring TEXT")
+            except Exception:
+                pass
+            try:
+                await conn.execute("ALTER TABLE relationship_memory ADD COLUMN embedding TEXT")
+            except Exception:
+                pass
+            try:
+                await conn.execute("""
+                CREATE TABLE IF NOT EXISTS proactive_messages (
+                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                    message     TEXT    NOT NULL,
+                    due_time    TEXT    NOT NULL,
+                    status      TEXT    NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'sent')),
+                    created_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+                )
+                """)
+                await conn.execute("CREATE INDEX IF NOT EXISTS idx_proactive_due ON proactive_messages(status, due_time)")
             except Exception:
                 pass
             await conn.commit()

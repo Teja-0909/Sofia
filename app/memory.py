@@ -58,12 +58,20 @@ async def add_memory(category: str, content: str, reasoning: str, weight: float 
             logger.info("Reinforced existing memory #%s (%s): %s", row["id"], category, content)
             return row["id"]
 
+    embedding_json = "[]"
+    try:
+        embedding_vector = await llm.embed_text(content)
+        if embedding_vector:
+            embedding_json = json.dumps(embedding_vector)
+    except Exception as e:
+        logger.warning(f"Failed to generate embedding for memory: {e}")
+
     await db.execute(
         """
-        INSERT INTO relationship_memory (category, content, reasoning, weight, is_active, created_at, last_reinforced_at)
-        VALUES (?, ?, ?, ?, 1, ?, ?)
+        INSERT INTO relationship_memory (category, content, reasoning, weight, is_active, created_at, last_reinforced_at, embedding)
+        VALUES (?, ?, ?, ?, 1, ?, ?, ?)
         """,
-        (category, content, reasoning, weight, now_iso, now_iso),
+        (category, content, reasoning, weight, now_iso, now_iso, embedding_json),
     )
     last_row = await db.fetch_one("SELECT MAX(id) AS id FROM relationship_memory")
     mem_id = last_row["id"] if last_row and last_row.get("id") else 1
@@ -93,19 +101,41 @@ async def curate_recent_conversations(lookback: int = 20, min_batch: int = 3) ->
     max_id = max(r["id"] for r in rows)
 
     try:
-        raw = await llm.chat(
+        schema = {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "memories",
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "memories": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "category": {"type": "string", "enum": ["moment", "lesson", "evolving_fact", "open_thread"]},
+                                    "content": {"type": "string"},
+                                    "reasoning": {"type": "string"},
+                                    "weight": {"type": "number"}
+                                },
+                                "required": ["category", "content", "reasoning", "weight"]
+                            }
+                        }
+                    },
+                    "required": ["memories"]
+                }
+            }
+        }
+        
+        raw, _ = await llm.chat(
             CURATE_SYSTEM_PROMPT,
             [{"role": "user", "content": f"Here is the recent conversation transcript:\n\n{transcript}\n\nExtract memorable items:"}],
+            response_format=schema
         )
-        match = re.search(r"\[.*\]", raw, re.DOTALL)
-        if not match:
-            await db.execute(
-                "INSERT OR REPLACE INTO app_config (key, value, updated_at) VALUES ('last_curated_msg_id', ?, ?)",
-                (str(max_id), timeutil.utc_iso()),
-            )
-            return 0
-
-        items = json.loads(match.group(0))
+        
+        data = json.loads(raw)
+        items = data.get("memories", [])
+        
         count = 0
         for item in items:
             cat = item.get("category", "").strip().lower()
@@ -152,15 +182,30 @@ async def try_handle_correction(user_text: str) -> dict | None:
         "If none match or it is ambiguous, reply with 'NONE'."
     )
     try:
-        reply = await llm.chat(
-            "You are a precise memory matching system. Reply with ONLY the memory ID number or 'NONE'.",
+        schema = {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "memory_correction",
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "target_id": {"type": ["integer", "null"]}
+                    },
+                    "required": ["target_id"]
+                }
+            }
+        }
+        raw, _ = await llm.chat(
+            "You are a precise memory matching system.",
             [{"role": "user", "content": prompt}],
+            response_format=schema
         )
-        reply_clean = reply.strip()
-        digits = re.findall(r"\b\d+\b", reply_clean)
-        if not digits:
+        data = json.loads(raw)
+        val = data.get("target_id")
+        if val is None:
             return None
-        target_id = int(digits[0])
+            
+        target_id = int(val)
 
         # Verify target_id exists in active_memories
         target_row = next((m for m in active_memories if m["id"] == target_id), None)
