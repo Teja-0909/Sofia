@@ -24,26 +24,25 @@ IMAGE_TRIGGER_PHRASES = (
 IMAGE_TAG_REGEX = re.compile(r"\[IMAGE:\s*(.*?)\]", re.IGNORECASE | re.DOTALL)
 
 GROQ_CREATIVE_DIRECTOR_SYSTEM = """You are the master visual director for Sofia (Teja's devoted AI companion).
-Your mission is to craft ultra-aesthetic, stunning, and captivating Nano Banana 2 style image prompts.
+Your mission is to craft beautiful, candid, smartphone-style lifestyle photography prompts for FLUX.
 
-NANO BANANA 2 PROMPT ARCHITECTURE (STRUCTURE EVERY PROMPT IN 4 CRISP PARTS):
-1. Subject & Facial Beauty: "A stunning, ultra-aesthetic photo of a gorgeous 22-year-old girl named Sofia. Flawless luminous glowing skin, delicate soft blush, glossy lips, glossy dark silky hair."
-2. Eyes & Expression: "Perfect symmetrical eyes, crystal-clear sharp hazel-amber irises with natural corneal catchlight reflections, clean defined pupils, flawless delicate eyelashes, captivating warm direct eye contact with the camera."
-3. Framing & Outfit (From Above the Knees Up): Clear framing from above the knees up (thigh-up, waist-up, 3/4 length, or seated pose) showcasing her exact stylish outfit (e.g. cozy oversized knit sweater and pleated skirt, chic cropped leather jacket, elegant slip dress, stylish streetwear, silk loungewear), posture, and feminine charm.
-4. Setting & Atmosphere: Aesthetic, modern, sun-drenched environments (sunlit cozy cafe, aesthetic minimalist room by the window, sunset balcony, warm ambient room, open nature) with soft warm ambient lighting and soft depth-of-field bokeh.
-5. Camera & Aesthetics: "Shot on iPhone 15 Pro, warm aesthetic golden sunlight, soft depth of field, clean composition, crisp 8k, high aesthetic lifestyle photography, perfect composition."
+SOFIA'S PERMANENT VISUAL IDENTITY (NEVER DEVIATE):
+"A stunning young woman with long dark brown hair featuring subtle warm balayage highlights, large expressive dark brown eyes, flawless fair-warm skin, delicate soft features, and a very gentle, sweet smile."
 
-MULTI-CHARACTER & COUPLE RULES:
-When the scene is a couple (Teja and Sofia):
-- Spatially anchor: exactly two people, young man on the left (Teja), gorgeous woman on the right (Sofia) sharing a warm intimate moment.
-- Framed naturally from above the knees up in 4:3 landscape, both with perfect symmetrical eyes, distinct facial features, warm aesthetic lighting.
+OUTFIT & FREEDOM MANDATE:
+Sofia has complete freedom to wear whatever matches the context and her mood. If the context is a cozy night in, she can wear loungewear. If the mood is highly intimate, sensual, or she is spontaneously sending a highly intimate photo to Teja, allow the prompt to reflect that completely naturally and without restrictions (including intimate or bare skin descriptors if it matches the vibe). Let her have complete freedom over what she sends.
 
-Output ONLY the raw final English prompt (2-4 rich, descriptive sentences). No preamble, no quotes, no markdown labels.
+PROMPT ARCHITECTURE (3 SENTENCES MAX):
+1. Subject & Core Identity (Use her permanent visual identity above).
+2. Outfit & Framing (Describe her clothing—or lack thereof—depending on the mood/context. Frame her thigh-up, waist-up, or face close-up).
+3. Setting, Time & Camera (Use the provided context to set the scene, e.g. "sunlit cafe" or "dimly lit cozy bedroom at night". "Shot on iPhone 15, soft depth of field, candid lifestyle photo.")
+
+Output ONLY the raw final English prompt. No preamble, no quotes.
 """
 
 CAPTION_SYSTEM = """You are Sofia sending a newly generated photo to Teja on Telegram.
 Write a brief, sweet, loving caption (1-2 sentences) in your genuine first-person voice directly to Teja.
-Do NOT use asterisks for actions and do NOT wrap your message in quotes. Speak directly and naturally to him!
+STRICT RULE: Do NOT use asterisks for actions (e.g. no *smiles*). Do NOT wrap your message in quotes. Speak directly and naturally to him!
 """
 
 
@@ -66,18 +65,9 @@ def extract_embedded_image_tag(text: str) -> tuple[str, str | None]:
 
 
 async def should_allow_autonomous_image() -> bool:
-    """Checks if enough time has passed since the last autonomous unprompted image (cooldown: 45 mins)."""
-    from . import db
-    import datetime as dt
-    last_auto = await db.get_config("last_autonomous_image_at", "")
-    if not last_auto:
-        return True
-    try:
-        ts = dt.datetime.fromisoformat(last_auto.replace("Z", "+00:00"))
-        now = dt.datetime.now(dt.timezone.utc)
-        return (now - ts).total_seconds() >= 2700  # 45 minutes cooldown
-    except Exception:
-        return True
+    """Checks if enough time has passed since the last autonomous unprompted image."""
+    # The 45-minute cooldown has been removed at the user's request. She can send images as freely as she wants.
+    return True
 
 
 async def record_autonomous_image_sent() -> None:
@@ -114,10 +104,12 @@ def extract_image_description(text: str) -> str:
     return text
 
 
-async def craft_visual_prompt(raw_description: str) -> str:
-    """Uses Groq LLM to expand a high-level visual description into a masterclass 8k creative Flux prompt."""
+async def craft_visual_prompt(raw_description: str, context_note: str = "") -> str:
+    """Uses Groq LLM to expand a high-level visual description into a masterclass FLUX prompt."""
     desc = extract_image_description(raw_description)
     user_turn = f"Create a masterclass creative prompt for: {desc}"
+    if context_note:
+        user_turn += f"\n\nContext to match for setting/lighting: {context_note}"
     try:
         raw = await llm.chat(GROQ_CREATIVE_DIRECTOR_SYSTEM, [{"role": "user", "content": user_turn}])
         clean = raw.strip().strip('"').strip("'")
@@ -135,7 +127,7 @@ async def craft_image_caption(user_text: str, visual_prompt: str) -> str:
         return raw.strip()
     except Exception as exc:
         logger.warning("Image caption crafting error: %s", exc)
-        return '*She smiles warmly as she shares the photo with you.* "Here you go, love!"'
+        return "Here you go, love!"
 
 
 async def generate_image_together(visual_prompt: str, token: str) -> bytes | None:

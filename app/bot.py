@@ -156,10 +156,13 @@ async def cmd_read(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def _handle_image_generation(update: Update, context: ContextTypes.DEFAULT_TYPE, user_text: str) -> None:
-    from . import images
+    from . import images, moods, timeutil
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_PHOTO)
     try:
-        visual_prompt = await images.craft_visual_prompt(user_text)
+        mood_key, mood_info = await moods.get_current_mood()
+        current_time = timeutil.format_local(timeutil.utc_iso())
+        context_note = f"Time: {current_time}. Sofia's current mood: {mood_info.get('name', 'cozy')}"
+        visual_prompt = await images.craft_visual_prompt(user_text, context_note=context_note)
         img_bytes = await images.generate_image_bytes(visual_prompt)
         if img_bytes:
             caption = await images.craft_image_caption(user_text, visual_prompt)
@@ -336,7 +339,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await images.record_autonomous_image_sent()
             try:
                 await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_PHOTO)
-                visual_prompt = await images.craft_visual_prompt(embedded_image_desc)
+                mood_key, mood_info = await moods.get_current_mood()
+                current_time = timeutil.format_local(timeutil.utc_iso())
+                context_note = f"Time: {current_time}. Sofia's current mood: {mood_info.get('name', 'cozy')}"
+                visual_prompt = await images.craft_visual_prompt(embedded_image_desc, context_note=context_note)
                 img_bytes = await images.generate_image_bytes(visual_prompt)
                 if img_bytes:
                     await update.message.reply_photo(photo=img_bytes)
