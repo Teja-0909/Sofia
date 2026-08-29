@@ -283,3 +283,26 @@ async def summarize_old_messages() -> None:
     except Exception as exc:
         logger.warning("Failed to summarize old messages: %s", exc)
 
+
+async def backfill_empty_embeddings() -> int:
+    """Finds conversation summaries with empty embeddings and re-embeds them."""
+    rows = await db.fetch_all("SELECT id, summary_text FROM conversation_summaries WHERE embedding IS NULL OR length(embedding) < 10")
+    if not rows:
+        return 0
+
+    backfilled = 0
+    for row in rows:
+        try:
+            vector = await llm.embed_text(row["summary_text"])
+            if vector:
+                await db.execute(
+                    "UPDATE conversation_summaries SET embedding = ? WHERE id = ?",
+                    (json.dumps(vector), row["id"])
+                )
+                backfilled += 1
+        except Exception as exc:
+            logger.warning("Failed to backfill embedding for summary %s: %s", row["id"], exc)
+
+    if backfilled > 0:
+        logger.info("Successfully backfilled %d empty embeddings in conversation_summaries", backfilled)
+    return backfilled

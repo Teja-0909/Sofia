@@ -111,7 +111,7 @@ async def craft_visual_prompt(raw_description: str, context_note: str = "") -> s
     if context_note:
         user_turn += f"\n\nContext to match for setting/lighting: {context_note}"
     try:
-        raw = await llm.chat(GROQ_CREATIVE_DIRECTOR_SYSTEM, [{"role": "user", "content": user_turn}])
+        raw, _ = await llm.chat(GROQ_CREATIVE_DIRECTOR_SYSTEM, [{"role": "user", "content": user_turn}])
         clean = raw.strip().strip('"').strip("'")
         return clean or desc
     except Exception as exc:
@@ -123,7 +123,7 @@ async def craft_image_caption(user_text: str, visual_prompt: str) -> str:
     """Uses Groq LLM to write Sofia's companion caption for the image."""
     user_turn = f"Teja requested: '{user_text}'. The generated visual is: '{visual_prompt}'. Write a sweet, brief caption for him."
     try:
-        raw = await llm.chat(CAPTION_SYSTEM, [{"role": "user", "content": user_turn}])
+        raw, _ = await llm.chat(CAPTION_SYSTEM, [{"role": "user", "content": user_turn}])
         return raw.strip()
     except Exception as exc:
         logger.warning("Image caption crafting error: %s", exc)

@@ -174,7 +174,7 @@ async def update_memory_with_new_info(new_info: str) -> str:
         new_info=clean_info,
     )
     try:
-        updated_md = await llm.chat(
+        updated_md, _ = await llm.chat(
             "You are a precise markdown memory updater. Never erase existing memories. Output ONLY the updated markdown file.",
             [{"role": "user", "content": prompt}],
         )

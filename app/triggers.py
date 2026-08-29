@@ -1,8 +1,11 @@
 import datetime as dt
 import random
+import logging
 
 from . import config, db, llm, orchestrator, timeutil
 from . import tasks as tasks_module
+
+logger = logging.getLogger(__name__)
 
 
 def _is_quiet_hours() -> bool:
@@ -190,7 +193,7 @@ async def check_for_updates() -> None:
                 
                 bot_instance = bot_module.get_bot()
                 if bot_instance and clean_text:
-                    await bot_module._log_message("sofia", reply_text, "proactive")
+                    await bot_module._log_message("sofia", reply_text, "text")
                     await bot_module.send_text(bot_instance, clean_text)
                     logger.info("Sent update-awareness proactive message")
                     

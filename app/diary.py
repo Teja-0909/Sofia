@@ -55,7 +55,7 @@ async def generate_daily_diary(day_str: str | None = None) -> bool:
     )
 
     try:
-        raw = await llm.chat(
+        raw, _ = await llm.chat(
             DIARY_SYSTEM_PROMPT,
             [{"role": "user", "content": user_prompt}],
         )
@@ -155,7 +155,7 @@ async def consolidate_monthly_diary() -> int:
         )
         combined_text = "\n\n".join(f"[{e['date']} - {e['mood_note']}]: {e['entry']}" for e in entries)
         try:
-            chapter_text = await llm.chat(
+            chapter_text, _ = await llm.chat(
                 CHAPTER_SYSTEM_PROMPT,
                 [{"role": "user", "content": f"Month: {ym}\n\nDaily entries:\n{combined_text}\n\nWrite chapter summary:"}],
             )
@@ -178,3 +178,34 @@ async def consolidate_monthly_diary() -> int:
             logger.warning("Failed to consolidate month %s: %s", ym, exc)
 
     return consolidated_count
+
+
+async def backfill_missing_diaries() -> int:
+    """Detects days with conversation logs but no diary entry in the last 14 days, and generates them."""
+    import datetime as dt
+    from . import timeutil
+    
+    today = dt.datetime.now(timeutil.tz())
+    backfilled = 0
+    
+    # Check the last 14 days
+    for i in range(1, 15):
+        target_dt = today - dt.timedelta(days=i)
+        target_day = target_dt.date().isoformat()
+        
+        # Check if diary exists
+        row = await db.fetch_one("SELECT date FROM daily_diary WHERE date = ?", (target_day,))
+        if not row:
+            # Check if there are conversation logs for this day
+            start_utc, end_utc = timeutil.local_day_range_utc_iso(target_day)
+            logs = await db.fetch_one(
+                "SELECT COUNT(*) as c FROM conversation_log WHERE timestamp >= ? AND timestamp <= ?",
+                (start_utc, end_utc)
+            )
+            if logs and logs["c"] > 0:
+                logger.info("Auto-backfilling missing diary for %s", target_day)
+                success = await generate_daily_diary(target_day)
+                if success:
+                    backfilled += 1
+                    
+    return backfilled

@@ -352,7 +352,7 @@ async def embed_text(text: str) -> list[float]:
     """Generates an embedding vector using Gemini text-embedding-004."""
     if not text or not config.GEMINI_API_KEY:
         return []
-    
+        
     url = "https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent"
     try:
         async with httpx.AsyncClient(timeout=10) as client:
@@ -364,9 +364,28 @@ async def embed_text(text: str) -> list[float]:
                     "content": {"parts": [{"text": text}]}
                 }
             )
-            resp.raise_for_status()
-            data = resp.json()
-            return data["embedding"]["values"]
+            if resp.status_code == 200:
+                data = resp.json()
+                return data["embedding"]["values"]
+            else:
+                logger.warning("Gemini embedding failed with %s: %s", resp.status_code, resp.text)
+                # Fallback to older embedding-001 model if text-embedding-004 is rejected
+                if resp.status_code in (400, 404):
+                    logger.info("Attempting fallback to models/embedding-001...")
+                    fallback_url = "https://generativelanguage.googleapis.com/v1beta/models/embedding-001:embedContent"
+                    resp_fb = await client.post(
+                        fallback_url,
+                        params={"key": config.GEMINI_API_KEY.strip()},
+                        json={
+                            "model": "models/embedding-001",
+                            "content": {"parts": [{"text": text}]}
+                        }
+                    )
+                    if resp_fb.status_code == 200:
+                        return resp_fb.json()["embedding"]["values"]
+                    else:
+                        logger.warning("Fallback Gemini embedding failed with %s: %s", resp_fb.status_code, resp_fb.text)
     except Exception as exc:
-        logger.error("Embedding generation failed: %s", exc)
-        return []
+        logger.error("Gemini embedding HTTP error: %s", exc)
+
+    return []
