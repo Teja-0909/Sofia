@@ -142,8 +142,8 @@ async def generate_image_together(visual_prompt: str, token: str) -> bytes | Non
     payload = {
         "model": "black-forest-labs/FLUX.1-schnell",
         "prompt": visual_prompt,
-        "width": 1344,
-        "height": 768,
+        "width": 1024,
+        "height": 1024,
         "steps": 4,
         "n": 1,
         "response_format": "b64_json",
@@ -181,11 +181,7 @@ async def generate_image_hf(visual_prompt: str, token: str) -> bytes | None:
         for model in models:
             url = f"https://router.huggingface.co/hf-inference/models/{model}"
             try:
-                payload = {
-                    "inputs": visual_prompt,
-                    "parameters": {"width": 1344, "height": 768}
-                }
-                resp = await client.post(url, headers=headers, json=payload)
+                resp = await client.post(url, headers=headers, json={"inputs": visual_prompt})
                 if resp.status_code == 200 and len(resp.content) > 5000:
                     content_type = resp.headers.get("content-type", "")
                     if "image" in content_type or not resp.content.startswith(b"{"):
@@ -220,9 +216,6 @@ async def generate_image_bytes(visual_prompt: str) -> bytes | None:
     encoded = quote(visual_prompt)
     seed = random.randint(1, 99999999)
 
-    # All images should be wide horizontal landscape (1344x768) per Teja's mandate
-    width, height = 1344, 768
-    
     lower = visual_prompt.lower()
 
     if any(k in lower for k in ("anime", "illustration", "concept art", "ghibli", "drawing", "manga", "watercolor")):
@@ -232,7 +225,7 @@ async def generate_image_bytes(visual_prompt: str) -> bytes | None:
     else:
         model_name = "flux-realism"
 
-    url = f"https://image.pollinations.ai/prompt/{encoded}?width={width}&height={height}&model={model_name}&nologo=true&seed={seed}"
+    url = f"https://image.pollinations.ai/prompt/{encoded}?model={model_name}&nologo=true&seed={seed}"
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
     }
