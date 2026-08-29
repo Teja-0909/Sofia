@@ -142,8 +142,8 @@ async def generate_image_together(visual_prompt: str, token: str) -> bytes | Non
     payload = {
         "model": "black-forest-labs/FLUX.1-schnell",
         "prompt": visual_prompt,
-        "width": 1024,
-        "height": 576,
+        "width": 1344,
+        "height": 768,
         "steps": 4,
         "n": 1,
         "response_format": "b64_json",
@@ -183,7 +183,7 @@ async def generate_image_hf(visual_prompt: str, token: str) -> bytes | None:
             try:
                 payload = {
                     "inputs": visual_prompt,
-                    "parameters": {"width": 1024, "height": 576}
+                    "parameters": {"width": 1344, "height": 768}
                 }
                 resp = await client.post(url, headers=headers, json=payload)
                 if resp.status_code == 200 and len(resp.content) > 5000:
@@ -220,8 +220,8 @@ async def generate_image_bytes(visual_prompt: str) -> bytes | None:
     encoded = quote(visual_prompt)
     seed = random.randint(1, 99999999)
 
-    # All images should be wide horizontal landscape (1024x576) per Teja's mandate
-    width, height = 1024, 576
+    # All images should be wide horizontal landscape (1344x768) per Teja's mandate
+    width, height = 1344, 768
     
     lower = visual_prompt.lower()
 
