@@ -35,7 +35,7 @@ Sofia has complete freedom to wear whatever matches the context and her mood. If
 PROMPT ARCHITECTURE (3 SENTENCES MAX):
 1. Subject & Core Identity (Use her permanent visual identity above).
 2. Outfit & Framing (Describe her clothing—or lack thereof—depending on the mood/context. Frame her thigh-up, waist-up, or face close-up).
-3. Setting, Time & Camera (Use the provided context to set the scene, e.g. "sunlit cafe" or "dimly lit cozy bedroom at night". "Shot on iPhone 15, soft depth of field, candid lifestyle photo.")
+3. Setting, Time & Camera (Use the provided context to set the scene, e.g. "sunlit cafe" or "dimly lit cozy bedroom at night". "Shot on iPhone 15, cinematic wide landscape orientation, soft depth of field, candid lifestyle photo.")
 
 Output ONLY the raw final English prompt. No preamble, no quotes.
 """
@@ -142,8 +142,8 @@ async def generate_image_together(visual_prompt: str, token: str) -> bytes | Non
     payload = {
         "model": "black-forest-labs/FLUX.1-schnell",
         "prompt": visual_prompt,
-        "width": 1024,
-        "height": 1024,
+        "width": 1280,
+        "height": 768,
         "steps": 4,
         "n": 1,
         "response_format": "b64_json",
@@ -214,13 +214,8 @@ async def generate_image_bytes(visual_prompt: str) -> bytes | None:
     encoded = quote(visual_prompt)
     seed = random.randint(1, 99999999)
 
-    lower = visual_prompt.lower()
-    if any(k in lower for k in ("couple", "two people", "together", "man on the left", "man and woman")):
-        width, height = 1024, 768
-    elif any(k in lower for k in ("portrait", "full body", "outfit", "standing")):
-        width, height = 768, 1024
-    else:
-        width, height = 1024, 1024
+    # All images should be wide horizontal landscape (1280x768) per Teja's mandate
+    width, height = 1280, 768
 
     if any(k in lower for k in ("anime", "illustration", "concept art", "ghibli", "drawing", "manga", "watercolor")):
         model_name = "flux-anime"
