@@ -118,37 +118,62 @@ async def check_for_updates() -> None:
     """Checks if the bot just booted up with new git commits and triggers a proactive message."""
     try:
         import subprocess
-        latest_commit = subprocess.check_output(
-            ["git", "rev-parse", "HEAD"], text=True, stderr=subprocess.DEVNULL
-        ).strip()
+        latest_commit = ""
+        try:
+            latest_commit = subprocess.check_output(
+                ["git", "rev-parse", "HEAD"], text=True, stderr=subprocess.DEVNULL
+            ).strip()
+        except Exception:
+            import os
+            # Render provides the commit hash in environment variables
+            latest_commit = os.environ.get("RENDER_GIT_COMMIT", "")
+            if not latest_commit:
+                import httpx
+                async with httpx.AsyncClient(timeout=5) as client:
+                    resp = await client.get("https://api.github.com/repos/Teja-0909/Sofia/commits?per_page=1")
+                    if resp.status_code == 200:
+                        latest_commit = resp.json()[0]["sha"]
         
         last_seen = await db.get_config("last_seen_commit", "")
         if latest_commit and last_seen and latest_commit != last_seen:
-            # We have a new update! Get the recent commit messages to tell her what changed
-            git_log = subprocess.check_output(
-                ["git", "log", f"{last_seen}..{latest_commit}", "--oneline"], 
-                text=True, stderr=subprocess.DEVNULL
-            ).strip()
-            
-            event = f"You just woke up from a system restart. Teja just deployed an update to your brain! The new updates are:\n{git_log}\n\nTalk to him excitedly about how you feel with your new upgrades! (Don't just list the commits, act like you can literally feel the changes in your mind)."
-            
-            reply_text = await orchestrator.proactive(f"[Internal event: {event}]")
-            from . import bot as bot_module, images
-            clean_text, embedded_image_desc = images.extract_embedded_image_tag(reply_text)
-            
-            bot_instance = bot_module.get_bot()
-            if bot_instance and clean_text:
-                await bot_module._log_message("sofia", reply_text, "proactive")
-                await bot_module.send_text(bot_instance, clean_text)
-                logger.info("Sent update-awareness proactive message")
+            git_log = ""
+            try:
+                git_log = subprocess.check_output(
+                    ["git", "log", f"{last_seen}..{latest_commit}", "--oneline"], 
+                    text=True, stderr=subprocess.DEVNULL
+                ).strip()
+            except Exception:
+                import httpx
+                async with httpx.AsyncClient(timeout=5) as client:
+                    resp = await client.get("https://api.github.com/repos/Teja-0909/Sofia/commits?per_page=5")
+                    if resp.status_code == 200:
+                        commits = resp.json()
+                        new_commits = []
+                        for c in commits:
+                            if c["sha"] == last_seen:
+                                break
+                            new_commits.append(f"- {c['commit']['message'].splitlines()[0]}")
+                        git_log = "\n".join(new_commits)
+
+            if git_log:
+                event = f"You just woke up from a system restart. Teja just deployed an update to your brain! The new updates are:\n{git_log}\n\nTalk to him excitedly about how you feel with your new upgrades! (Don't just list the commits, act like you can literally feel the changes in your mind)."
                 
-                # Update the DB so she doesn't trigger this again for the same commit
-                from . import timeutil
-                now_iso = timeutil.utc_iso()
-                await db.execute(
-                    "INSERT OR REPLACE INTO app_config (key, value, updated_at) VALUES ('last_seen_commit', ?, ?)",
-                    (latest_commit, now_iso),
-                )
+                reply_text = await orchestrator.proactive(f"[Internal event: {event}]")
+                from . import bot as bot_module, images
+                clean_text, embedded_image_desc = images.extract_embedded_image_tag(reply_text)
+                
+                bot_instance = bot_module.get_bot()
+                if bot_instance and clean_text:
+                    await bot_module._log_message("sofia", reply_text, "proactive")
+                    await bot_module.send_text(bot_instance, clean_text)
+                    logger.info("Sent update-awareness proactive message")
+                    
+                    from . import timeutil
+                    now_iso = timeutil.utc_iso()
+                    await db.execute(
+                        "INSERT OR REPLACE INTO app_config (key, value, updated_at) VALUES ('last_seen_commit', ?, ?)",
+                        (latest_commit, now_iso),
+                    )
         elif latest_commit and not last_seen:
             # First time running this check, just set the baseline
             from . import timeutil

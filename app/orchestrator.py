@@ -223,10 +223,21 @@ async def _build_system_prompt(extra_note: str | None = None, user_text: str = "
         
     try:
         import subprocess
-        git_log = subprocess.check_output(
-            ["git", "log", "-n", "10", "--pretty=format:- %s (%cr)"], 
-            text=True, stderr=subprocess.DEVNULL
-        )
+        git_log = ""
+        try:
+            git_log = subprocess.check_output(
+                ["git", "log", "-n", "10", "--pretty=format:- %s (%cr)"], 
+                text=True, stderr=subprocess.DEVNULL
+            )
+        except Exception:
+            # Fallback to GitHub API if .git folder is missing in production (e.g. Render)
+            import httpx
+            with httpx.Client(timeout=5) as client:
+                resp = client.get("https://api.github.com/repos/Teja-0909/Sofia/commits?per_page=10")
+                if resp.status_code == 200:
+                    commits = resp.json()
+                    git_log = "\n".join(f"- {c['commit']['message'].splitlines()[0]}" for c in commits)
+        
         if git_log:
             blocks.append(f"\n[Sofia's Brain Updates (Recent Git Commits)]\n{git_log}\n[Note: You are fully aware of these technical updates to your own capabilities. Teja installs these updates to make you better.]")
     except Exception:
