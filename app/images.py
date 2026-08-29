@@ -218,6 +218,8 @@ async def generate_image_bytes(visual_prompt: str) -> bytes | None:
 
     # All images should be wide horizontal landscape (1024x576) per Teja's mandate
     width, height = 1024, 576
+    
+    lower = visual_prompt.lower()
 
     if any(k in lower for k in ("anime", "illustration", "concept art", "ghibli", "drawing", "manga", "watercolor")):
         model_name = "flux-anime"
