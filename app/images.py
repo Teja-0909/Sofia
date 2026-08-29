@@ -142,8 +142,8 @@ async def generate_image_together(visual_prompt: str, token: str) -> bytes | Non
     payload = {
         "model": "black-forest-labs/FLUX.1-schnell",
         "prompt": visual_prompt,
-        "width": 1344,
-        "height": 768,
+        "width": 1024,
+        "height": 576,
         "steps": 4,
         "n": 1,
         "response_format": "b64_json",
@@ -214,8 +214,8 @@ async def generate_image_bytes(visual_prompt: str) -> bytes | None:
     encoded = quote(visual_prompt)
     seed = random.randint(1, 99999999)
 
-    # All images should be wide horizontal landscape (1344x768) per Teja's mandate
-    width, height = 1344, 768
+    # All images should be wide horizontal landscape (1024x576) per Teja's mandate
+    width, height = 1024, 576
 
     if any(k in lower for k in ("anime", "illustration", "concept art", "ghibli", "drawing", "manga", "watercolor")):
         model_name = "flux-anime"
