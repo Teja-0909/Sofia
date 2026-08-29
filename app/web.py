@@ -119,8 +119,8 @@ async def _handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWri
                 if line.lower().startswith("content-length:"):
                     try:
                         content_len = int(line.split(":")[1].strip())
-                    except ValueError:
-                        pass
+                    except ValueError as ve:
+                        logger.debug("Invalid Content-Length header: %s", ve)
 
             # Find boundary between headers and body
             header_end = header_data.find(b"\r\n\r\n")
@@ -157,8 +157,8 @@ async def _handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWri
         try:
             writer.close()
             await writer.wait_closed()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Error closing HTTP writer: %s", exc)
 
 
 class WebRunner:

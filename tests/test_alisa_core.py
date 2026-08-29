@@ -21,6 +21,7 @@ class TestAlisaCore(unittest.IsolatedAsyncioTestCase):
         await db.init()
 
     async def asyncTearDown(self):
+        await db.close_local_conn()
         self.tmp_dir.cleanup()
 
     async def test_db_init_and_config(self):
@@ -82,7 +83,7 @@ class TestAlisaCore(unittest.IsolatedAsyncioTestCase):
     async def test_parser_llm_flow(self):
         mock_llm_json = '{"description": "Review slides before presentation", "iso_time": "2026-08-26T15:30:00Z", "is_reminder": true}'
         with patch("app.llm.chat", new_callable=AsyncMock) as mock_chat:
-            mock_chat.return_value = mock_llm_json
+            mock_chat.return_value = (mock_llm_json, None)
             res = await parser.parse("make sure I review slides before the presentation tomorrow")
             self.assertIsNotNone(res)
             self.assertEqual(res["description"], "Review slides before presentation")
@@ -127,12 +128,12 @@ class TestAlisaCore(unittest.IsolatedAsyncioTestCase):
         )
 
         mock_curate_response = (
-            '[{"category": "moment", "content": "Teja got promoted at work", '
-            '"reasoning": "Major career win and proud moment together", "weight": 1.5}]'
+            '{"memories": [{"category": "moment", "content": "Teja got promoted at work", '
+            '"reasoning": "Major career win and proud moment together", "weight": 1.5}]}'
         )
 
         with patch("app.llm.chat", new_callable=AsyncMock) as mock_chat:
-            mock_chat.return_value = mock_curate_response
+            mock_chat.return_value = (mock_curate_response, None)
             count = await memory.curate_recent_conversations(lookback=5, min_batch=2)
             self.assertEqual(count, 1)
 
@@ -149,7 +150,7 @@ class TestAlisaCore(unittest.IsolatedAsyncioTestCase):
         )
 
         with patch("app.llm.chat", new_callable=AsyncMock) as mock_chat:
-            mock_chat.return_value = f"#{mem_id}"
+            mock_chat.return_value = (f'{{"target_id": {mem_id}}}', None)
             res = await memory.try_handle_correction("forget that I hate mushrooms, I actually like them now")
             self.assertIsNotNone(res)
             self.assertEqual(res["id"], mem_id)
@@ -165,7 +166,7 @@ class TestAlisaCore(unittest.IsolatedAsyncioTestCase):
 
         mock_diary_resp = '{"entry": "We had a lovely talk today.", "mood_note": "Warm and hopeful"}'
         with patch("app.llm.chat", new_callable=AsyncMock) as mock_chat:
-            mock_chat.return_value = mock_diary_resp
+            mock_chat.return_value = (mock_diary_resp, None)
             ok = await diary.generate_daily_diary(day_str="2026-08-21")
             self.assertTrue(ok)
 
@@ -198,7 +199,7 @@ class TestAlisaCore(unittest.IsolatedAsyncioTestCase):
     async def test_orchestrator_image_reply(self):
         dummy_img = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15c4"
         with patch("app.llm.chat", new_callable=AsyncMock) as mock_chat:
-            mock_chat.return_value = "I see your code editor with a python error on line 42."
+            mock_chat.return_value = ("I see your code editor with a python error on line 42.", None)
             reply = await orchestrator.reply(
                 "Look at this screenshot",
                 image_bytes=dummy_img,

@@ -192,8 +192,8 @@ async def search_web(query: str, max_results: int = 5) -> list[dict]:
                     clean_s = re.sub(r'\s+', ' ', clean_s)
                     if clean_s:
                         results.append({"title": "", "snippet": clean_s, "url": clean_u})
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("ddg html fallback parse note: %s", exc)
     return results
 
 

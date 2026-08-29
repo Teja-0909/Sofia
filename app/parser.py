@@ -330,8 +330,8 @@ Determine if Teja is stating that he completed or finished any of his active tas
             valid_ids = {t["id"] for t in pending_tasks}
             if int(val) in valid_ids:
                 return int(val)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("detect_completion parse note: %s", exc)
 
     return None
 

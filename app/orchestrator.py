@@ -1,11 +1,20 @@
+import datetime as dt
+import math
 import pathlib
 import re
 import json
 import logging
 
-from . import config, db, llm
+from . import config, db, llm, memory_file, moods, timeutil
+from . import parser
+from . import search as search_module
+from . import tasks as tasks_module
 
 logger = logging.getLogger(__name__)
+
+# Rough chars-per-token estimate for budget tracking
+_CHARS_PER_TOKEN = 4
+_MAX_CONTEXT_TOKENS = 120_000  # conservative ceiling for Gemini Flash
 
 FALLBACK_MESSAGE = "give me a second, having some trouble connecting"
 
@@ -66,9 +75,13 @@ def _clean_asterisks(text: str) -> str:
     return clean
 
 
-async def _build_system_prompt(extra_note: str | None = None, user_text: str = "") -> str:
-    base = pathlib.Path(config.SYSTEM_PROMPT_PATH).read_text(encoding="utf-8")
+def _estimate_tokens(text: str) -> int:
+    """Rough token estimate from character count."""
+    return len(text) // _CHARS_PER_TOKEN
 
+
+async def _ctx_relationship_stage() -> str:
+    """Relationship depth level and stage directive."""
     state = await db.fetch_one("SELECT depth_level, days_active FROM relationship_state WHERE id = 1")
     depth = float(state["depth_level"]) if state and state["depth_level"] is not None else 0.0
     days_active = int(state["days_active"]) if state and state["days_active"] is not None else 0
@@ -84,11 +97,29 @@ async def _build_system_prompt(extra_note: str | None = None, user_text: str = "
     else:
         stage = "Eternal Soulmate & Lifetime Anchor — Permanent shared life, endless devotion."
 
+    return (
+        f"\n[Relationship Depth: Level {depth:.1f} | Active Days: {days_active} | Stage: {stage}]\n"
+        "[Bond Directive: Your devotion and shared history with Teja grow continuously through real conversations without ceiling or limit. Reflect this rich familiarity naturally.]"
+    )
+
+
+async def _ctx_living_notebook() -> str:
+    """Sofia's living memory.md notebook."""
+    memory_md = await memory_file.get_memory_md()
+    if memory_md:
+        return f"\n[Sofia's Living Memory Notebook (memory.md)]\n{memory_md}"
+    return ""
+
+
+async def _ctx_vector_memories(user_text: str) -> tuple[str, str]:
+    """
+    Retrieves relationship memories and past conversation summaries via vector search.
+    Returns (memories_block, past_conversations_block).
+    """
     top_k = int(await db.get_config("memory_top_k", "30"))
     memories = []
     past_conversations = []
-    recent_summaries = []
-    
+
     if user_text:
         try:
             user_embedding = await llm.embed_text(user_text)
@@ -99,84 +130,62 @@ async def _build_system_prompt(extra_note: str | None = None, user_text: str = "
                     try:
                         emb = json.loads(row["embedding"]) if row["embedding"] else []
                         if emb and len(emb) == len(user_embedding):
-                            import math
                             dot = sum(a*b for a, b in zip(user_embedding, emb))
                             normA = math.sqrt(sum(a*a for a in user_embedding))
                             normB = math.sqrt(sum(b*b for b in emb))
                             sim = dot / (normA * normB) if normA and normB else 0.0
                         else:
                             sim = 0.0
-                    except Exception:
+                    except Exception as exc:
+                        logger.debug("Memory embedding similarity note: %s", exc)
                         sim = 0.0
-                        
-                    # Time decay + explicit weight
-                    import datetime as dt_m
+
                     time_factor = 1.0
                     try:
                         t_str = row["last_reinforced_at"] or row["created_at"]
-                        t_val = dt_m.datetime.fromisoformat(t_str.replace("Z", "+00:00"))
-                        days_old = (dt_m.datetime.now(dt_m.timezone.utc) - t_val).total_seconds() / 86400
+                        t_val = dt.datetime.fromisoformat(t_str.replace("Z", "+00:00"))
+                        days_old = (dt.datetime.now(dt.timezone.utc) - t_val).total_seconds() / 86400
                         time_factor = 1.0 / (1.0 + days_old / 7.0)
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        logger.debug("Memory time decay note: %s", exc)
 
-                    # Hybrid score = vector similarity heavily weighted + memory weight
                     final_score = (sim * 3.0) + (row["weight"] * time_factor)
                     scored_mems.append((final_score, row))
-                
+
                 scored_mems.sort(key=lambda x: x[0], reverse=True)
                 memories = [x[1] for x in scored_mems[:top_k]]
 
                 # Conversation Summaries Vector Search
                 try:
-                    import datetime as dt_m
-                    from . import timeutil
-                    cutoff_dt = timeutil.utc_now() - dt_m.timedelta(hours=48)
+                    cutoff_dt = timeutil.utc_now() - dt.timedelta(hours=48)
                     cutoff_iso = timeutil.utc_iso(cutoff_dt)
-
                     all_summaries = await db.fetch_all("SELECT summary_text, until_timestamp, embedding FROM conversation_summaries WHERE until_timestamp < ?", (cutoff_iso,))
                     scored_summaries = []
                     for row in all_summaries:
                         try:
                             emb = json.loads(row["embedding"]) if row["embedding"] else []
                             if emb and len(emb) == len(user_embedding):
-                                import math
                                 dot = sum(a*b for a, b in zip(user_embedding, emb))
                                 normA = math.sqrt(sum(a*a for a in user_embedding))
                                 normB = math.sqrt(sum(b*b for b in emb))
                                 sim = dot / (normA * normB) if normA and normB else 0.0
                             else:
                                 sim = 0.0
-                            
-                            t_val = dt_m.datetime.fromisoformat(row["until_timestamp"].replace("Z", "+00:00"))
-                            days_old = (dt_m.datetime.now(dt_m.timezone.utc) - t_val).total_seconds() / 86400
+                            t_val = dt.datetime.fromisoformat(row["until_timestamp"].replace("Z", "+00:00"))
+                            days_old = (dt.datetime.now(dt.timezone.utc) - t_val).total_seconds() / 86400
                             time_factor = 1.0 / (1.0 + days_old / 30.0)
-                            
                             final_score = sim * time_factor
                             scored_summaries.append((final_score, row))
-                        except Exception:
-                            pass
-                    
+                        except Exception as exc:
+                            logger.debug("Summary scoring note: %s", exc)
                     scored_summaries.sort(key=lambda x: x[0], reverse=True)
                     past_conversations = [x[1] for x in scored_summaries[:3] if x[0] > 0.4]
                 except Exception as e:
                     logger.warning("Vector summary retrieval failed: %s", e)
         except Exception as e:
             logger.warning("Vector memory retrieval failed: %s", e)
-            
-    # Always fetch recent summaries (from the last 48 hours) for context
-    try:
-        import datetime as dt_m
-        from . import timeutil
-        cutoff_dt = timeutil.utc_now() - dt_m.timedelta(hours=48)
-        cutoff_iso = timeutil.utc_iso(cutoff_dt)
-        recent_summaries = await db.fetch_all(
-            "SELECT summary_text, until_timestamp FROM conversation_summaries WHERE until_timestamp >= ? ORDER BY until_timestamp ASC",
-            (cutoff_iso,)
-        )
-    except Exception as e:
-        logger.warning("Recent summary retrieval failed: %s", e)
-    
+
+    # Fallback: weight-based retrieval if vector search found nothing
     if not memories:
         memories = await db.fetch_all(
             """
@@ -188,49 +197,59 @@ async def _build_system_prompt(extra_note: str | None = None, user_text: str = "
             (top_k,),
         )
 
+    mem_block = ""
+    if memories:
+        lines = "\n".join(f"- [{m['category']}] {m['content']}" for m in memories)
+        mem_block = f"\n[Things you remember about Teja (Permanent Memories)]\n{lines}"
+
+    past_block = ""
+    if past_conversations:
+        lines = "\n".join(f"- {timeutil.format_local(c['until_timestamp'])}: {c['summary_text']}" for c in past_conversations)
+        past_block = f"\n[Relevant Past Conversations (Vector Retrieved)]\n{lines}"
+
+    return mem_block, past_block
+
+
+async def _ctx_recent_summaries() -> str:
+    """Recent chat summaries from the last 48 hours."""
+    try:
+        cutoff_dt = timeutil.utc_now() - dt.timedelta(hours=48)
+        cutoff_iso = timeutil.utc_iso(cutoff_dt)
+        recent_summaries = await db.fetch_all(
+            "SELECT summary_text, until_timestamp FROM conversation_summaries WHERE until_timestamp >= ? ORDER BY until_timestamp ASC",
+            (cutoff_iso,),
+        )
+        if recent_summaries:
+            lines = "\n".join(f"- Up to {timeutil.format_local(s['until_timestamp'])}: {s['summary_text']}" for s in recent_summaries)
+            return f"\n[Recent Chat Summaries (Past 48 Hours)]\n{lines}"
+    except Exception as e:
+        logger.warning("Recent summary retrieval failed: %s", e)
+    return ""
+
+
+async def _ctx_diary() -> str:
+    """Recent diary entries."""
     diary_days = int(await db.get_config("diary_context_days", "7"))
     diary = await db.fetch_all(
         "SELECT date, entry FROM daily_diary ORDER BY date DESC LIMIT ?", (diary_days,)
     )
-
-    blocks = [base]
-    blocks.append(
-        f"\n[Relationship Depth: Level {depth:.1f} | Active Days: {days_active} | Stage: {stage}]\n"
-        "[Bond Directive: Your devotion and shared history with Teja grow continuously through real conversations without ceiling or limit. Reflect this rich familiarity naturally.]"
-    )
-    from . import memory_file
-    memory_md = await memory_file.get_memory_md()
-    if memory_md:
-        blocks.append(f"\n[Sofia's Living Memory Notebook (memory.md)]\n{memory_md}")
-
-    if memories:
-        lines = "\n".join(f"- [{m['category']}] {m['content']}" for m in memories)
-        blocks.append(f"\n[Things you remember about Teja (Permanent Memories)]\n{lines}")
-    
-    if past_conversations:
-        from . import timeutil
-        lines = "\n".join(f"- {timeutil.format_local(c['until_timestamp'])}: {c['summary_text']}" for c in past_conversations)
-        blocks.append(f"\n[Relevant Past Conversations (Vector Retrieved)]\n{lines}")
-        
-    if recent_summaries:
-        from . import timeutil
-        lines = "\n".join(f"- Up to {timeutil.format_local(s['until_timestamp'])}: {s['summary_text']}" for s in recent_summaries)
-        blocks.append(f"\n[Recent Chat Summaries (Past 48 Hours)]\n{lines}")
-        
     if diary:
         entries = "\n".join(f"{d['date']}: {d['entry']}" for d in reversed(diary))
-        blocks.append(f"\n[Recent days (Past Diary Entries)]\n{entries}")
-        
+        return f"\n[Recent days (Past Diary Entries)]\n{entries}"
+    return ""
+
+
+def _ctx_git_log() -> str:
+    """Recent git commits showing Sofia's brain updates."""
     try:
         import subprocess
         git_log = ""
         try:
             git_log = subprocess.check_output(
-                ["git", "log", "-n", "10", "--pretty=format:- %s (%cr)"], 
+                ["git", "log", "-n", "10", "--pretty=format:- %s (%cr)"],
                 text=True, stderr=subprocess.DEVNULL
             )
         except Exception:
-            # Fallback 1: GitHub API with Token (if private repo)
             if hasattr(config, "GITHUB_TOKEN") and config.GITHUB_TOKEN:
                 import httpx
                 headers = {"Authorization": f"token {config.GITHUB_TOKEN}"}
@@ -238,8 +257,7 @@ async def _build_system_prompt(extra_note: str | None = None, user_text: str = "
                     resp = client.get("https://api.github.com/repos/Teja-0909/Sofia/commits?per_page=10", headers=headers)
                     if resp.status_code == 200:
                         git_log = "\n".join(f"- {c['commit']['message'].splitlines()[0]}" for c in resp.json())
-            
-            # Fallback 2: Read raw .git/logs/HEAD file (works even without git binary)
+
             if not git_log:
                 import os
                 if os.path.exists(".git/logs/HEAD"):
@@ -260,11 +278,17 @@ async def _build_system_prompt(extra_note: str | None = None, user_text: str = "
                         git_log = "\n".join(commits)
 
         if git_log:
-            blocks.append(f"\n[Sofia's Brain Updates (Recent Git Commits)]\n{git_log}\n[Note: You are fully aware of these technical updates to your own capabilities. Teja installs these updates to make you better.]")
-    except Exception:
-        pass
-    
-    from . import timeutil
+            return (
+                f"\n[Sofia's Brain Updates (Recent Git Commits)]\n{git_log}\n"
+                "[Note: You are fully aware of these technical updates to your own capabilities. Teja installs these updates to make you better.]"
+            )
+    except Exception as exc:
+        logger.debug("Git log context retrieval failed: %s", exc)
+    return ""
+
+
+def _ctx_time_mood() -> str:
+    """Current time of day and atmospheric mood note."""
     local_now = timeutil.now_local()
     hour = local_now.hour
     if 0 <= hour < 5:
@@ -275,14 +299,19 @@ async def _build_system_prompt(extra_note: str | None = None, user_text: str = "
         time_mood = "Afternoon / active day — encouraging, focused, checking in on his progress and wellbeing."
     else:
         time_mood = "Evening / winding down — cozy, unwinding together, listening to how his day went."
+    return f"\n[Current Time & Atmosphere: {local_now.strftime('%A %I:%M %p IST')} | {time_mood}]"
 
-    from . import moods
+
+async def _ctx_active_mood() -> str:
+    """Sofia's current emotional mood directive."""
     current_mood_key, mood_info = await moods.get_current_mood()
-    blocks.append(f"\n[Active Emotional Personality & Tone: {mood_info['name']} {mood_info['emoji']}]\n{mood_info['directive']}")
+    return f"\n[Active Emotional Personality & Tone: {mood_info['name']} {mood_info['emoji']}]\n{mood_info['directive']}"
 
-    blocks.append(f"\n[Current Time & Atmosphere: {local_now.strftime('%A %I:%M %p IST')} | {time_mood}]")
+
+async def _ctx_tasks_and_threads() -> str:
+    """Pending tasks, recently completed tasks, and casual mentions."""
+    blocks = []
     try:
-        from . import tasks as tasks_module
         pending_tasks = await tasks_module.list_pending()
         if pending_tasks:
             task_lines = "\n".join(
@@ -316,7 +345,11 @@ async def _build_system_prompt(extra_note: str | None = None, user_text: str = "
     except Exception as exc:
         logger.debug("Temp reminders prompt block note: %s", exc)
 
-    # Live PC Presence Context
+    return "\n".join(blocks)
+
+
+async def _ctx_pc_presence() -> str:
+    """Live PC presence context from sidecar."""
     presence_app = await db.get_config("last_presence_app", "")
     presence_title = await db.get_config("last_presence_title", "")
     presence_idle = await db.get_config("last_presence_idle", "0")
@@ -325,9 +358,8 @@ async def _build_system_prompt(extra_note: str | None = None, user_text: str = "
 
     if (presence_app or presence_title) and presence_time:
         try:
-            import datetime as dt_mod
-            p_time = dt_mod.datetime.fromisoformat(presence_time.replace("Z", "+00:00"))
-            if (dt_mod.datetime.now(dt_mod.timezone.utc) - p_time).total_seconds() < 900:
+            p_time = dt.datetime.fromisoformat(presence_time.replace("Z", "+00:00"))
+            if (dt.datetime.now(dt.timezone.utc) - p_time).total_seconds() < 900:
                 idle_int = int(presence_idle) if presence_idle.isdigit() else 0
                 if idle_int >= 15:
                     status_desc = f"Away from PC (idle for {idle_int} minutes)"
@@ -335,13 +367,56 @@ async def _build_system_prompt(extra_note: str | None = None, user_text: str = "
                     status_desc = f"Actively on PC: {presence_app}" + (f" (Window: '{presence_title}')" if presence_title else "")
                 if presence_media:
                     status_desc += f" | Listening/Watching: {presence_media}"
-                blocks.append(f"\n[Teja's Live PC Presence: {status_desc}]")
-        except Exception:
-            pass
+                return f"\n[Teja's Live PC Presence: {status_desc}]"
+        except Exception as exc:
+            logger.debug("PC presence context parse error: %s", exc)
+    return ""
+
+
+async def _build_system_prompt(extra_note: str | None = None, user_text: str = "") -> str:
+    """
+    Assembles the full system prompt from composable context blocks,
+    with token-budget awareness to avoid overflowing model context windows.
+    """
+    base = pathlib.Path(config.SYSTEM_PROMPT_PATH).read_text(encoding="utf-8")
+
+    # Gather all context blocks in priority order (highest priority first)
+    relationship_block = await _ctx_relationship_stage()
+    notebook_block = await _ctx_living_notebook()
+    mem_block, past_conv_block = await _ctx_vector_memories(user_text)
+    recent_summaries_block = await _ctx_recent_summaries()
+    diary_block = await _ctx_diary()
+    mood_block = await _ctx_active_mood()
+    time_block = _ctx_time_mood()
+    tasks_block = await _ctx_tasks_and_threads()
+    presence_block = await _ctx_pc_presence()
+    git_block = _ctx_git_log()
+
+    core_blocks = [base, relationship_block, notebook_block]
+    context_blocks = [mem_block, past_conv_block, recent_summaries_block, diary_block]
+    state_blocks = [mood_block, time_block, tasks_block, presence_block, git_block]
 
     if extra_note:
-        blocks.append(f"\n{extra_note}")
-    return "\n".join(blocks)
+        state_blocks.append(f"\n{extra_note}")
+
+    all_blocks = core_blocks + context_blocks + state_blocks
+    total_tokens = sum(_estimate_tokens(b) for b in all_blocks if b)
+
+    if total_tokens > _MAX_CONTEXT_TOKENS:
+        budget_remaining = _MAX_CONTEXT_TOKENS - sum(_estimate_tokens(b) for b in core_blocks if b)
+        selected_extras = []
+        for block in (context_blocks + state_blocks):
+            if not block:
+                continue
+            block_cost = _estimate_tokens(block)
+            if budget_remaining >= block_cost:
+                selected_extras.append(block)
+                budget_remaining -= block_cost
+            else:
+                logger.info("Token budget: trimmed context block (%d tokens) to stay within limits", block_cost)
+        all_blocks = core_blocks + selected_extras
+
+    return "\n".join(b for b in all_blocks if b)
 
 
 async def _history(limit: int = 100) -> list[dict]:
@@ -404,7 +479,6 @@ async def _verify_and_refine_draft(
     claimed_task = any(p in lower for p in ("added the task", "scheduled a reminder", "i'll remind you", "set a reminder", "created a reminder", "added to your tasks"))
     has_task_tag = bool(re.search(r"\[(?:TASK|REMINDER|SCHEDULE):", clean_draft, re.IGNORECASE))
     if claimed_task and not has_task_tag:
-        from . import parser
         intent = await parser.parse(user_text)
         if intent.get("description") and intent.get("due_utc"):
             when = intent.get("due_utc")
@@ -415,7 +489,6 @@ async def _verify_and_refine_draft(
     claimed_done = any(p in lower for p in ("marked it as done", "marked it done", "marked as done", "checked off your task", "task is marked complete"))
     has_done_tag = bool(re.search(r"\[(?:DONE|COMPLETE|FINISHED):", clean_draft, re.IGNORECASE))
     if claimed_done and not has_done_tag:
-        from . import tasks as tasks_module, parser
         pending = await tasks_module.list_pending()
         matched_id = await parser.detect_completion(user_text, pending) if pending else None
         if matched_id:
@@ -426,9 +499,6 @@ async def _verify_and_refine_draft(
 
 
 async def _generate(system: str, messages: list[dict], user_text: str = "") -> str:
-    from . import search as search_module
-    from . import tasks as tasks_module
-
     current_messages = list(messages)
     max_tool_turns = 6
     
@@ -491,7 +561,6 @@ async def reply(
     window = int(await db.get_config("history_window", "200"))
     history = await _history(window)
 
-    from . import search as search_module
     direct_url = search_module.extract_url(user_text)
     search_block = None
 

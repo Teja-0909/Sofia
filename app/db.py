@@ -11,6 +11,9 @@ from . import config
 logger = logging.getLogger(__name__)
 
 _turso_client = None
+_local_conn: aiosqlite.Connection | None = None
+_local_lock = asyncio.Lock()
+_local_db_path: str | None = None
 
 
 def is_turso() -> bool:
@@ -101,7 +104,8 @@ async def get_turso_client():
                 )
             else:
                 _turso_client = TursoHttpFallback(https_url, config.TURSO_AUTH_TOKEN)
-        except Exception:
+        except Exception as exc:
+            logger.debug("libsql_client import/init failed, falling back to HTTP: %s", exc)
             _turso_client = TursoHttpFallback(https_url, config.TURSO_AUTH_TOKEN)
 
     return _turso_client
@@ -113,6 +117,29 @@ async def connect() -> aiosqlite.Connection:
     await conn.execute("PRAGMA foreign_keys = ON")
     await conn.execute("PRAGMA busy_timeout = 5000")
     return conn
+
+
+async def close_local_conn():
+    global _local_conn, _local_db_path
+    async with _local_lock:
+        if _local_conn is not None:
+            await _local_conn.close()
+            _local_conn = None
+            _local_db_path = None
+
+
+async def _get_local_conn() -> aiosqlite.Connection:
+    global _local_conn, _local_db_path
+    if _local_conn is None or _local_db_path != str(config.DB_PATH):
+        if _local_conn is not None:
+            await _local_conn.close()
+        _local_conn = await aiosqlite.connect(config.DB_PATH)
+        _local_db_path = str(config.DB_PATH)
+        _local_conn.row_factory = aiosqlite.Row
+        await _local_conn.execute("PRAGMA journal_mode = WAL")
+        await _local_conn.execute("PRAGMA foreign_keys = ON")
+        await _local_conn.execute("PRAGMA busy_timeout = 5000")
+    return _local_conn
 
 
 async def init() -> None:
@@ -134,12 +161,12 @@ async def init() -> None:
             )
         try:
             await client.execute("ALTER TABLE tasks ADD COLUMN is_recurring TEXT")
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Schema migration note: %s", exc)
         try:
             await client.execute("ALTER TABLE relationship_memory ADD COLUMN embedding TEXT")
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Schema migration note: %s", exc)
         try:
             await client.execute("""
             CREATE TABLE IF NOT EXISTS proactive_messages (
@@ -151,8 +178,8 @@ async def init() -> None:
             )
             """)
             await client.execute("CREATE INDEX IF NOT EXISTS idx_proactive_due ON proactive_messages(status, due_time)")
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Schema migration note: %s", exc)
         try:
             await client.execute("""
             CREATE TABLE IF NOT EXISTS conversation_summaries (
@@ -164,12 +191,12 @@ async def init() -> None:
             )
             """)
             await client.execute("CREATE INDEX IF NOT EXISTS idx_conv_summ_ts ON conversation_summaries(until_timestamp)")
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Schema migration note: %s", exc)
         try:
             await client.execute("ALTER TABLE conversation_summaries ADD COLUMN embedding TEXT")
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Schema migration note: %s", exc)
         logger.info("Turso cloud database initialized successfully")
     else:
         conn = await connect()
@@ -182,12 +209,12 @@ async def init() -> None:
                 )
             try:
                 await conn.execute("ALTER TABLE tasks ADD COLUMN is_recurring TEXT")
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Schema migration note: %s", exc)
             try:
                 await conn.execute("ALTER TABLE relationship_memory ADD COLUMN embedding TEXT")
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Schema migration note: %s", exc)
             try:
                 await conn.execute("""
                 CREATE TABLE IF NOT EXISTS proactive_messages (
@@ -199,8 +226,8 @@ async def init() -> None:
                 )
                 """)
                 await conn.execute("CREATE INDEX IF NOT EXISTS idx_proactive_due ON proactive_messages(status, due_time)")
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Schema migration note: %s", exc)
             try:
                 await conn.execute("""
                 CREATE TABLE IF NOT EXISTS conversation_summaries (
@@ -212,12 +239,12 @@ async def init() -> None:
                 )
                 """)
                 await conn.execute("CREATE INDEX IF NOT EXISTS idx_conv_summ_ts ON conversation_summaries(until_timestamp)")
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Schema migration note: %s", exc)
             try:
                 await conn.execute("ALTER TABLE conversation_summaries ADD COLUMN embedding TEXT")
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Schema migration note: %s", exc)
             await conn.commit()
             logger.info("Local SQLite database initialized at %s", config.DB_PATH)
         finally:
@@ -231,13 +258,11 @@ async def fetch_all(query: str, params: tuple = ()) -> list[dict]:
         cols = rs.columns if rs else []
         rows = rs.rows if rs else []
         return [dict(zip(cols, row)) for row in rows]
-    conn = await connect()
-    try:
+    async with _local_lock:
+        conn = await _get_local_conn()
         cursor = await conn.execute(query, params)
         rows = await cursor.fetchall()
         return [dict(r) for r in rows]
-    finally:
-        await conn.close()
 
 
 async def fetch_one(query: str, params: tuple = ()) -> dict | None:
@@ -247,13 +272,11 @@ async def fetch_one(query: str, params: tuple = ()) -> dict | None:
         if not rs or not rs.rows:
             return None
         return dict(zip(rs.columns, rs.rows[0]))
-    conn = await connect()
-    try:
+    async with _local_lock:
+        conn = await _get_local_conn()
         cursor = await conn.execute(query, params)
         row = await cursor.fetchone()
         return dict(row) if row else None
-    finally:
-        await conn.close()
 
 
 async def execute(query: str, params: tuple = ()) -> None:
@@ -261,12 +284,10 @@ async def execute(query: str, params: tuple = ()) -> None:
         client = await get_turso_client()
         await client.execute(query, list(params))
         return
-    conn = await connect()
-    try:
+    async with _local_lock:
+        conn = await _get_local_conn()
         await conn.execute(query, params)
         await conn.commit()
-    finally:
-        await conn.close()
 
 
 async def get_config(key: str, default: str) -> str:

@@ -1,3 +1,4 @@
+import asyncio
 import datetime as dt
 import logging
 
@@ -34,7 +35,8 @@ async def list_pending() -> list:
         return await db.fetch_all(
             "SELECT id, description, due_time, is_recurring FROM tasks WHERE status = 'pending' ORDER BY due_time ASC"
         )
-    except Exception:
+    except Exception as exc:
+        logger.debug("list_pending schema fallback: %s", exc)
         rows = await db.fetch_all(
             "SELECT id, description, due_time FROM tasks WHERE status = 'pending' ORDER BY due_time ASC"
         )
@@ -49,7 +51,8 @@ async def mark_done(task_id: int) -> bool:
         row = await db.fetch_one(
             "SELECT id, description, due_time, is_recurring FROM tasks WHERE id = ? AND status = 'pending'", (task_id,)
         )
-    except Exception:
+    except Exception as exc:
+        logger.debug("mark_done schema fallback: %s", exc)
         row = await db.fetch_one(
             "SELECT id, description, due_time FROM tasks WHERE id = ? AND status = 'pending'", (task_id,)
         )
@@ -66,8 +69,8 @@ async def mark_done(task_id: int) -> bool:
                 (next_due, task_id),
             )
             return True
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Recurring task rollover note: %s", exc)
 
     await db.execute(
         "UPDATE tasks SET status = 'done', completed_at = ? WHERE id = ?",
@@ -121,10 +124,8 @@ async def _send_proactive(system_note: str) -> None:
     clean_text, mood_tag = moods.extract_mood_tag(clean_text)
 
     if remember_info:
-        import asyncio
         asyncio.create_task(memory_file.update_memory_with_new_info(remember_info))
     if mood_tag:
-        import asyncio
         asyncio.create_task(moods.set_mood(mood_tag))
 
     if clean_text:

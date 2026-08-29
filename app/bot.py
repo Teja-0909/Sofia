@@ -32,8 +32,8 @@ async def send_text(bot_instance, text: str) -> None:
             delay = min(4.0, max(1.5, len(parts[i+1]) / 20.0))
             try:
                 await bot_instance.send_chat_action(chat_id=config.ALLOWED_USER_ID, action=ChatAction.TYPING)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Chat action note: %s", e)
             await asyncio.sleep(delay)
 
 
@@ -266,7 +266,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 # 3. Check for task creation / temp reminder
                 try:
                     intent = await parser.parse(user_text)
-                except Exception:
+                except Exception as e:
+                    logger.debug("Intent parsing note: %s", e)
                     intent = {}
                 if intent.get("description"):
                     if intent.get("due_utc"):
@@ -289,8 +290,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     try:
         await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("Chat action note: %s", e)
 
     try:
         raw_reply = await orchestrator.reply(user_text, system_note=system_note)
@@ -330,8 +331,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     try:
         asyncio.create_task(diary.recalculate_relationship_depth())
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("Diary recalculation note: %s", e)
 
     image_failed = False
     img_bytes = None
@@ -361,8 +362,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     try:
         await _log_message("sofia", raw_reply)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("Log message note: %s", e)
 
     try:
         if clean_reply:
@@ -378,8 +379,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     delay = min(4.0, max(1.5, len(parts[i+1]) / 20.0))
                     try:
                         await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("Chat action note: %s", e)
                     await asyncio.sleep(delay)
     except Exception as exc:
         logger.error("Failed to send split messages: %s", exc)

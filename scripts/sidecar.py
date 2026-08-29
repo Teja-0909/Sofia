@@ -50,46 +50,108 @@ def get_idle_minutes() -> int:
     return 0
 
 
+_EXE_NAMES = {
+    "code.exe": "Visual Studio Code",
+    "chrome.exe": "Google Chrome",
+    "brave.exe": "Brave Browser",
+    "firefox.exe": "Firefox",
+    "msedge.exe": "Microsoft Edge",
+    "spotify.exe": "Spotify",
+    "discord.exe": "Discord",
+    "telegram.exe": "Telegram",
+    "steam.exe": "Steam",
+    "steamwebhelper.exe": "Steam",
+    "explorer.exe": "File Explorer",
+    "windowsterminal.exe": "Terminal",
+    "powershell.exe": "PowerShell",
+    "cmd.exe": "Command Prompt",
+    "idea64.exe": "IntelliJ IDEA",
+    "pycharm64.exe": "PyCharm",
+    "devenv.exe": "Visual Studio",
+    "notepad.exe": "Notepad",
+    "vlc.exe": "VLC",
+    "obs64.exe": "OBS Studio",
+    "slack.exe": "Slack",
+    "teams.exe": "Microsoft Teams",
+    "whatsapp.exe": "WhatsApp",
+    "notion.exe": "Notion",
+}
+
+
+def _exe_to_friendly_name(exe_name: str) -> str:
+    """Maps a lowercase exe filename to a human-friendly app name."""
+    return _EXE_NAMES.get(exe_name, "")
+
+
+def _app_from_title(title: str) -> str:
+    """Fallback: extracts app name from window title heuristics."""
+    if not title:
+        return "Desktop"
+    lower = title.lower()
+    if "visual studio code" in lower or " - code" in lower:
+        return "Visual Studio Code"
+    elif "chrome" in lower:
+        return "Google Chrome"
+    elif "brave" in lower:
+        return "Brave Browser"
+    elif "firefox" in lower:
+        return "Firefox"
+    elif "spotify" in lower:
+        return "Spotify"
+    elif "discord" in lower:
+        return "Discord"
+    elif "telegram" in lower:
+        return "Telegram"
+    elif "f1" in lower:
+        return "F1 Game"
+    elif "steam" in lower:
+        return "Steam"
+    elif "terminal" in lower or "powershell" in lower or "cmd" in lower:
+        return "Terminal"
+    elif " - " in title:
+        return title.split(" - ")[-1].strip()
+    elif title:
+        return title.split()[0]
+    return "Desktop"
+
+
 def get_active_window_info() -> tuple[str, str]:
     """Returns (app_name, window_title) for the current foreground window."""
     try:
         user32 = ctypes.windll.user32
+        kernel32 = ctypes.windll.kernel32
+        psapi = ctypes.windll.psapi
         hwnd = user32.GetForegroundWindow()
         if not hwnd:
             return ("Desktop", "")
 
+        # Get window title
         length = user32.GetWindowTextLengthW(hwnd)
         buff = ctypes.create_unicode_buffer(length + 1)
         user32.GetWindowTextW(hwnd, buff, length + 1)
         title = buff.value.strip()
 
-        # Extract app name from title heuristics
+        # Get process name via PID
         app_name = "Desktop"
-        lower = title.lower()
-        if "visual studio code" in lower or "code" in lower:
-            app_name = "Visual Studio Code"
-        elif "chrome" in lower:
-            app_name = "Google Chrome"
-        elif "brave" in lower:
-            app_name = "Brave Browser"
-        elif "firefox" in lower:
-            app_name = "Firefox"
-        elif "spotify" in lower:
-            app_name = "Spotify"
-        elif "discord" in lower:
-            app_name = "Discord"
-        elif "telegram" in lower:
-            app_name = "Telegram"
-        elif "f1" in lower:
-            app_name = "F1 Game"
-        elif "steam" in lower:
-            app_name = "Steam"
-        elif "terminal" in lower or "powershell" in lower or "cmd" in lower:
-            app_name = "Terminal"
-        elif " - " in title:
-            app_name = title.split(" - ")[-1].strip()
-        elif title:
-            app_name = title.split()[0]
+        pid = wintypes.DWORD()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        if pid.value:
+            PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+            handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid.value)
+            if handle:
+                try:
+                    exe_buf = ctypes.create_unicode_buffer(512)
+                    size = wintypes.DWORD(512)
+                    if kernel32.QueryFullProcessImageNameW(handle, 0, exe_buf, ctypes.byref(size)):
+                        exe_path = exe_buf.value
+                        exe_name = os.path.basename(exe_path).lower()
+                        app_name = _exe_to_friendly_name(exe_name) or exe_name.replace(".exe", "").title()
+                finally:
+                    kernel32.CloseHandle(handle)
+
+        # Fallback to title-based detection if process detection returned generic
+        if app_name in ("Desktop", ""):
+            app_name = _app_from_title(title)
 
         return (app_name, title)
     except Exception:

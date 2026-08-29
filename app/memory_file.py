@@ -56,8 +56,8 @@ async def get_memory_md() -> str:
             # Sync to local disk for visibility
             try:
                 MEMORY_FILE_PATH.write_text(db_content.strip(), encoding="utf-8")
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Failed writing memory.md to local disk: %s", exc)
             return db_content.strip()
     except Exception as exc:
         logger.warning("Error fetching memory_md from DB: %s", exc)
@@ -198,7 +198,6 @@ async def update_memory_with_new_info(new_info: str) -> str:
         fallback_md = current_md + f"\n- {clean_info}"
         await save_memory_md(fallback_md)
         return fallback_md
-    return current_md
 
 
 REMEMBER_TAG_REGEX = re.compile(r"\[(?:REMEMBER|UPDATE_MEMORY):\s*(.*?)\]", re.IGNORECASE | re.DOTALL)

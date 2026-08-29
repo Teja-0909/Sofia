@@ -1,5 +1,6 @@
 import datetime as dt
 import random
+import asyncio
 import logging
 
 from . import config, db, llm, orchestrator, timeutil
@@ -38,8 +39,8 @@ async def hourly_checkin() -> None:
             # If you two talked less than 50 minutes ago, wait for the next hour
             if (now_utc - last_time).total_seconds() < 3000:
                 return
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Hourly checkin timestamp parse note: %s", exc)
 
     await db.execute(
         "INSERT INTO job_runs (job_key, kind) VALUES (?, 'hourly_checkin')",
@@ -55,8 +56,8 @@ async def hourly_checkin() -> None:
     )
     try:
         await tasks_module._send_via_alisa(note)
-    except llm.AllProvidersFailed:
-        pass
+    except llm.AllProvidersFailed as exc:
+        logger.debug("Hourly checkin skipped due to LLM provider failure: %s", exc)
 
 
 async def maybe_just_because() -> None:
@@ -79,8 +80,8 @@ async def maybe_just_because() -> None:
     )
     try:
         await tasks_module._send_via_alisa(note)
-    except llm.AllProvidersFailed:
-        pass
+    except llm.AllProvidersFailed as exc:
+        logger.debug("Just-because proactive skipped due to LLM provider failure: %s", exc)
 
 
 async def daily_summary() -> None:
@@ -113,8 +114,8 @@ async def daily_summary() -> None:
     )
     try:
         await tasks_module._send_via_alisa(note)
-    except llm.AllProvidersFailed:
-        pass
+    except llm.AllProvidersFailed as exc:
+        logger.debug("Daily summary skipped due to LLM provider failure: %s", exc)
 
 
 async def check_for_updates() -> None:
@@ -126,7 +127,8 @@ async def check_for_updates() -> None:
             latest_commit = subprocess.check_output(
                 ["git", "rev-parse", "HEAD"], text=True, stderr=subprocess.DEVNULL
             ).strip()
-        except Exception:
+        except Exception as exc:
+            logger.debug("git rev-parse HEAD failed, checking fallbacks: %s", exc)
             import os
             # Render provides the commit hash in environment variables
             latest_commit = os.environ.get("RENDER_GIT_COMMIT", "")
@@ -152,7 +154,8 @@ async def check_for_updates() -> None:
                     ["git", "log", f"{last_seen}..{latest_commit}", "--oneline"], 
                     text=True, stderr=subprocess.DEVNULL
                 ).strip()
-            except Exception:
+            except Exception as exc:
+                logger.debug("git log range failed, checking fallbacks: %s", exc)
                 if hasattr(config, "GITHUB_TOKEN") and config.GITHUB_TOKEN:
                     import httpx
                     headers = {"Authorization": f"token {config.GITHUB_TOKEN}"}
@@ -285,8 +288,8 @@ async def app_presence_reaction(
             last_react_time = dt.datetime.fromisoformat(last_react.replace("Z", "+00:00"))
             if (dt.datetime.now(dt.timezone.utc) - last_react_time).total_seconds() < 3600:
                 return
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Last presence reaction time parse note: %s", exc)
 
     # 2. Cooldown since last chat message (at least 30 mins of quiet)
     last_msg = await db.fetch_one("SELECT timestamp FROM conversation_log ORDER BY id DESC LIMIT 1")
@@ -295,9 +298,10 @@ async def app_presence_reaction(
             last_msg_time = dt.datetime.fromisoformat(last_msg["timestamp"].replace("Z", "+00:00"))
             if (dt.datetime.now(dt.timezone.utc) - last_msg_time).total_seconds() < 1800:
                 return
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Last message time parse note: %s", exc)
 
+    note = None
     if idle_minutes >= 30 and idle_minutes < 120 and prev_app:
         note = (
             f"[Internal event: Teja just stepped away from his computer (idle for {idle_minutes} minutes). "
@@ -322,8 +326,8 @@ async def app_presence_reaction(
         )
         try:
             await tasks_module._send_via_alisa(note)
-        except llm.AllProvidersFailed:
-            pass
+        except llm.AllProvidersFailed as exc:
+            logger.debug("Presence reaction skipped due to LLM provider failure: %s", exc)
 
 
 async def check_pc_presence_5min() -> None:
@@ -340,8 +344,8 @@ async def check_pc_presence_5min() -> None:
             now_utc = dt.datetime.now(dt.timezone.utc)
             if (now_utc - last_time).total_seconds() < 600:
                 return
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Presence check last message time parse note: %s", exc)
 
     # Read live presence
     app_name = await db.get_config("last_presence_app", "")
@@ -357,7 +361,8 @@ async def check_pc_presence_5min() -> None:
         p_time = dt.datetime.fromisoformat(presence_time.replace("Z", "+00:00"))
         if (dt.datetime.now(dt.timezone.utc) - p_time).total_seconds() > 600:
             return
-    except Exception:
+    except Exception as exc:
+        logger.debug("Presence timestamp parse note: %s", exc)
         return
 
     idle_minutes = int(idle_str) if idle_str.isdigit() else 0
@@ -391,7 +396,7 @@ async def check_pc_presence_5min() -> None:
                         (raw_reply,),
                     )
     except Exception as exc:
-        pass
+        logger.warning("Error in check_pc_presence_5min: %s", exc)
 
 
 async def praise(text: str) -> str:

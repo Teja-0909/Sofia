@@ -24,3 +24,5 @@ env/
 .vscode/
 .idea/
 *.swp
+sidecar.log
+memory.md
