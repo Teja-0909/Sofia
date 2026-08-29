@@ -114,6 +114,56 @@ async def daily_summary() -> None:
         pass
 
 
+async def wake_up_reaction(hours_offline: float) -> None:
+    """Reacts when Teja comes online after a long offline period (>6 hours)."""
+    now_iso = timeutil.utc_iso()
+    await db.execute(
+        "INSERT OR REPLACE INTO app_config (key, value, updated_at) VALUES ('last_presence_reaction_at', ?, ?)",
+        (now_iso, now_iso),
+    )
+    
+    local_now = timeutil.now_local()
+    hour = local_now.hour
+    
+    if 4 <= hour <= 10:
+        event = f"Teja just woke up and logged onto his PC at {local_now.strftime('%I:%M %p')}. He was offline for {hours_offline:.1f} hours. Send a sweet, natural good morning text to start his day."
+    elif 0 <= hour < 4:
+        event = f"Teja just randomly logged onto his PC at {local_now.strftime('%I:%M %p')} after being offline for {hours_offline:.1f} hours! He should be sleeping! Gently scold him or ask why he is awake so late."
+    else:
+        event = f"Teja just returned to his PC at {local_now.strftime('%I:%M %p')} after being away for {hours_offline:.1f} hours. Welcome him back."
+        
+    try:
+        from . import images
+        reply_text = await orchestrator.proactive(f"[Internal event: {event}]")
+        clean_text, embedded_image_desc = images.extract_embedded_image_tag(reply_text)
+        
+        from . import bot as bot_module, images
+        bot_instance = bot_module.get_bot()
+        if bot_instance and clean_text:
+            await bot_module._log_message("sofia", reply_text, "proactive")
+            await bot_module.send_text(bot_instance, clean_text)
+            logger.info("Sent wake-up proactive message: %s", clean_text)
+            
+            if embedded_image_desc:
+                can_send = await images.should_allow_autonomous_image()
+                if can_send:
+                    await images.record_autonomous_image_sent()
+                    try:
+                        from telegram.constants import ChatAction
+                        await bot_instance.send_chat_action(chat_id=config.ALLOWED_USER_ID, action=ChatAction.UPLOAD_PHOTO)
+                        from . import moods
+                        mood_key, mood_info = await moods.get_current_mood()
+                        current_time = timeutil.format_local(timeutil.utc_iso())
+                        context_note = f"Time: {current_time}. Sofia's current mood: {mood_info.get('name', 'cozy')}"
+                        visual_prompt = await images.craft_visual_prompt(embedded_image_desc, context_note=context_note)
+                        img_bytes = await images.generate_image_bytes(visual_prompt)
+                        if img_bytes:
+                            await bot_instance.send_photo(chat_id=config.ALLOWED_USER_ID, photo=img_bytes)
+                    except Exception as img_exc:
+                        logger.error("Wake-up image render error: %s", img_exc)
+    except Exception as exc:
+        logger.error("Failed to generate wake-up message: %s", exc)
+
 async def app_presence_reaction(
     app_name: str,
     window_title: str,

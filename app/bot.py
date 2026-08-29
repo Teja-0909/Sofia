@@ -25,7 +25,16 @@ def get_bot():
 
 
 async def send_text(bot_instance, text: str) -> None:
-    await bot_instance.send_message(chat_id=config.ALLOWED_USER_ID, text=text)
+    parts = [p.strip() for p in text.split("<split>") if p.strip()]
+    for i, part in enumerate(parts):
+        await bot_instance.send_message(chat_id=config.ALLOWED_USER_ID, text=part)
+        if i < len(parts) - 1:
+            delay = min(4.0, max(1.5, len(parts[i+1]) / 20.0))
+            try:
+                await bot_instance.send_chat_action(chat_id=config.ALLOWED_USER_ID, action=ChatAction.TYPING)
+            except Exception:
+                pass
+            await asyncio.sleep(delay)
 
 
 async def _log_message(role: str, content: str, channel: str = "text") -> None:
@@ -325,13 +334,24 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     try:
         if clean_reply:
-            await update.message.reply_text(clean_reply)
+            parts = [p.strip() for p in clean_reply.split("<split>") if p.strip()]
+            for i, part in enumerate(parts):
+                try:
+                    await update.message.reply_text(part)
+                except Exception as exc:
+                    logger.error("Telegram reply send error: %s", exc)
+                    await context.bot.send_message(chat_id=update.effective_chat.id, text=part)
+                
+                if i < len(parts) - 1:
+                    # Realistic typing delay based on the length of the next message (approx 1 sec per 20 chars, max 4s)
+                    delay = min(4.0, max(1.5, len(parts[i+1]) / 20.0))
+                    try:
+                        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+                    except Exception:
+                        pass
+                    await asyncio.sleep(delay)
     except Exception as exc:
-        logger.error("Telegram reply send error: %s", exc)
-        try:
-            await context.bot.send_message(chat_id=update.effective_chat.id, text=clean_reply)
-        except Exception as direct_exc:
-            logger.error("Direct send_message also failed: %s", direct_exc)
+        logger.error("Failed to send split messages: %s", exc)
 
     if embedded_image_desc:
         can_send = await images.should_allow_autonomous_image()

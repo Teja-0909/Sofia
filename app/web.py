@@ -18,6 +18,9 @@ async def _handle_presence_payload(payload_bytes: bytes) -> dict:
 
         prev_app = await db.get_config("last_presence_app", "")
         prev_title = await db.get_config("last_presence_title", "")
+        prev_idle_str = await db.get_config("last_presence_idle", "0")
+        prev_idle = int(prev_idle_str) if prev_idle_str.isdigit() else 0
+        prev_time = await db.get_config("last_presence_updated_at", "")
 
         if app_name or window_title:
             await db.execute(
@@ -42,8 +45,32 @@ async def _handle_presence_payload(payload_bytes: bytes) -> dict:
             )
             logger.info("Updated live presence: App=%s, Title=%s, Idle=%s min", app_name, window_title, idle_minutes)
 
-            # Proactively react to app switches, games, or long away periods
-            if (app_name != prev_app or idle_minutes >= 30) and app_name:
+            # Sleep Cycle Detection: if he has been totally offline/idle for >6 hours and is now back
+            import datetime as dt_mod
+            
+            woke_up = False
+            hours_offline = 0
+            is_away = idle_minutes >= 30
+            was_away = prev_idle >= 30
+
+            if prev_time:
+                try:
+                    p_dt = dt_mod.datetime.fromisoformat(prev_time.replace("Z", "+00:00"))
+                    now_dt = dt_mod.datetime.now(dt_mod.timezone.utc)
+                    hours_since_last_ping = (now_dt - p_dt).total_seconds() / 3600
+                    
+                    # Wake up if PC was off/asleep for >6 hours OR if PC was left on but idle for >6 hours and is now active
+                    if (hours_since_last_ping >= 6.0 or prev_idle >= 360) and idle_minutes < 15:
+                        woke_up = True
+                        hours_offline = max(hours_since_last_ping, prev_idle / 60.0)
+                        logger.info("Sleep cycle detection: Teja was offline/idle for %.1f hours. Wake up event triggered!", hours_offline)
+                except Exception as e:
+                    logger.warning("Failed to parse prev_time for sleep cycle: %s", e)
+            
+            if woke_up:
+                from . import triggers
+                asyncio.create_task(triggers.wake_up_reaction(hours_offline))
+            elif (app_name != prev_app or (is_away != was_away)) and app_name:
                 from . import triggers
                 asyncio.create_task(
                     triggers.app_presence_reaction(app_name, window_title, idle_minutes, prev_app, prev_title)
