@@ -1,4 +1,4 @@
-﻿# Sofia — Complete Project Reference
+# Sofia — Complete Project Reference
 
 > **What is this?** A full map of every file in this codebase. If you're a developer, an AI agent, or anyone trying to understand how Sofia works — start here.
 
@@ -14,16 +14,16 @@ Sofia is an autonomous, deeply personalised AI companion that lives on Telegram.
 │  User Chat    │       │  (handlers)   │       │ (brain / tools)│
 └──────────────┘       └──────┬───────┘       └───────┬────────┘
                               │                       │
-              ┌───────────────┼───────────────────────┼──────────────┐
-              │               │                       │              │
-        ┌─────▼─────┐  ┌─────▼─────┐  ┌──────▼──────┐  ┌────▼─────┐
-        │  tasks.py  │  │ memory.py │  │   llm.py    │  │search.py │
-        │ scheduler  │  │memory_file│  │ (providers) │  │(web/DDG) │
-        └─────┬─────┘  └─────┬─────┘  └──────┬──────┘  └──────────┘
-              │               │               │
-        ┌─────▼───────────────▼───────────────▼─────┐
-        │              db.py  (SQLite / Turso)       │
-        └────────────────────────────────────────────┘
+              ┌───────────────┼───────────────────────┼──────────────┬───────────────┐
+              │               │                       │              │               │
+        ┌─────▼─────┐  ┌─────▼─────┐  ┌──────▼──────┐  ┌────▼─────┐  ┌─▼───────────┐
+        │  tasks.py  │  │ memory.py │  │   llm.py    │  │search.py │  │consciousness│
+        │ scheduler  │  │memory_file│  │ (providers) │  │(web/DDG) │  │(sleep/dreams│
+        └─────┬─────┘  └─────┬─────┘  └──────┬──────┘  └──────────┘  └──────┬────────┘
+              │               │               │                         │
+        ┌─────▼───────────────▼───────────────▼─────────────────────────▼───────────┐
+        │                          db.py  (SQLite / Turso)                          │
+        └───────────────────────────────────────────────────────────────────────────┘
 
         ┌────────────────┐         ┌──────────────┐
         │ sidecar.py     │────────►│   web.py     │
@@ -115,6 +115,9 @@ Sofia is an autonomous, deeply personalised AI companion that lives on Telegram.
 | `job_runs` | Idempotent ledger preventing duplicate background jobs |
 | `app_config` | Key-value runtime configuration store |
 | `conversation_summaries` | Summarised conversation chunks with embeddings |
+| `consciousness_state` | Singleton tracking live awareness state (`AWAKE`, `DEEP_SLEEP`, `LIGHT_SLEEP`, `DROWSY`, `FOCUSED`, `RESTING`), energy, and sleep duration |
+| `inner_thoughts` | Stream of consciousness reflections logged every 12 mins with 768-D vector embeddings |
+| `dreams` | Nightly deep-sleep surreal dream narratives with themes and 768-D vector embeddings |
 
 ### `alisa.service`
 **Linux systemd service unit for VPS deployment.**
@@ -141,8 +144,8 @@ Empty package marker. Makes `app/` an importable Python package.
 ### `bot.py`
 **Primary Telegram interface — event routing hub.**
 - Enforces single-user access control (`_allowed()`).
-- Routes slash commands: `/start`, `/tasks`, `/add`, `/done`, `/win`, `/search`, `/read`, `/image`, `/memory`, `/mood`, `/depth`.
-- `handle_message()` — Main text pipeline: detects image requests, memory corrections, task parsing/completion, calls orchestrator, parses response tags (`[IMAGE]`, `[REMEMBER]`, `[MOOD]`, `[DONE]`, `[TASK]`), delivers split messages with typing indicators.
+- Routes slash commands: `/start`, `/tasks`, `/add`, `/done`, `/win`, `/search`, `/read`, `/image`, `/memory`, `/mood`, `/depth`, `/status`, `/sleep`, `/thoughts`.
+- `handle_message()` — Main text pipeline: detects image requests, memory corrections, task parsing/completion, calls orchestrator, parses response tags (`[IMAGE]`, `[REMEMBER]`, `[MOOD]`, `[DONE]`, `[TASK]`, `[SLEEP]`), delivers split messages with typing indicators.
 - `handle_photo()` — Downloads user images and routes to orchestrator for vision analysis.
 - `_handle_image_generation()` — Crafts visual prompts and delivers generated photos.
 - `send_text()` — Delivers messages split by `<split>` tags with natural typing pauses.
@@ -150,11 +153,23 @@ Empty package marker. Makes `app/` an importable Python package.
 
 ---
 
+### `consciousness.py`
+**Persistent consciousness, sleep/wake cycles, dreams, and subconscious reflection engine.**
+- **Consciousness States**: `AWAKE`, `DEEP_SLEEP`, `LIGHT_SLEEP`, `DROWSY`, `FOCUSED`, `RESTING`.
+- **Activity-Driven Circadian Sleep**: Tracks Teja's PC presence and message recency to transition naturally into resting and sleep when he is away, without rigid clock curfews.
+- **Natural Wake-Up**: Wakes immediately when Teja messages, injecting groggy/sleepy morning context into her response before returning to full alertness.
+- **Background Inner Thoughts**: Subconscious reflection loop every 12 minutes logging internal thoughts, spontaneous reflections, or urges to reach out.
+- **Deep-Sleep Dream Journal**: Generates surreal, creative dream narratives based on the day's conversation history during deep sleep.
+- **Dual Storage & Semantic Retrieval**: All inner thoughts and dreams are stored in plain English and 768-D vector embeddings. `find_relevant_thoughts_and_dreams()` surfaces semantically related thoughts/dreams using cosine similarity during conversation.
+- **Status Dashboard**: Computes live status for the `/status` command (awareness state, duration, energy bar, mood, and last thought).
+
+---
+
 ### `config.py`
 **Central configuration module — single source of truth.**
 - Loads `.env` via `python-dotenv`.
 - Normalises timezone strings.
-- Exports all API keys, model names, file paths, port numbers, quiet hours, and default config values.
+- Exports all API keys, model names, file paths, port numbers, quiet hours, consciousness parameters (`ENERGY_MAX`, `SLEEP_START_HOUR`, `SLEEP_END_HOUR`, `THOUGHT_INTERVAL_MINUTES`, `CONSCIOUSNESS_TICK_MINUTES`), and default config values.
 
 ---
 
@@ -163,7 +178,7 @@ Empty package marker. Makes `app/` an importable Python package.
 - `is_turso()` — Detects cloud database configuration.
 - `TursoHttpFallback` — Direct HTTPS pipeline client (no WebSocket).
 - `get_turso_client()` — Lazy-initialises and caches Turso connection.
-- `init()` — Executes schema SQL, applies table migrations, seeds default config.
+- `init()` — Executes schema SQL, applies table migrations (including `consciousness_state`, `inner_thoughts`, `dreams`, and `embedding` columns), seeds default config.
 - `fetch_all()` / `fetch_one()` — Returns query results as dictionaries.
 - `execute()` — Runs SQL write statements.
 - `get_config()` — Retrieves key-value settings from `app_config`.
@@ -173,14 +188,14 @@ Empty package marker. Makes `app/` an importable Python package.
 
 ### `orchestrator.py`
 **The central brain — AI reasoning and response assembly engine.**
-- Dynamically assembles token-budget-aware system prompts by layering: permanent memories, live PC presence, mood state, diary history, pending tasks, and recent git commits.
+- Dynamically assembles token-budget-aware system prompts by layering: permanent memories, live PC presence, mood state, diary history, pending tasks, recent git commits, consciousness directives, and semantically retrieved subconscious thoughts/dreams.
 - `TOOLS` — Definitions for `search_web`, `read_webpage`, `schedule_proactive_message`.
 - `_ctx_vector_memories()` — Retrieves relevant memories via vector similarity + time-decay scoring.
-- `_build_system_prompt()` — Combines all context layers while respecting `_MAX_CONTEXT_TOKENS`.
+- `_build_system_prompt()` — Combines all context layers while respecting `_MAX_CONTEXT_TOKENS` and pulling relevant subconscious thoughts/dreams via vector search.
 - `_verify_and_refine_draft()` — Post-generation verification loop catching lazy code placeholders and auto-injecting missing `[TASK:]`/`[DONE:]` tags.
 - `_generate()` — Multi-turn execution loop handling LLM chat + autonomous tool calls.
-- `reply()` — Main entry point for user text and multimodal image queries.
-- `proactive()` — Entry point for generating autonomous proactive messages.
+- `reply()` — Main entry point for user text and multimodal image queries (handles waking from sleep).
+- `proactive()` — Entry point for generating autonomous proactive messages and handling idle awareness.
 
 ---
 
@@ -197,11 +212,12 @@ Empty package marker. Makes `app/` an importable Python package.
 ---
 
 ### `parser.py`
-**Natural language intent extractor for tasks, reminders, and completions.**
+**Natural language intent extractor for tasks, reminders, completions, and state changes.**
 - `extract_task_tag()` — Parses `[TASK: description | time]` tags from assistant output.
 - `heuristic_parse()` — Fast regex-based parser for relative offsets ("in 30 mins") and absolute times ("at 6pm").
 - `parse()` — Hybrid extraction: heuristic-first, LLM structured JSON fallback.
 - `extract_done_tag()` — Parses `[DONE: id]` tags emitted by Sofia.
+- `extract_sleep_tag()` — Parses `[SLEEP]` tags emitted when Sofia chooses to go to sleep autonomously.
 - `detect_completion()` — Multi-tier completion detector: task number matching → completion phrases → word overlap → LLM semantic matching.
 
 ---
@@ -229,7 +245,7 @@ Empty package marker. Makes `app/` an importable Python package.
 ### `moods.py`
 **Emotional state and tone management system.**
 - 7 mood archetypes: `playful`, `soft_devoted`, `fierce_copilot`, `sensual_intimate`, `cozy_chill`, `feisty`, `reflective`.
-- `get_current_mood()` — Returns active mood: preserves recent conversational mood (<3 hrs) or calculates IST time-based baseline.
+- `get_current_mood()` — Returns active mood: integrates live consciousness state (e.g. `FOCUSED` → `fierce_copilot`, `DROWSY` → `soft_devoted`), preserves recent conversational mood (<3 hrs), or calculates IST time-based baseline.
 - `set_mood()` — Explicitly sets mood or resets to automatic mode.
 - `extract_mood_tag()` — Parses `[MOOD: <mood_name>]` tags from responses.
 
@@ -270,7 +286,7 @@ Empty package marker. Makes `app/` an importable Python package.
 - `list_pending()` — Returns all active pending tasks ordered by due date.
 - `mark_done()` — Marks tasks complete; rolls daily recurring tasks to next day.
 - `_voice_tier()` — 4-tier escalating tone ladder (warm → nudge → body-doubling support → soft empathetic check-in).
-- `poll_due_tasks()` — Polls pending tasks every 30s, sends tier-based reminders, escalates missed counts.
+- `poll_due_tasks()` — Polls pending tasks every 30s, sends tier-based reminders, escalates missed counts (respects sleep state with realistic snooze/sleep-through behaviour).
 - `schedule_proactive_message()` / `poll_proactive_messages()` — Stores and delivers delayed proactive messages scheduled via LLM tool calling.
 
 ---
@@ -293,8 +309,10 @@ Empty package marker. Makes `app/` an importable Python package.
 - `reset_daily_tier()` — Resets mood tier and missed reminder count at 4:00 AM IST.
 - `run_nightly_diary()` — Nightly diary generation at 23:45 IST.
 - `run_depth_update()` — Relationship depth recalculation at 4:05 AM IST.
+- `run_consciousness_tick()` — 5-minute consciousness engine heartbeat evaluating circadian gravity, energy, and sleep transitions.
+- `run_thought_cycle()` — 12-minute subconscious inner thought loop generating reflections, dreams during sleep, or reach-outs.
 - `cleanup_expired()` — Daily cleanup of expired temp reminders, old tasks, and gated conversation logs.
-- `create_scheduler()` — Registers all cron and interval jobs (task polling, proactive check-ins, presence checks, backups).
+- `create_scheduler()` — Registers all cron and interval jobs (task polling, proactive check-ins, presence checks, consciousness ticks, thought loops, backups).
 
 ---
 
@@ -341,6 +359,10 @@ Empty package marker. Makes `app/` an importable Python package.
 - Uses temporary SQLite database fixtures and mock LLM calls.
 - **Coverage areas**: DB init & config, time utilities, task CRUD & tier escalation, heuristic/LLM parsing, prompt assembly, memory reinforcement/curation/soft-deletion, diary depth recalculations, image processing, HTTP server endpoints, mood lifecycle, and task completion matching.
 
+### `test_consciousness.py`
+**Consciousness and sleep/dream automated test suite.**
+- **Coverage areas**: State transitions (`AWAKE` → `FOCUSED` → `RESTING` → `DROWSY` → `LIGHT_SLEEP` → `DEEP_SLEEP`), persistent 100% energy invariant, sleep cycle lifecycle (`begin_sleep()` / `wake_up()`), sleep quality calculation, dream generation, and background inner thought logging.
+
 ---
 
 ## Tag Protocol Quick Reference
@@ -354,6 +376,7 @@ Sofia emits structured tags in her responses that the bot parses and executes:
 | `[REMEMBER: info]` | Save to living memory notebook | `[REMEMBER: Teja prefers dark mode]` |
 | `[MOOD: name]` | Switch emotional tone | `[MOOD: fierce_copilot]` |
 | `[IMAGE: description]` | Spontaneously generate an image | `[IMAGE: cozy evening with coffee]` |
+| `[SLEEP]` | Autonomously go to sleep when exhausted | `[SLEEP]` |
 | `<split>` | Split message into multiple Telegram bubbles | `Hey! <split> How was your day?` |
 
 ---
