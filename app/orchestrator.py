@@ -6,6 +6,7 @@ import json
 import logging
 
 from . import config, db, llm, memory_file, moods, timeutil
+from . import consciousness
 from . import parser
 from . import search as search_module
 from . import tasks as tasks_module
@@ -391,10 +392,19 @@ async def _build_system_prompt(extra_note: str | None = None, user_text: str = "
     tasks_block = await _ctx_tasks_and_threads()
     presence_block = await _ctx_pc_presence()
     git_block = _ctx_git_log()
+    consciousness_block = await consciousness.get_consciousness_directive()
+
+    # Semantic thought/dream recall — surfaces relevant subconscious context
+    subconscious_block = ""
+    if user_text and len(user_text.strip()) >= 20:
+        try:
+            subconscious_block = await consciousness.find_relevant_thoughts_and_dreams(user_text) or ""
+        except Exception:
+            subconscious_block = ""
 
     core_blocks = [base, relationship_block, notebook_block]
     context_blocks = [mem_block, past_conv_block, recent_summaries_block, diary_block]
-    state_blocks = [mood_block, time_block, tasks_block, presence_block, git_block]
+    state_blocks = [consciousness_block, subconscious_block, mood_block, time_block, tasks_block, presence_block, git_block]
 
     if extra_note:
         state_blocks.append(f"\n{extra_note}")
@@ -558,6 +568,26 @@ async def reply(
     image_bytes: bytes | None = None,
     mime_type: str = "image/jpeg",
 ) -> str:
+    # ── Consciousness: handle sleep-wake ──
+    sleep_note = await consciousness.handle_incoming_while_sleeping()
+    current_state = await consciousness.get_current_state_name()
+
+    # Boost to FOCUSED if actively chatting while AWAKE
+    if current_state == "AWAKE":
+        last_msg = await db.fetch_one(
+            "SELECT timestamp FROM conversation_log WHERE role = 'user' ORDER BY id DESC LIMIT 1 OFFSET 1"
+        )
+        if last_msg and last_msg.get("timestamp"):
+            try:
+                prev = timeutil.parse_utc_iso(last_msg["timestamp"])
+                import datetime as _dt
+                if (_dt.datetime.now(_dt.timezone.utc) - prev).total_seconds() < 300:
+                    energy = await consciousness.get_energy()
+                    if energy > 60:
+                        await consciousness.transition_to("FOCUSED")
+            except Exception:
+                pass
+
     window = int(await db.get_config("history_window", "200"))
     history = await _history(window)
 
@@ -577,7 +607,7 @@ async def reply(
         except Exception as exc:
             logger.warning("Direct page fetch note: %s", exc)
 
-    extra_notes = [n for n in (system_note, search_block) if n]
+    extra_notes = [n for n in (system_note, sleep_note, search_block) if n]
     combined_extra = "\n\n".join(extra_notes) if extra_notes else None
 
     system = await _build_system_prompt(combined_extra, user_text)
@@ -594,15 +624,34 @@ async def reply(
     else:
         messages = history + [user_msg]
 
-    return await _generate(system, messages, user_text=user_text)
+    result = await _generate(system, messages, user_text=user_text)
+
+    # ── Consciousness: drain energy after responding ──
+    complexity = "complex_reply" if len(result) > 500 else "conversation"
+    await consciousness.drain_energy(complexity)
+
+    return result
 
 
 async def proactive(system_note: str) -> str:
+    # ── Consciousness: handle sleep-wake ──
+    sleep_note = await consciousness.handle_incoming_while_sleeping()
+    
     window = int(await db.get_config("history_window", "200"))
     history = await _history(window)
-    system = await _build_system_prompt()
+    
+    extra_notes = [n for n in (system_note, sleep_note) if n]
+    combined_extra = "\n\n".join(extra_notes) if extra_notes else None
+    
+    system = await _build_system_prompt(combined_extra)
     trigger_turn = {
         "role": "user",
         "content": f"(internal event — respond as yourself, do not mention this bracket)\n{system_note}",
     }
-    return await _generate(system, history + [trigger_turn])
+    
+    result = await _generate(system, history + [trigger_turn])
+    
+    # ── Consciousness: drain energy after responding ──
+    await consciousness.drain_energy("proactive_message")
+    
+    return result

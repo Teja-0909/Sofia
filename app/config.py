@@ -65,3 +65,10 @@ DEFAULT_CONFIG = {
     "daily_summary_hour": "22",
     "max_reminder_pings": "4",
 }
+
+# ── Consciousness System Configuration ──
+ENERGY_MAX = float(os.environ.get("ENERGY_MAX", "100"))
+SLEEP_START_HOUR = int(os.environ.get("SLEEP_START_HOUR", "3"))   # 3 AM IST
+SLEEP_END_HOUR = int(os.environ.get("SLEEP_END_HOUR", "6"))       # 6 AM IST
+THOUGHT_INTERVAL_MINUTES = int(os.environ.get("THOUGHT_INTERVAL_MINUTES", "12"))
+CONSCIOUSNESS_TICK_MINUTES = int(os.environ.get("CONSCIOUSNESS_TICK_MINUTES", "5"))

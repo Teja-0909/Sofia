@@ -248,6 +248,7 @@ CRITICAL RULES:
 
 
 DONE_TAG_REGEX = re.compile(r"\[(?:DONE|COMPLETE|FINISHED|MARK_DONE):\s*(.*?)\]", re.IGNORECASE | re.DOTALL)
+SLEEP_TAG_REGEX = re.compile(r"\[SLEEP\]", re.IGNORECASE)
 
 
 def extract_done_tag(text: str) -> tuple[str, str | None]:
@@ -257,6 +258,15 @@ def extract_done_tag(text: str) -> tuple[str, str | None]:
         return text, None
     clean = DONE_TAG_REGEX.sub("", text).strip()
     return clean, match.group(1).strip()
+
+
+def extract_sleep_tag(text: str) -> tuple[str, bool]:
+    """Extracts [SLEEP] tag emitted by Sofia."""
+    match = SLEEP_TAG_REGEX.search(text)
+    if not match:
+        return text, False
+    clean = SLEEP_TAG_REGEX.sub("", text).strip()
+    return clean, True
 
 
 async def detect_completion(text: str, pending_tasks: list[dict]) -> int | None:

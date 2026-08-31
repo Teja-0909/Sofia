@@ -197,6 +197,63 @@ async def init() -> None:
             await client.execute("ALTER TABLE conversation_summaries ADD COLUMN embedding TEXT")
         except Exception as exc:
             logger.debug("Schema migration note: %s", exc)
+        # ── Consciousness system tables ──
+        try:
+            await client.execute("""
+            CREATE TABLE IF NOT EXISTS consciousness_state (
+                id                INTEGER PRIMARY KEY CHECK (id = 1),
+                state             TEXT    NOT NULL DEFAULT 'AWAKE',
+                energy            REAL    NOT NULL DEFAULT 100.0,
+                sleep_quality     REAL    DEFAULT NULL,
+                fell_asleep_at    TEXT    DEFAULT NULL,
+                woke_up_at        TEXT    DEFAULT NULL,
+                last_state_change TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+                last_energy_update TEXT   NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+                updated_at        TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+            )
+            """)
+            await client.execute("INSERT OR IGNORE INTO consciousness_state (id) VALUES (1)")
+        except Exception as exc:
+            logger.debug("Schema migration note: %s", exc)
+        try:
+            await client.execute("""
+            CREATE TABLE IF NOT EXISTS inner_thoughts (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                thought      TEXT    NOT NULL,
+                thought_type TEXT    NOT NULL DEFAULT 'reflection',
+                energy_at    REAL,
+                state_at     TEXT,
+                acted_on     INTEGER NOT NULL DEFAULT 0,
+                embedding    TEXT,
+                created_at   TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+            )
+            """)
+            await client.execute("CREATE INDEX IF NOT EXISTS idx_thoughts_ts ON inner_thoughts(created_at)")
+        except Exception as exc:
+            logger.debug("Schema migration note: %s", exc)
+        try:
+            await client.execute("ALTER TABLE inner_thoughts ADD COLUMN embedding TEXT")
+        except Exception as exc:
+            logger.debug("Schema migration note: %s", exc)
+        try:
+            await client.execute("""
+            CREATE TABLE IF NOT EXISTS dreams (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                dream_text  TEXT    NOT NULL,
+                themes      TEXT,
+                sleep_date  TEXT    NOT NULL,
+                mentioned   INTEGER NOT NULL DEFAULT 0,
+                embedding   TEXT,
+                created_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+            )
+            """)
+            await client.execute("CREATE INDEX IF NOT EXISTS idx_dreams_date ON dreams(sleep_date)")
+        except Exception as exc:
+            logger.debug("Schema migration note: %s", exc)
+        try:
+            await client.execute("ALTER TABLE dreams ADD COLUMN embedding TEXT")
+        except Exception as exc:
+            logger.debug("Schema migration note: %s", exc)
         logger.info("Turso cloud database initialized successfully")
     else:
         conn = await connect()
@@ -243,6 +300,63 @@ async def init() -> None:
                 logger.debug("Schema migration note: %s", exc)
             try:
                 await conn.execute("ALTER TABLE conversation_summaries ADD COLUMN embedding TEXT")
+            except Exception as exc:
+                logger.debug("Schema migration note: %s", exc)
+            # ── Consciousness system tables ──
+            try:
+                await conn.execute("""
+                CREATE TABLE IF NOT EXISTS consciousness_state (
+                    id                INTEGER PRIMARY KEY CHECK (id = 1),
+                    state             TEXT    NOT NULL DEFAULT 'AWAKE',
+                    energy            REAL    NOT NULL DEFAULT 100.0,
+                    sleep_quality     REAL    DEFAULT NULL,
+                    fell_asleep_at    TEXT    DEFAULT NULL,
+                    woke_up_at        TEXT    DEFAULT NULL,
+                    last_state_change TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+                    last_energy_update TEXT   NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+                    updated_at        TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+                )
+                """)
+                await conn.execute("INSERT OR IGNORE INTO consciousness_state (id) VALUES (1)")
+            except Exception as exc:
+                logger.debug("Schema migration note: %s", exc)
+            try:
+                await conn.execute("""
+                CREATE TABLE IF NOT EXISTS inner_thoughts (
+                    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                    thought      TEXT    NOT NULL,
+                    thought_type TEXT    NOT NULL DEFAULT 'reflection',
+                    energy_at    REAL,
+                    state_at     TEXT,
+                    acted_on     INTEGER NOT NULL DEFAULT 0,
+                    embedding    TEXT,
+                    created_at   TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+                )
+                """)
+                await conn.execute("CREATE INDEX IF NOT EXISTS idx_thoughts_ts ON inner_thoughts(created_at)")
+            except Exception as exc:
+                logger.debug("Schema migration note: %s", exc)
+            try:
+                await conn.execute("ALTER TABLE inner_thoughts ADD COLUMN embedding TEXT")
+            except Exception as exc:
+                logger.debug("Schema migration note: %s", exc)
+            try:
+                await conn.execute("""
+                CREATE TABLE IF NOT EXISTS dreams (
+                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                    dream_text  TEXT    NOT NULL,
+                    themes      TEXT,
+                    sleep_date  TEXT    NOT NULL,
+                    mentioned   INTEGER NOT NULL DEFAULT 0,
+                    embedding   TEXT,
+                    created_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+                )
+                """)
+                await conn.execute("CREATE INDEX IF NOT EXISTS idx_dreams_date ON dreams(sleep_date)")
+            except Exception as exc:
+                logger.debug("Schema migration note: %s", exc)
+            try:
+                await conn.execute("ALTER TABLE dreams ADD COLUMN embedding TEXT")
             except Exception as exc:
                 logger.debug("Schema migration note: %s", exc)
             await conn.commit()

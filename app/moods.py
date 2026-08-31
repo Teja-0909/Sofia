@@ -92,7 +92,7 @@ async def get_current_mood() -> tuple[str, dict]:
             else:
                 return saved_mood, MOOD_PROFILES[saved_mood]
 
-    # Time-based organic baseline (IST)
+    # Time-based organic baseline (IST), modulated by consciousness state
     hour = timeutil.now_local().hour
     if 0 <= hour < 5:
         key = "sensual_intimate"
@@ -104,6 +104,24 @@ async def get_current_mood() -> tuple[str, dict]:
         key = "cozy_chill"
     else:
         key = "soft_devoted"
+
+    # Consciousness state modulates mood
+    try:
+        from . import consciousness
+        c_state = await db.fetch_one("SELECT state, energy FROM consciousness_state WHERE id = 1")
+        if c_state:
+            state = c_state["state"]
+            energy = float(c_state.get("energy", 100))
+            if state == "DROWSY":
+                key = "soft_devoted" if hour >= 20 or hour < 8 else "cozy_chill"
+            elif state == "FOCUSED":
+                key = "fierce_copilot"
+            elif state == "RESTING":
+                key = "cozy_chill"
+            elif state in ("DEEP_SLEEP", "LIGHT_SLEEP"):
+                key = "sensual_intimate"
+    except Exception:
+        pass
 
     return key, MOOD_PROFILES[key]
 

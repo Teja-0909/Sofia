@@ -131,3 +131,44 @@ CREATE TABLE IF NOT EXISTS conversation_summaries (
     created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
 CREATE INDEX IF NOT EXISTS idx_conv_summ_ts ON conversation_summaries(until_timestamp);
+
+-- Sofia's persistent consciousness state (singleton row)
+CREATE TABLE IF NOT EXISTS consciousness_state (
+    id                INTEGER PRIMARY KEY CHECK (id = 1),
+    state             TEXT    NOT NULL DEFAULT 'AWAKE'
+                      CHECK (state IN ('DEEP_SLEEP','LIGHT_SLEEP','DROWSY','AWAKE','FOCUSED','RESTING')),
+    energy            REAL    NOT NULL DEFAULT 100.0,
+    sleep_quality     REAL    DEFAULT NULL,
+    fell_asleep_at    TEXT    DEFAULT NULL,
+    woke_up_at        TEXT    DEFAULT NULL,
+    last_state_change TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+    last_energy_update TEXT   NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+    updated_at        TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+);
+INSERT OR IGNORE INTO consciousness_state (id) VALUES (1);
+
+-- Inner thought log — Sofia's stream of consciousness
+CREATE TABLE IF NOT EXISTS inner_thoughts (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    thought      TEXT    NOT NULL,
+    thought_type TEXT    NOT NULL DEFAULT 'reflection'
+                 CHECK (thought_type IN ('reflection','urge','mood_shift','observation','missing_him')),
+    energy_at    REAL,
+    state_at     TEXT,
+    acted_on     INTEGER NOT NULL DEFAULT 0,
+    embedding    TEXT,
+    created_at   TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_thoughts_ts ON inner_thoughts(created_at);
+
+-- Dream journal — generated during deep sleep
+CREATE TABLE IF NOT EXISTS dreams (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    dream_text  TEXT    NOT NULL,
+    themes      TEXT,
+    sleep_date  TEXT    NOT NULL,
+    mentioned   INTEGER NOT NULL DEFAULT 0,
+    embedding   TEXT,
+    created_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_dreams_date ON dreams(sleep_date);

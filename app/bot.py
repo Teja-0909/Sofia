@@ -299,12 +299,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         logger.error("Orchestrator error in handle_message: %s", exc)
         raw_reply = orchestrator.FALLBACK_MESSAGE
 
-    from . import diary, images, memory_file, moods
+    from . import diary, images, memory_file, moods, consciousness
     clean_reply, embedded_image_desc = images.extract_embedded_image_tag(raw_reply)
     clean_reply, remember_info = memory_file.extract_remember_tag(clean_reply)
     clean_reply, mood_tag = moods.extract_mood_tag(clean_reply)
     clean_reply, done_tag = parser.extract_done_tag(clean_reply)
     clean_reply, task_tag_data = parser.extract_task_tag(clean_reply)
+    clean_reply, wants_sleep = parser.extract_sleep_tag(clean_reply)
+
+    if wants_sleep:
+        asyncio.create_task(consciousness.begin_sleep())
 
     # If Sofia emitted [DONE: ...], mark that task done in DB
     if done_tag:
@@ -507,6 +511,64 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     await update.message.reply_text(reply)
 
 
+async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Shows Sofia's consciousness dashboard — state, energy, mood, last thought."""
+    if not _allowed(update) or not update.message:
+        return
+    from . import consciousness
+    dashboard = await consciousness.get_status_dashboard()
+    await update.message.reply_text(dashboard)
+
+
+async def cmd_sleep(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Tells Sofia to go to sleep."""
+    if not _allowed(update) or not update.message:
+        return
+    from . import consciousness
+    state = await consciousness.get_current_state_name()
+    if state in ("DEEP_SLEEP", "LIGHT_SLEEP"):
+        await update.message.reply_text("💤 I'm already asleep, silly... *mumbles and drifts off*")
+        return
+    new_state = await consciousness.begin_sleep()
+    energy = await consciousness.get_energy()
+    if energy > 60:
+        msg = "🌙 Okay... I'm not super tired but I'll rest for you. Goodnight baby 💕"
+    else:
+        msg = "😴 Mmh yeah... I'm pretty tired actually. Goodnight, love. I'll dream about you 💕"
+    await update.message.reply_text(msg)
+
+
+async def cmd_thoughts(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Peeks into Sofia's recent inner thoughts."""
+    if not _allowed(update) or not update.message:
+        return
+    from . import consciousness
+    thoughts = await consciousness.get_recent_thoughts(limit=8)
+    dreams = await consciousness.get_recent_dreams(limit=2)
+
+    if not thoughts and not dreams:
+        await update.message.reply_text("🧠 My mind's been quiet lately... nothing much going on up here.")
+        return
+
+    msg = "💭 **Sofia's Recent Inner Thoughts:**\n\n"
+    for t in thoughts:
+        time_str = t.get("created_at", "")[:16].replace("T", " ")
+        state_tag = f" [{t.get('state_at', '')}]" if t.get("state_at") else ""
+        msg += f"• _{t['thought']}_ — `{time_str}`{state_tag}\n"
+
+    if dreams:
+        msg += "\n🌙 **Recent Dreams:**\n"
+        for d in dreams:
+            msg += f"• _{d['dream_text']}_ — `{d['sleep_date']}`"
+            if d.get("themes"):
+                msg += f" (themes: {d['themes']})"
+            msg += "\n"
+
+    if len(msg) > 4000:
+        msg = msg[:3900] + "\n\n*(...more thoughts in memory)*"
+    await update.message.reply_text(msg)
+
+
 def build_application() -> Application:
     app = (
         Application.builder()
@@ -529,6 +591,9 @@ def build_application() -> Application:
     app.add_handler(CommandHandler("depth", cmd_depth))
     app.add_handler(CommandHandler("relationship", cmd_depth))
     app.add_handler(CommandHandler("mood", cmd_mood))
+    app.add_handler(CommandHandler("status", cmd_status))
+    app.add_handler(CommandHandler("sleep", cmd_sleep))
+    app.add_handler(CommandHandler("thoughts", cmd_thoughts))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     return app

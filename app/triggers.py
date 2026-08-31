@@ -4,12 +4,14 @@ import asyncio
 import logging
 
 from . import config, db, llm, orchestrator, timeutil
+from . import consciousness
 from . import tasks as tasks_module
 
 logger = logging.getLogger(__name__)
 
 
 def _is_quiet_hours() -> bool:
+    """Legacy clock-based quiet hours check (used as fallback)."""
     hour = timeutil.now_local().hour
     return hour >= config.QUIET_START_HOUR or hour < config.QUIET_END_HOUR
 
@@ -26,7 +28,7 @@ async def _proactive_count_today(kind: str) -> int:
 
 async def hourly_checkin() -> None:
     """Proactively checks in on Teja every hour during daytime if there has been silence."""
-    if _is_quiet_hours():
+    if await consciousness.is_sleeping_async() or _is_quiet_hours():
         return
 
     # Check when the last message was sent/received
@@ -61,7 +63,11 @@ async def hourly_checkin() -> None:
 
 
 async def maybe_just_because() -> None:
-    if _is_quiet_hours():
+    if await consciousness.is_sleeping_async() or _is_quiet_hours():
+        return
+    # Lower chance of reaching out when energy is low
+    energy = await consciousness.get_energy()
+    if energy < 30 and random.random() > 0.3:
         return
     max_per_day = int(await db.get_config("justbecause_max_per_day", "4"))
     if await _proactive_count_today("justbecause") >= max_per_day:
@@ -332,7 +338,7 @@ async def app_presence_reaction(
 
 async def check_pc_presence_5min() -> None:
     """Checks live PC presence every 5 minutes and lets Sofia decide if she wants to text Teja."""
-    if _is_quiet_hours():
+    if await consciousness.is_sleeping_async() or _is_quiet_hours():
         return
 
     # Check last message timestamp to avoid spamming if already talking recently (within 10 mins)

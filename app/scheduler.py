@@ -2,6 +2,7 @@ import logging
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from . import config, db, diary, memory, timeutil
+from . import consciousness
 from . import tasks as tasks_module
 from . import triggers
 
@@ -61,6 +62,10 @@ async def cleanup_expired() -> None:
           AND substr(timestamp, 1, 10) IN (SELECT date FROM daily_diary)
         """
     )
+    # Prune old inner thoughts (keep last 30 days)
+    await db.execute(
+        "DELETE FROM inner_thoughts WHERE created_at < datetime('now', '-30 days')"
+    )
 
 
 async def create_scheduler() -> AsyncIOScheduler:
@@ -87,6 +92,18 @@ async def create_scheduler() -> AsyncIOScheduler:
     summary_hour = int(await db.get_config("daily_summary_hour", "22"))
     scheduler.add_job(triggers.daily_summary, "cron", hour=summary_hour, minute=15)
     scheduler.add_job(run_nightly_diary, "cron", hour=23, minute=45)
+
+    # 5. Consciousness system — heartbeat & inner thought loop
+    scheduler.add_job(
+        consciousness.tick, "interval",
+        minutes=config.CONSCIOUSNESS_TICK_MINUTES,
+        id="consciousness_tick",
+    )
+    scheduler.add_job(
+        consciousness.inner_thought_cycle, "interval",
+        minutes=config.THOUGHT_INTERVAL_MINUTES,
+        id="inner_thought_cycle",
+    )
 
     return scheduler
 
