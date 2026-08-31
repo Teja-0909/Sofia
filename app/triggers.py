@@ -91,7 +91,7 @@ async def maybe_just_because() -> None:
 
 
 async def daily_summary() -> None:
-    if _is_quiet_hours():
+    if await consciousness.is_sleeping_async() or _is_quiet_hours():
         return
     if await _proactive_count_today("daily_summary") > 0:
         return
@@ -282,7 +282,7 @@ async def app_presence_reaction(
     prev_title: str,
 ) -> None:
     """Autonomously reacts to major PC events (launching a game, starting coding, or long away)."""
-    if _is_quiet_hours():
+    if await consciousness.is_sleeping_async() or _is_quiet_hours():
         return
 
     now_iso = timeutil.utc_iso()

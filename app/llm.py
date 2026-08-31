@@ -123,20 +123,37 @@ async def _call_gemini(
 ) -> tuple[str, dict, list[dict]]:
     contents = []
     for m in messages:
-        role = "model" if m.get("role") in ("assistant", "model", "sofia", "alisa", "tool") else "user"
+        role = "model" if m.get("role") in ("assistant", "model", "sofia", "alisa") else "user"
         
         parts = []
         if m.get("role") == "tool":
             parts.append({
                 "functionResponse": {
-                    "name": m.get("name"),
-                    "response": {"result": m.get("content")}
+                    "name": m.get("name") or "tool",
+                    "response": {"result": m.get("content", "")}
                 }
             })
         else:
             text_content = m.get("content", "")
             if text_content:
                 parts.append({"text": text_content})
+            if m.get("tool_calls"):
+                for tc in m["tool_calls"]:
+                    fn = tc.get("function", {})
+                    fn_name = fn.get("name", "")
+                    fn_args = fn.get("arguments", "{}")
+                    if isinstance(fn_args, str):
+                        try:
+                            fn_args = json.loads(fn_args)
+                        except Exception:
+                            fn_args = {}
+                    if fn_name:
+                        parts.append({
+                            "functionCall": {
+                                "name": fn_name,
+                                "args": fn_args if isinstance(fn_args, dict) else {"arg": fn_args}
+                            }
+                        })
             if m.get("image_bytes"):
                 b64_str = base64.b64encode(m["image_bytes"]).decode("utf-8")
                 parts.append({
@@ -195,7 +212,7 @@ async def _call_gemini(
         body["tools"] = [{"functionDeclarations": gemini_tools}]
 
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-    async with httpx.AsyncClient(timeout=60) as client:
+    async with httpx.AsyncClient(timeout=35.0) as client:
         resp = await client.post(
             url,
             params={"key": config.GEMINI_API_KEY.strip()},
@@ -211,7 +228,8 @@ async def _call_gemini(
         raise ValueError(f"Gemini returned invalid or blocked candidate structure: {data}")
     
     parts = candidates[0]["content"]["parts"]
-    raw_text = parts[0].get("text", "")
+    text_parts = [p.get("text", "") for p in parts if "text" in p]
+    raw_text = "".join(text_parts)
     text = re.sub(r"<think>.*?</think>", "", raw_text, flags=re.DOTALL).strip() or raw_text.strip()
     
     tool_calls = []
@@ -288,7 +306,7 @@ async def _call_openai_compatible(
     if tools:
         json_payload["tools"] = tools
 
-    async with httpx.AsyncClient(timeout=60) as client:
+    async with httpx.AsyncClient(timeout=35.0) as client:
         resp = await client.post(
             f"{base_url}/chat/completions",
             headers={"Authorization": f"Bearer {api_key.strip()}"},

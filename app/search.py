@@ -148,7 +148,10 @@ async def fetch_page_content(url: str, max_chars: int = 4000) -> str:
 
 def _sync_ddgs_search(query: str, max_results: int = 5) -> list[dict]:
     try:
-        from ddgs import DDGS
+        try:
+            from ddgs import DDGS
+        except ImportError:
+            from duckduckgo_search import DDGS
         raw = list(DDGS().text(query, max_results=max_results))
         results = []
         for r in raw:

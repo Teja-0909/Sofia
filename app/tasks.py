@@ -182,19 +182,10 @@ async def poll_due_tasks() -> None:
             f"{TIER_NOTES[tier]} Respond in your own voice, short.]"
         )
         
-        # ── Consciousness: Might sleep through the alarm! ──
-        is_sleeping = await consciousness.is_sleeping_async()
-        slept_through = False
-        import random
-        if is_sleeping and random.random() < 0.6:  # 60% chance to sleep through a ping
-            slept_through = True
-            logger.info("Sofia slept through a reminder ping for task %s", task["id"])
-        
-        if not slept_through:
-            try:
-                await _send_via_alisa(note)
-            except llm.AllProvidersFailed:
-                continue
+        try:
+            await _send_via_alisa(note)
+        except llm.AllProvidersFailed:
+            continue
         new_count = task["reminder_sent_count"] + 1
         if new_count >= max_pings:
             await db.execute(

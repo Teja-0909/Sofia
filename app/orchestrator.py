@@ -1,3 +1,4 @@
+import asyncio
 import datetime as dt
 import math
 import pathlib
@@ -112,7 +113,7 @@ async def _ctx_living_notebook() -> str:
     return ""
 
 
-async def _ctx_vector_memories(user_text: str) -> tuple[str, str]:
+async def _ctx_vector_memories(user_text: str, query_vector: list[float] | None = None) -> tuple[str, str]:
     """
     Retrieves relationship memories and past conversation summaries via vector search.
     Returns (memories_block, past_conversations_block).
@@ -123,7 +124,9 @@ async def _ctx_vector_memories(user_text: str) -> tuple[str, str]:
 
     if user_text:
         try:
-            user_embedding = await llm.embed_text(user_text)
+            user_embedding = query_vector
+            if user_embedding is None:
+                user_embedding = await llm.embed_text(user_text[:1000])
             if user_embedding:
                 all_mems = await db.fetch_all("SELECT category, content, weight, embedding, last_reinforced_at, created_at FROM relationship_memory WHERE is_active = 1")
                 scored_mems = []
@@ -381,26 +384,48 @@ async def _build_system_prompt(extra_note: str | None = None, user_text: str = "
     """
     base = pathlib.Path(config.SYSTEM_PROMPT_PATH).read_text(encoding="utf-8")
 
-    # Gather all context blocks in priority order (highest priority first)
-    relationship_block = await _ctx_relationship_stage()
-    notebook_block = await _ctx_living_notebook()
-    mem_block, past_conv_block = await _ctx_vector_memories(user_text)
-    recent_summaries_block = await _ctx_recent_summaries()
-    diary_block = await _ctx_diary()
-    mood_block = await _ctx_active_mood()
-    time_block = _ctx_time_mood()
-    tasks_block = await _ctx_tasks_and_threads()
-    presence_block = await _ctx_pc_presence()
-    git_block = _ctx_git_log()
-    consciousness_block = await consciousness.get_consciousness_directive()
-
-    # Semantic thought/dream recall — surfaces relevant subconscious context
-    subconscious_block = ""
+    # 1. Compute user query embedding ONCE for both memories and subconscious retrieval
+    user_embedding = None
     if user_text and len(user_text.strip()) >= 20:
         try:
-            subconscious_block = await consciousness.find_relevant_thoughts_and_dreams(user_text) or ""
-        except Exception:
-            subconscious_block = ""
+            user_embedding = await llm.embed_text(user_text[:1000])
+        except Exception as e:
+            logger.debug("Failed to embed user text: %s", e)
+
+    # 2. Concurrently fetch all independent context blocks in parallel
+    subconscious_future = (
+        consciousness.find_relevant_thoughts_and_dreams(user_text, query_vector=user_embedding)
+        if (user_text and len(user_text.strip()) >= 20)
+        else asyncio.sleep(0, result=None)
+    )
+
+    (
+        relationship_block,
+        notebook_block,
+        (mem_block, past_conv_block),
+        recent_summaries_block,
+        diary_block,
+        mood_block,
+        tasks_block,
+        presence_block,
+        consciousness_block,
+        subconscious_result,
+    ) = await asyncio.gather(
+        _ctx_relationship_stage(),
+        _ctx_living_notebook(),
+        _ctx_vector_memories(user_text, query_vector=user_embedding),
+        _ctx_recent_summaries(),
+        _ctx_diary(),
+        _ctx_active_mood(),
+        _ctx_tasks_and_threads(),
+        _ctx_pc_presence(),
+        consciousness.get_consciousness_directive(),
+        subconscious_future,
+    )
+
+    time_block = _ctx_time_mood()
+    git_block = _ctx_git_log()
+    subconscious_block = subconscious_result or ""
 
     core_blocks = [base, relationship_block, notebook_block]
     context_blocks = [mem_block, past_conv_block, recent_summaries_block, diary_block]

@@ -53,3 +53,14 @@ class TestConsciousness(unittest.IsolatedAsyncioTestCase):
         await consciousness.generate_dream()
         dreams = await consciousness.get_recent_dreams()
         self.assertEqual(len(dreams), 0)
+
+    async def test_circadian_gravity_does_not_wake_sleeping_sofia(self):
+        """When Sofia is put to sleep, background circadian gravity must NOT wake her up."""
+        await consciousness.begin_sleep()
+        self.assertTrue(await consciousness.is_sleeping_async())
+        
+        # Simulate tick with recent message / active PC
+        transition = await consciousness.apply_circadian_gravity()
+        self.assertIsNone(transition)
+        self.assertTrue(await consciousness.is_sleeping_async())
+

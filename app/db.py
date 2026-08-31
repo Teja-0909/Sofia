@@ -12,8 +12,19 @@ logger = logging.getLogger(__name__)
 
 _turso_client = None
 _local_conn: aiosqlite.Connection | None = None
-_local_lock = asyncio.Lock()
+_local_lock: asyncio.Lock | None = None
 _local_db_path: str | None = None
+
+
+def _get_local_lock() -> asyncio.Lock:
+    global _local_lock
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+    if _local_lock is None or getattr(_local_lock, "_loop", None) is not loop:
+        _local_lock = asyncio.Lock()
+    return _local_lock
 
 
 def is_turso() -> bool:
@@ -121,7 +132,7 @@ async def connect() -> aiosqlite.Connection:
 
 async def close_local_conn():
     global _local_conn, _local_db_path
-    async with _local_lock:
+    async with _get_local_lock():
         if _local_conn is not None:
             await _local_conn.close()
             _local_conn = None
@@ -372,7 +383,7 @@ async def fetch_all(query: str, params: tuple = ()) -> list[dict]:
         cols = rs.columns if rs else []
         rows = rs.rows if rs else []
         return [dict(zip(cols, row)) for row in rows]
-    async with _local_lock:
+    async with _get_local_lock():
         conn = await _get_local_conn()
         cursor = await conn.execute(query, params)
         rows = await cursor.fetchall()
@@ -386,7 +397,7 @@ async def fetch_one(query: str, params: tuple = ()) -> dict | None:
         if not rs or not rs.rows:
             return None
         return dict(zip(rs.columns, rs.rows[0]))
-    async with _local_lock:
+    async with _get_local_lock():
         conn = await _get_local_conn()
         cursor = await conn.execute(query, params)
         row = await cursor.fetchone()
@@ -398,7 +409,7 @@ async def execute(query: str, params: tuple = ()) -> None:
         client = await get_turso_client()
         await client.execute(query, list(params))
         return
-    async with _local_lock:
+    async with _get_local_lock():
         conn = await _get_local_conn()
         await conn.execute(query, params)
         await conn.commit()

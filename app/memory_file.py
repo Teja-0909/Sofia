@@ -44,21 +44,29 @@ Update and refine `memory.md`:
 """
 
 
+_CACHED_MEMORY_MD: str | None = None
+
+
 async def get_memory_md() -> str:
     """
     Retrieves memory.md content with Database as the Single Source of Truth.
-    Always prioritizes the database over static git-cloned disk files on Render.
+    Uses in-memory caching to eliminate redundant database reads on every message turn.
     """
+    global _CACHED_MEMORY_MD
+    if _CACHED_MEMORY_MD:
+        return _CACHED_MEMORY_MD
+
     # 1. Primary: Database is the permanent source of truth
     try:
         db_content = await db.get_config("memory_md_content", "")
         if db_content and len(db_content.strip()) > 50:
+            _CACHED_MEMORY_MD = db_content.strip()
             # Sync to local disk for visibility
             try:
-                MEMORY_FILE_PATH.write_text(db_content.strip(), encoding="utf-8")
+                MEMORY_FILE_PATH.write_text(_CACHED_MEMORY_MD, encoding="utf-8")
             except Exception as exc:
                 logger.debug("Failed writing memory.md to local disk: %s", exc)
-            return db_content.strip()
+            return _CACHED_MEMORY_MD
     except Exception as exc:
         logger.warning("Error fetching memory_md from DB: %s", exc)
 
@@ -128,9 +136,11 @@ async def reconstruct_from_db_memories() -> str:
 
 async def save_memory_md(content: str) -> None:
     """Saves memory.md to database as primary source of truth and writes to disk."""
+    global _CACHED_MEMORY_MD
     clean = content.strip()
     if not clean:
         return
+    _CACHED_MEMORY_MD = clean
 
     # 1. Write to Turso Database first
     try:

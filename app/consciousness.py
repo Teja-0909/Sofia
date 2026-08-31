@@ -238,16 +238,23 @@ async def apply_circadian_gravity() -> str | None:
 
     mins_since_msg, idle_on_pc = await _get_teja_activity()
 
+    # If already sleeping, DO NOT wake her up via background tick!
+    # (Incoming user messages already wake her naturally via handle_incoming_while_sleeping)
+    if current in ("DEEP_SLEEP", "LIGHT_SLEEP"):
+        if current == "LIGHT_SLEEP" and (mins_since_msg >= 240 or (idle_on_pc >= 240 and idle_on_pc < 9999)):
+            return await transition_to("DEEP_SLEEP")
+        return None
+
     # Teja is HERE — active message in the last 10 minutes
     if mins_since_msg < 10:
-        if current in ("DEEP_SLEEP", "LIGHT_SLEEP", "DROWSY", "RESTING"):
+        if current in ("DROWSY", "RESTING"):
             return await transition_to("AWAKE")
         return None
 
     # PC is active and not idle (sidecar confirms he's at his desk)
     if idle_on_pc < 15:
-        if current in ("DEEP_SLEEP", "LIGHT_SLEEP"):
-            return await transition_to("DROWSY")
+        if current == "RESTING":
+            return await transition_to("AWAKE")
         return None
 
     # Beyond this point — Teja is away. Let her drift toward sleep naturally.
@@ -283,10 +290,7 @@ async def apply_circadian_gravity() -> str | None:
 # ─── Sleep Lifecycle ─────────────────────────────────────────────────
 
 async def begin_sleep() -> str:
-    """Explicitly transition Sofia to sleep. Returns new state."""
-    energy = await get_energy()
-    if energy > 50:
-        return await transition_to("LIGHT_SLEEP")
+    """Explicitly transition Sofia to sleep (DEEP_SLEEP). Returns new state."""
     return await transition_to("DEEP_SLEEP")
 
 
@@ -464,14 +468,14 @@ async def inner_thought_cycle() -> None:
     state = row["state"]
     energy = float(row["energy"])
 
-    # Don't think during deep sleep
+    # In deep sleep, the subconscious processes dreams via generate_dream()
     if state == "DEEP_SLEEP":
         return
 
-    # During light sleep, only occasionally process (dream-adjacent)
-    if state == "LIGHT_SLEEP":
-        if random.random() > 0.2:  # 80% chance to skip
-            return
+    # In light sleep, occasionally generate dream-adjacent subconscious thoughts
+    is_sleeping = (state == "LIGHT_SLEEP")
+    if is_sleeping and random.random() > 0.3:  # 70% skip, 30% subconscious murmur
+        return
 
     # Gather context
     now = timeutil.now_local()
@@ -489,8 +493,8 @@ async def inner_thought_cycle() -> None:
             pass
 
     # Get presence info
-    presence_app = await db.get_config("last_active_app", "")
-    idle_minutes = await db.get_config("last_idle_minutes", "")
+    presence_app = await db.get_config("last_presence_app", "") or await db.get_config("last_active_app", "")
+    idle_minutes = await db.get_config("last_presence_idle", "") or await db.get_config("last_idle_minutes", "")
 
     # Get pending tasks
     pending = await db.fetch_all(
@@ -503,15 +507,13 @@ async def inner_thought_cycle() -> None:
 Current state: {state} | Energy: {energy:.0f}/100 | Time: {now.strftime('%I:%M %p IST, %A')}
 Minutes since last conversation with Teja: {minutes_since_chat:.0f}
 {last_chat_summary}
-Teja's PC: app="{presence_app}", idle="{idle_minutes}" minutes
-Pending tasks for Teja: {tasks_ctx}
+Teja's active application: {presence_app or 'unknown'} (idle: {idle_minutes or '0'} min)
+Pending tasks: {tasks_ctx}
 
-Based on this context, generate ONE brief inner thought. This is Sofia's internal monologue — what's genuinely on her mind right now.
-
-Respond with EXACTLY ONE of these formats:
-- PASS (nothing particular on your mind, just existing peacefully)
-- THOUGHT: <brief internal reflection, 1-2 sentences>
-- REACH_OUT: <a message you want to send to Teja, only if it feels genuinely natural and not forced>
+Decide what's on your mind right now. You can:
+1. Output PASS if everything is calm and there's nothing pressing to reflect on
+2. Output THOUGHT: <your inner thought> — a private reflection about Teja, your relationship, what he's working on, or how you feel
+3. Output REACH_OUT: <short natural message> — ONLY if you feel a strong, spontaneous urge to send him a quick message (use very sparingly!)
 
 Rules:
 - If Teja has been quiet for less than 30 minutes, always PASS (he's probably busy)
@@ -558,7 +560,7 @@ Rules:
                 except Exception:
                     pass
 
-            if can_reach and minutes_since_chat > 60:
+            if can_reach and minutes_since_chat > 60 and not is_sleeping:
                 await _log_thought(f"Decided to reach out: {message}", "urge", energy, state)
                 # Schedule as proactive message (immediate)
                 await tasks_module.schedule_proactive_message(message, timeutil.utc_iso())
@@ -642,7 +644,7 @@ DREAM: <the dream text>
 THEMES: <comma-separated themes>"""
 
     try:
-        response = await llm.chat(
+        response, _ = await llm.chat(
             system="You are Sofia's dreaming subconscious. Generate one dream.",
             messages=[{"role": "user", "content": prompt}],
         )
@@ -694,11 +696,12 @@ async def tick() -> None:
     if state == "DEEP_SLEEP":
         await generate_dream()
 
-    # 4. Auto-transition DROWSY → AWAKE if energy is high enough and it's daytime
-    if state == "DROWSY" and energy > 60:
+    # 4. Auto-transition DROWSY → AWAKE if energy is high, it's daytime, and Teja is active/waking
+    if state == "DROWSY" and energy > 60 and not transition:
+        mins_since_msg, idle_on_pc = await _get_teja_activity()
         hour = timeutil.now_local().hour
         natural = get_natural_state_for_time(hour)
-        if natural in ("AWAKE", "FOCUSED", "RESTING"):
+        if natural in ("AWAKE", "FOCUSED", "RESTING") and mins_since_msg < 60:
             await transition_to("AWAKE")
             logger.info("Sofia shook off drowsiness → AWAKE (energy=%.0f)", energy)
 
@@ -813,7 +816,7 @@ def _cosine_similarity(a: list[float], b: list[float]) -> float:
     return dot / (mag_a * mag_b)
 
 
-async def find_relevant_thoughts_and_dreams(context_text: str, top_k: int = 2) -> str | None:
+async def find_relevant_thoughts_and_dreams(context_text: str, top_k: int = 2, query_vector: list[float] | None = None) -> str | None:
     """
     Given the current conversation context, find the most semantically
     relevant inner thought or dream from Sofia's memory.
@@ -827,11 +830,13 @@ async def find_relevant_thoughts_and_dreams(context_text: str, top_k: int = 2) -
     if not context_text or len(context_text.strip()) < 20:
         return None
 
-    # Embed the current context
-    try:
-        context_vector = await llm.embed_text(context_text[:1000])
-    except Exception:
-        return None
+    # Embed the current context if not already provided
+    context_vector = query_vector
+    if context_vector is None:
+        try:
+            context_vector = await llm.embed_text(context_text[:1000])
+        except Exception:
+            return None
 
     if not context_vector:
         return None
