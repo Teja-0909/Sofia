@@ -37,17 +37,17 @@ JUSTBECAUSE_CHANCE = float(os.environ.get("JUSTBECAUSE_CHANCE", "0.15"))
 SCHEMA_PATH = os.environ.get("SCHEMA_PATH", str(BASE_DIR / "alisa-schema.sql"))
 SYSTEM_PROMPT_PATH = os.environ.get("SYSTEM_PROMPT_PATH", str(BASE_DIR / "system_prompt.txt"))
 
-# Primary LLM Provider: Groq (14,400 free requests/day, ultra-fast 120B intelligence + Qwen 27B Vision)
+# Primary LLM Providers
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
-GROQ_MODEL = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")
-GROQ_VISION_MODEL = os.environ.get("GROQ_VISION_MODEL", "qwen/qwen3.6-27b")
+GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
+GROQ_VISION_MODEL = os.environ.get("GROQ_VISION_MODEL", "llama-3.2-11b-vision-preview")
 
 # Optional Fallbacks: OpenRouter / Gemini
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "meta-llama/llama-3.3-70b-instruct:free")
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash-lite")
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
 
 PORT = int(os.environ.get("PORT", "10000"))
 TURSO_DATABASE_URL = os.environ.get("TURSO_DATABASE_URL", "")

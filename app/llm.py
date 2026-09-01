@@ -17,73 +17,29 @@ class AllProvidersFailed(Exception):
 
 def _provider_chain() -> list[tuple[str, str, str]]:
     chain = []
-    # 1. Absolute Primary Brain: Gemini 3.5 / 2.5 Flash Lite
+    # 1. Primary: Google Gemini 2.0 / 1.5 Flash
     if config.GEMINI_API_KEY:
-        chain.append(("gemini", config.GEMINI_MODEL, "gemini"))
-        for gm in ("gemini-2.0-flash", "gemini-1.5-flash"):
-            if gm != config.GEMINI_MODEL:
+        seen = set()
+        for gm in (config.GEMINI_MODEL, "gemini-2.0-flash", "gemini-1.5-flash"):
+            if gm and gm not in seen:
+                seen.add(gm)
                 chain.append(("gemini", gm, "gemini"))
-    # 2. Seamless Redundancy Fallback: Groq (if Gemini API key is missing or down)
+
+    # 2. Resilient Fallback: Groq (Llama 3.3 70B / Llama 3.1 8B)
     if config.GROQ_API_KEY:
-        chain.append(("groq", "openai/gpt-oss-120b", "openai"))
-        chain.append(("groq", "qwen/qwen3.8-27b", "openai"))
-        chain.append(("groq", "openai/gpt-oss-20b", "openai"))
-    # 3. Fallback 2: OpenRouter
+        chain.append(("groq", config.GROQ_MODEL or "llama-3.3-70b-versatile", "openai"))
+        chain.append(("groq", "llama-3.1-8b-instant", "openai"))
+
+    # 3. Fallback: OpenRouter
     if config.OPENROUTER_API_KEY:
-        chain.append(("openrouter", config.OPENROUTER_MODEL, "openai"))
+        chain.append(("openrouter", config.OPENROUTER_MODEL or "meta-llama/llama-3.3-70b-instruct:free", "openai"))
     return chain
 
 
 async def _get_best_groq_model(api_key: str, has_image: bool = False) -> str:
-    global _cached_groq_model
-    if not has_image and _cached_groq_model:
-        return _cached_groq_model
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.get(
-                "https://api.groq.com/openai/v1/models",
-                headers={"Authorization": f"Bearer {api_key.strip()}"},
-            )
-            if resp.status_code == 200:
-                data = resp.json()
-                raw_ids = [m["id"] for m in data.get("data", []) if m.get("active", True)]
-
-                # Filter out safety guards, audio transcription, and embeddings
-                chat_ids = [
-                    m for m in raw_ids
-                    if not any(bad in m.lower() for bad in ["guard", "whisper", "embed", "safeguard", "moderation"])
-                ]
-
-                if has_image:
-                    vision_preferred = [
-                        "qwen/qwen3.6-27b",
-                        "qwen/qwen3.8-27b",
-                    ]
-                    for vp in vision_preferred:
-                        if vp in chat_ids:
-                            return vp
-
-                text_preferred = [
-                    "openai/gpt-oss-120b",
-                    "qwen/qwen3.8-27b",
-                    "openai/gpt-oss-20b",
-                ]
-                for p in text_preferred:
-                    if p in chat_ids:
-                        _cached_groq_model = p
-                        return p
-
-                for m in chat_ids:
-                    if "gpt-oss" in m.lower() or "qwen" in m.lower():
-                        _cached_groq_model = m
-                        return m
-
-                if chat_ids:
-                    _cached_groq_model = chat_ids[0]
-                    return chat_ids[0]
-    except Exception as exc:
-        logger.debug("Failed to query Groq model list: %s", exc)
-    return config.GROQ_VISION_MODEL if has_image else config.GROQ_MODEL
+    if has_image:
+        return config.GROQ_VISION_MODEL or "llama-3.2-11b-vision-preview"
+    return config.GROQ_MODEL or "llama-3.3-70b-versatile"
 
 
 async def _log_usage(provider: str, model: str, usage: dict) -> None:
