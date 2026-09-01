@@ -1,14 +1,16 @@
 """
-Sofia Desktop Presence Sidecar
-Lightweight presence beacon that silently monitors your active window & idle status
-and syncs it with Sofia on Render (0% CPU, uses native Windows OS APIs).
+Sofia Desktop Presence & Shared Augmented Desktop Sidecar
+Lightweight presence beacon and screen vision bridge that runs silently on Windows.
+Syncs window presence, executes overlay drawings, and streams screen perceptions.
 """
 
 import ctypes
 from ctypes import wintypes
+import io
 import json
 import logging
 import os
+import subprocess
 import sys
 import time
 import urllib.request
@@ -24,10 +26,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger("sofia_sidecar")
 
-SOFIA_PRESENCE_URL = os.environ.get(
-    "SOFIA_PRESENCE_URL", "https://sofia-va07.onrender.com/api/presence"
-)
-POLL_INTERVAL_SECONDS = 60  # Check every 60 seconds
+SOFIA_BASE_URL = os.environ.get("SOFIA_BASE_URL", "https://sofia-va07.onrender.com").rstrip("/")
+SOFIA_PRESENCE_URL = f"{SOFIA_BASE_URL}/api/presence"
+SOFIA_UPLOAD_URL = f"{SOFIA_BASE_URL}/api/desktop/upload"
+SOFIA_POLL_URL = f"{SOFIA_BASE_URL}/api/desktop/poll"
+OVERLAY_IPC_URL = "http://127.0.0.1:18493"
+
+POLL_INTERVAL_SECONDS = 15  # Responsive 15s presence poll (drops to 2s during active sessions)
 
 
 class LASTINPUTINFO(ctypes.Structure):
@@ -120,7 +125,6 @@ def get_active_window_info() -> tuple[str, str]:
     try:
         user32 = ctypes.windll.user32
         kernel32 = ctypes.windll.kernel32
-        psapi = ctypes.windll.psapi
         hwnd = user32.GetForegroundWindow()
         if not hwnd:
             return ("Desktop", "")
@@ -149,7 +153,6 @@ def get_active_window_info() -> tuple[str, str]:
                 finally:
                     kernel32.CloseHandle(handle)
 
-        # Fallback to title-based detection if process detection returned generic
         if app_name in ("Desktop", ""):
             app_name = _app_from_title(title)
 
@@ -157,6 +160,127 @@ def get_active_window_info() -> tuple[str, str]:
     except Exception:
         return ("Desktop", "")
 
+
+# ─── Screen Capture & Privacy Guard ───────────────────────────────────
+
+def capture_screen_bytes(max_dim: int = 1280) -> bytes | None:
+    """Captures the primary display and returns compressed JPEG image bytes."""
+    from PIL import Image
+
+    # 1. Privacy filter: suppress capture if sensitive window is open
+    _, title = get_active_window_info()
+    lower_title = title.lower()
+    for sensitive in ("1password", "bitwarden", "keepass", "password", "bank", "credit card", "login -"):
+        if sensitive in lower_title:
+            logger.info("Screen capture suppressed for sensitive window: '%s'", title)
+            return None
+
+    img = None
+    # 2. Try mss capture
+    try:
+        import mss
+        with mss.mss() as sct:
+            mon = sct.monitors[1] if len(sct.monitors) > 1 else sct.monitors[0]
+            sct_img = sct.grab(mon)
+            img = Image.frombytes("RGB", sct_img.size, sct_img.bgra, "raw", "BGRX")
+    except Exception as exc:
+        logger.debug("mss capture fallback: %s", exc)
+
+    # 3. Fallback to PIL ImageGrab
+    if img is None:
+        try:
+            from PIL import ImageGrab
+            img = ImageGrab.grab()
+        except Exception as exc:
+            logger.debug("ImageGrab capture fallback: %s", exc)
+
+    if img is None:
+        return None
+
+    # Resize if larger than max_dim
+    w, h = img.size
+    if max(w, h) > max_dim:
+        scale = max_dim / float(max(w, h))
+        img = img.resize((int(w * scale), int(h * scale)), Image.Resampling.LANCZOS)
+
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=80, optimize=True)
+    return buf.getvalue()
+
+
+# ─── Overlay Process Supervisor & IPC ─────────────────────────────────
+
+def ensure_overlay_running():
+    """Checks if overlay daemon is running on localhost:18493, launches it if not."""
+    try:
+        req = urllib.request.Request(f"{OVERLAY_IPC_URL}/health")
+        with urllib.request.urlopen(req, timeout=1) as resp:
+            if resp.status == 200:
+                return
+    except Exception:
+        pass
+
+    overlay_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "overlay.py")
+    if os.path.exists(overlay_script):
+        try:
+            flags = 0x08000000 if sys.platform == "win32" else 0  # CREATE_NO_WINDOW
+            subprocess.Popen([sys.executable, overlay_script], creationflags=flags)
+            logger.info("Spawned Sofia Desktop Ghost Overlay daemon (scripts/overlay.py)")
+        except Exception as exc:
+            logger.warning("Failed spawning overlay daemon: %s", exc)
+
+
+def forward_to_overlay(endpoint: str, payload: dict) -> bool:
+    """Forwards a draw/clear command to local overlay daemon."""
+    ensure_overlay_running()
+    url = f"{OVERLAY_IPC_URL}/{endpoint.lstrip('/')}"
+    try:
+        data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            url,
+            data=data,
+            headers={"Content-Type": "application/json"},
+            method="POST"
+        )
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            return resp.status == 200
+    except Exception as exc:
+        logger.warning("Could not forward command to overlay (%s): %s", url, exc)
+        return False
+
+
+def upload_screen_frame(frame_bytes: bytes) -> bool:
+    """Uploads a captured screen frame to Sofia's server."""
+    try:
+        req = urllib.request.Request(
+            SOFIA_UPLOAD_URL,
+            data=frame_bytes,
+            headers={"Content-Type": "image/jpeg", "User-Agent": "SofiaSidecar/1.0"},
+            method="POST"
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return resp.status == 200
+    except Exception as exc:
+        logger.warning("Failed uploading screen frame to Sofia: %s", exc)
+        return False
+
+
+def execute_desktop_commands(commands: list[dict]) -> None:
+    """Executes commands received from Sofia's Brain."""
+    for cmd in commands:
+        cmd_type = cmd.get("type")
+        logger.info("Executing desktop command: %s", cmd_type)
+
+        if cmd_type == "capture_screen":
+            frame = capture_screen_bytes()
+            if frame:
+                upload_screen_frame(frame)
+
+        elif cmd_type in ("point_at", "doodle", "sticky_note", "clear"):
+            forward_to_overlay(cmd_type, cmd)
+
+
+# ─── Main Presence & Command Loop ─────────────────────────────────────
 
 def send_presence(app_name: str, window_title: str, idle_min: int) -> bool:
     payload = {
@@ -173,15 +297,27 @@ def send_presence(app_name: str, window_title: str, idle_min: int) -> bool:
     )
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
-            return resp.status == 200
+            if resp.status == 200:
+                resp_body = resp.read().decode("utf-8")
+                try:
+                    data = json.loads(resp_body)
+                    commands = data.get("commands") or []
+                    if commands:
+                        execute_desktop_commands(commands)
+                except Exception as parse_exc:
+                    logger.debug("Presence response parse note: %s", parse_exc)
+                return True
     except Exception as exc:
         logger.warning("Could not reach Sofia endpoint (%s): %s", SOFIA_PRESENCE_URL, exc)
         return False
+    return False
 
 
 def main():
-    logger.info("Sofia Desktop Presence Sidecar started")
+    logger.info("Sofia Desktop Presence & Shared Augmented Desktop Sidecar started")
     logger.info("Syncing with: %s", SOFIA_PRESENCE_URL)
+    ensure_overlay_running()
+
     last_sent_app = ""
     last_sent_title = ""
 
@@ -190,7 +326,6 @@ def main():
             app_name, title = get_active_window_info()
             idle_min = get_idle_minutes()
 
-            # Log when changed or every few minutes
             if app_name != last_sent_app or title != last_sent_title or idle_min > 5:
                 logger.info("Presence: App='%s' | Title='%s' | Idle=%s min", app_name, title, idle_min)
                 success = send_presence(app_name, title, idle_min)

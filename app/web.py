@@ -76,7 +76,9 @@ async def _handle_presence_payload(payload_bytes: bytes) -> dict:
                     triggers.app_presence_reaction(app_name, window_title, idle_minutes, prev_app, prev_title)
                 )
 
-        return {"status": "ok", "synced": True}
+        from . import vision_session
+        pending_commands = await vision_session.pop_pending_commands()
+        return {"status": "ok", "synced": True, "commands": pending_commands}
     except Exception as exc:
         logger.warning("Presence handler error: %s", exc)
         return {"status": "error", "message": str(exc)}
@@ -105,6 +107,28 @@ async def _handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWri
         status_line = "HTTP/1.1 200 OK\r\n"
         content_type = "application/json"
 
+        # Read full request body if Content-Length present
+        content_len = 0
+        mime_header = "application/json"
+        for line in lines[1:]:
+            if line.lower().startswith("content-length:"):
+                try:
+                    content_len = int(line.split(":")[1].strip())
+                except ValueError:
+                    pass
+            elif line.lower().startswith("content-type:"):
+                mime_header = line.split(":", 1)[1].strip()
+
+        header_end = header_data.find(b"\r\n\r\n")
+        body_bytes = b""
+        if header_end != -1:
+            body_bytes = header_data[header_end + 4:]
+
+        if content_len > len(body_bytes):
+            remaining = content_len - len(body_bytes)
+            more = await reader.read(remaining)
+            body_bytes += more
+
         if path == "/health":
             body = json.dumps({
                 "status": "healthy",
@@ -112,30 +136,21 @@ async def _handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWri
                 "timestamp_utc": timeutil.utc_iso(),
                 "timezone": config.TIMEZONE,
             }).encode("utf-8")
+
         elif path == "/api/presence" and method == "POST":
-            # Extract content length if present
-            content_len = 0
-            for line in lines[1:]:
-                if line.lower().startswith("content-length:"):
-                    try:
-                        content_len = int(line.split(":")[1].strip())
-                    except ValueError as ve:
-                        logger.debug("Invalid Content-Length header: %s", ve)
-
-            # Find boundary between headers and body
-            header_end = header_data.find(b"\r\n\r\n")
-            body_bytes = b""
-            if header_end != -1:
-                body_bytes = header_data[header_end + 4:]
-
-            # If more body bytes expected, read remaining
-            if content_len > len(body_bytes):
-                remaining = content_len - len(body_bytes)
-                more = await reader.read(remaining)
-                body_bytes += more
-
             resp_data = await _handle_presence_payload(body_bytes)
             body = json.dumps(resp_data).encode("utf-8")
+
+        elif path == "/api/desktop/upload" and method == "POST":
+            from . import vision_session
+            vision_session.store_screen_frame(body_bytes, mime_type=mime_header)
+            body = json.dumps({"status": "ok", "received_bytes": len(body_bytes)}).encode("utf-8")
+
+        elif path == "/api/desktop/poll" and method == "GET":
+            from . import vision_session
+            cmds = await vision_session.pop_pending_commands()
+            body = json.dumps({"status": "ok", "commands": cmds}).encode("utf-8")
+
         else:
             body = "Sofia companion is online and listening. 💖\n".encode("utf-8")
             content_type = "text/plain; charset=utf-8"

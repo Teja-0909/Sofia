@@ -63,6 +63,80 @@ TOOLS = [
                 "required": ["message", "due_time"]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "desktop_point_at",
+            "description": "Points an animated glowing target arrow at coordinate (x, y) on Teja's screen with an optional text badge. Coordinates are normalized from 0 (top/left) to 1000 (bottom/right).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "x": {"type": "integer", "description": "Normalized X coordinate 0-1000 (0=left, 500=center, 1000=right)"},
+                    "y": {"type": "integer", "description": "Normalized Y coordinate 0-1000 (0=top, 500=center, 1000=bottom)"},
+                    "label": {"type": "string", "description": "Short label badge to display beside arrow (e.g. 'Look at this error')"},
+                    "duration_seconds": {"type": "integer", "description": "How long the pointer pulses on screen (default 5s)"}
+                },
+                "required": ["x", "y"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "desktop_doodle",
+            "description": "Doodles a visual shape (heart, star, crown, circle_error, underline) at coordinate (x, y) on Teja's monitor for playful interaction or visual highlighting.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "shape": {"type": "string", "enum": ["heart", "star", "crown", "circle_error", "underline"], "description": "Shape to doodle"},
+                    "x": {"type": "integer", "description": "Normalized X coordinate 0-1000 (default 500)"},
+                    "y": {"type": "integer", "description": "Normalized Y coordinate 0-1000 (default 500)"},
+                    "duration_seconds": {"type": "integer", "description": "Duration in seconds (default 6s)"}
+                },
+                "required": ["shape"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "desktop_sticky_note",
+            "description": "Places a floating translucent sticky note or thought bubble on Teja's monitor.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string", "description": "Message content to display on screen"},
+                    "position": {"type": "string", "enum": ["top_right", "bottom_right", "top_left", "bottom_left", "center"], "description": "Screen position for the note"},
+                    "duration_seconds": {"type": "integer", "description": "Duration in seconds (default 8s)"}
+                },
+                "required": ["text"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "desktop_clear_overlay",
+            "description": "Clears all active visual markers, arrows, and doodles from Teja's screen.",
+            "parameters": {
+                "type": "object",
+                "properties": {}
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "desktop_capture_screen",
+            "description": "Captures a fresh live screenshot of Teja's monitor right now so you can inspect what he is doing or see what he is pointing at.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "reason": {"type": "string", "description": "Why you are inspecting his screen"}
+                }
+            }
+        }
     }
 ]
 
@@ -568,6 +642,39 @@ async def _generate(system: str, messages: list[dict], user_text: str = "") -> s
                 elif name == "schedule_proactive_message":
                     await tasks_module.schedule_proactive_message(args["message"], args["due_time"])
                     result = "Successfully scheduled the proactive message."
+                elif name == "desktop_point_at":
+                    from . import vision_session
+                    result = await vision_session.point_at(
+                        norm_x=int(args.get("x", 500)),
+                        norm_y=int(args.get("y", 500)),
+                        label=str(args.get("label", "")),
+                        duration_seconds=int(args.get("duration_seconds", 5)),
+                    )
+                elif name == "desktop_doodle":
+                    from . import vision_session
+                    result = await vision_session.doodle(
+                        shape=str(args.get("shape", "heart")),
+                        norm_x=int(args.get("x", 500)),
+                        norm_y=int(args.get("y", 500)),
+                        duration_seconds=int(args.get("duration_seconds", 6)),
+                    )
+                elif name == "desktop_sticky_note":
+                    from . import vision_session
+                    result = await vision_session.sticky_note(
+                        text=str(args.get("text", "💕")),
+                        position=str(args.get("position", "top_right")),
+                        duration_seconds=int(args.get("duration_seconds", 8)),
+                    )
+                elif name == "desktop_clear_overlay":
+                    from . import vision_session
+                    result = await vision_session.clear_overlay()
+                elif name == "desktop_capture_screen":
+                    from . import vision_session
+                    frame = await vision_session.request_screen_capture(reason=str(args.get("reason", "Inspection")))
+                    if frame:
+                        result = "Screen captured successfully. Frame received from Windows sidecar."
+                    else:
+                        result = "Could not capture screen (PC sidecar offline or sensitive window active)."
                 else:
                     result = f"Error: unknown function {name}"
             except Exception as e:

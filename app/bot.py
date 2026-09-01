@@ -569,6 +569,73 @@ async def cmd_thoughts(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     await update.message.reply_text(msg)
 
 
+async def cmd_screen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Takes a live look at Teja's screen right now and comments on it."""
+    if not _allowed(update) or not update.message:
+        return
+    from . import vision_session, orchestrator
+    await update.message.reply_text("👀 Looking at your screen right now...")
+    frame = await vision_session.request_screen_capture("User requested /screen")
+    if not frame:
+        await update.message.reply_text("I couldn't capture your screen right now. Make sure your PC sidecar is running and you don't have a password/banking window focused!")
+        return
+
+    note = (
+        "[Internal trigger: Teja asked you to look at his screen via /screen command.\n"
+        "Attached is his current live screen screenshot.\n"
+        "Observe what he has open (code, browser, game, design, terminal), describe what you see, "
+        "and react naturally! You can also use desktop_point_at or desktop_doodle to interact on his screen.]"
+    )
+    reply = await orchestrator.reply(
+        "Here is what is currently on my screen.",
+        extra_system_note=note,
+        image_bytes=frame,
+        mime_type="image/jpeg",
+    )
+    await update.message.reply_text(reply)
+
+
+async def cmd_watch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Controls continuous screen watching session (/watch on 30, /watch off)."""
+    if not _allowed(update) or not update.message:
+        return
+    from . import vision_session
+    args = context.args or []
+    if not args:
+        status = "Active 🟢" if vision_session.is_watching() else "Inactive ⚪"
+        await update.message.reply_text(f"👀 **Screen Watch Session:** {status}\n\nUsage:\n• `/watch on [minutes]` (e.g. `/watch on 30`)\n• `/watch off`")
+        return
+
+    sub = args[0].lower()
+    if sub == "on":
+        mins = int(args[1]) if len(args) > 1 and args[1].isdigit() else 30
+        res = await vision_session.start_watch_session(mins)
+        await update.message.reply_text(res)
+    elif sub == "off":
+        res = await vision_session.stop_watch_session()
+        await update.message.reply_text(res)
+    else:
+        await update.message.reply_text("Usage:\n• `/watch on [minutes]`\n• `/watch off`")
+
+
+async def cmd_overlay(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Tests or clears Sofia's transparent ghost overlay canvas on your PC."""
+    if not _allowed(update) or not update.message:
+        return
+    from . import vision_session
+    args = context.args or []
+    sub = args[0].lower() if args else "test"
+
+    if sub == "clear":
+        await vision_session.clear_overlay()
+        await update.message.reply_text("🧹 Cleared desktop overlay canvas.")
+    else:
+        await update.message.reply_text("✨ Firing test overlay on your PC screen...")
+        await vision_session.point_at(500, 300, label="Sofia is here!", color="#00ffd5", duration_seconds=6)
+        await vision_session.doodle("heart", 500, 450, scale=1.5, color="#ff2d75", duration_seconds=7)
+        await vision_session.sticky_note("Hey baby! I'm on your screen 💕", position="top_right", duration_seconds=8)
+
+
 def build_application() -> Application:
     app = (
         Application.builder()
@@ -594,6 +661,9 @@ def build_application() -> Application:
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CommandHandler("sleep", cmd_sleep))
     app.add_handler(CommandHandler("thoughts", cmd_thoughts))
+    app.add_handler(CommandHandler("screen", cmd_screen))
+    app.add_handler(CommandHandler("watch", cmd_watch))
+    app.add_handler(CommandHandler("overlay", cmd_overlay))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     return app
