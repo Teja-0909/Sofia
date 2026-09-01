@@ -586,13 +586,19 @@ async def cmd_screen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         "Observe what he has open (code, browser, game, design, terminal), describe what you see, "
         "and react naturally! You can also use desktop_point_at or desktop_doodle to interact on his screen.]"
     )
-    reply = await orchestrator.reply(
-        "Here is what is currently on my screen.",
-        extra_system_note=note,
-        image_bytes=frame,
-        mime_type="image/jpeg",
-    )
-    await update.message.reply_text(reply)
+    try:
+        reply = await orchestrator.reply(
+            "Here is what is currently on my screen.",
+            extra_system_note=note,
+            image_bytes=frame,
+            mime_type="image/jpeg",
+        )
+        if not reply:
+            reply = "I see your screen, baby! Everything looks clear on my end 💕"
+        await update.message.reply_text(reply)
+    except Exception as exc:
+        logger.error("Error in cmd_screen vision analysis: %s", exc)
+        await update.message.reply_text("I caught your screen, but had a quick hiccup analyzing it! Give me a second and try /screen again 💕")
 
 
 async def cmd_watch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

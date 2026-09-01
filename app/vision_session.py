@@ -142,21 +142,21 @@ async def clear_overlay() -> str:
 async def request_screen_capture(reason: str = "Inspect screen") -> bytes | None:
     """
     Requests the Windows sidecar to capture the screen immediately,
-    waiting up to 5 seconds for the frame to arrive.
+    waiting up to 10 seconds for the frame to arrive.
     """
     start_time = time.time()
     await enqueue_desktop_command("capture_screen", {"reason": reason})
 
-    # Poll for frame newer than request time
-    for _ in range(25):
+    # Poll for frame newer than request time (up to 10s)
+    for _ in range(50):
         await asyncio.sleep(0.2)
         frame, _, frame_ts = get_latest_screen_frame()
         if frame and frame_ts >= start_time:
             return frame
 
-    # Return whatever recent frame we have if fresh (< 30s)
+    # Return whatever recent frame we have if fresh (< 45s)
     frame, _, frame_ts = get_latest_screen_frame()
-    if frame and (time.time() - frame_ts) < 30.0:
+    if frame and (time.time() - frame_ts) < 45.0:
         return frame
 
     return None

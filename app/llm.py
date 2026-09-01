@@ -201,15 +201,28 @@ async def _call_gemini(
             body["generationConfig"]["responseSchema"] = response_format["json_schema"]["schema"]
 
     if tools:
-        # Convert OpenAI tool format to Gemini tool format
+        # Convert OpenAI tool format to Gemini tool format safely
         gemini_tools = []
         for t in tools:
-            gemini_tools.append({
-                "name": t["function"]["name"],
-                "description": t["function"]["description"],
-                "parameters": t["function"]["parameters"]
-            })
-        body["tools"] = [{"functionDeclarations": gemini_tools}]
+            fn = t.get("function", {})
+            fn_name = fn.get("name")
+            if not fn_name:
+                continue
+            decl = {
+                "name": fn_name,
+                "description": fn.get("description", "")
+            }
+            params = fn.get("parameters")
+            if params and isinstance(params, dict) and params.get("properties"):
+                decl["parameters"] = {
+                    "type": "object",
+                    "properties": params.get("properties", {}),
+                }
+                if "required" in params:
+                    decl["parameters"]["required"] = params["required"]
+            gemini_tools.append(decl)
+        if gemini_tools:
+            body["tools"] = [{"functionDeclarations": gemini_tools}]
 
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
     async with httpx.AsyncClient(timeout=35.0) as client:
@@ -303,7 +316,7 @@ async def _call_openai_compatible(
     
     if response_format:
         json_payload["response_format"] = response_format
-    if tools:
+    if tools and not (provider == "groq" and has_image):
         json_payload["tools"] = tools
 
     async with httpx.AsyncClient(timeout=35.0) as client:

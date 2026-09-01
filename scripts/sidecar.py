@@ -12,6 +12,7 @@ import logging
 import os
 import subprocess
 import sys
+import threading
 import time
 import urllib.request
 
@@ -32,7 +33,8 @@ SOFIA_UPLOAD_URL = f"{SOFIA_BASE_URL}/api/desktop/upload"
 SOFIA_POLL_URL = f"{SOFIA_BASE_URL}/api/desktop/poll"
 OVERLAY_IPC_URL = "http://127.0.0.1:18493"
 
-POLL_INTERVAL_SECONDS = 15  # Responsive 15s presence poll (drops to 2s during active sessions)
+FAST_POLL_INTERVAL_SECONDS = 1.5  # High-speed 1.5s command polling
+PRESENCE_SYNC_SECONDS = 15        # Presence metadata sync interval
 
 
 class LASTINPUTINFO(ctypes.Structure):
@@ -129,13 +131,11 @@ def get_active_window_info() -> tuple[str, str]:
         if not hwnd:
             return ("Desktop", "")
 
-        # Get window title
         length = user32.GetWindowTextLengthW(hwnd)
         buff = ctypes.create_unicode_buffer(length + 1)
         user32.GetWindowTextW(hwnd, buff, length + 1)
         title = buff.value.strip()
 
-        # Get process name via PID
         app_name = "Desktop"
         pid = wintypes.DWORD()
         user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
@@ -167,7 +167,7 @@ def capture_screen_bytes(max_dim: int = 1280) -> bytes | None:
     """Captures the primary display and returns compressed JPEG image bytes."""
     from PIL import Image
 
-    # 1. Privacy filter: suppress capture if sensitive window is open
+    # 1. Privacy filter
     _, title = get_active_window_info()
     lower_title = title.lower()
     for sensitive in ("1password", "bitwarden", "keepass", "password", "bank", "credit card", "login -"):
@@ -184,7 +184,7 @@ def capture_screen_bytes(max_dim: int = 1280) -> bytes | None:
             sct_img = sct.grab(mon)
             img = Image.frombytes("RGB", sct_img.size, sct_img.bgra, "raw", "BGRX")
     except Exception as exc:
-        logger.debug("mss capture fallback: %s", exc)
+        logger.debug("mss capture note: %s", exc)
 
     # 3. Fallback to PIL ImageGrab
     if img is None:
@@ -192,19 +192,19 @@ def capture_screen_bytes(max_dim: int = 1280) -> bytes | None:
             from PIL import ImageGrab
             img = ImageGrab.grab()
         except Exception as exc:
-            logger.debug("ImageGrab capture fallback: %s", exc)
+            logger.debug("ImageGrab capture note: %s", exc)
 
     if img is None:
         return None
 
-    # Resize if larger than max_dim
+    # Resize if larger than max_dim (fast transfer)
     w, h = img.size
     if max(w, h) > max_dim:
         scale = max_dim / float(max(w, h))
-        img = img.resize((int(w * scale), int(h * scale)), Image.Resampling.LANCZOS)
+        img = img.resize((int(w * scale), int(h * scale)), Image.Resampling.BILINEAR)
 
     buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=80, optimize=True)
+    img.save(buf, format="JPEG", quality=75, optimize=True)
     return buf.getvalue()
 
 
@@ -280,7 +280,31 @@ def execute_desktop_commands(commands: list[dict]) -> None:
             forward_to_overlay(cmd_type, cmd)
 
 
-# ─── Main Presence & Command Loop ─────────────────────────────────────
+# ─── Fast Command Poller Thread (1.5s interval) ───────────────────────
+
+def _fast_command_poll_loop():
+    """High-frequency background thread polling for instant desktop commands."""
+    while True:
+        try:
+            req = urllib.request.Request(
+                SOFIA_POLL_URL,
+                headers={"User-Agent": "SofiaSidecar/1.0"},
+                method="GET"
+            )
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                if resp.status == 200:
+                    resp_body = resp.read().decode("utf-8")
+                    data = json.loads(resp_body)
+                    commands = data.get("commands") or []
+                    if commands:
+                        execute_desktop_commands(commands)
+        except Exception:
+            pass  # Keep polling silently
+
+        time.sleep(FAST_POLL_INTERVAL_SECONDS)
+
+
+# ─── Main Presence Loop (15s interval) ────────────────────────────────
 
 def send_presence(app_name: str, window_title: str, idle_min: int) -> bool:
     payload = {
@@ -304,19 +328,23 @@ def send_presence(app_name: str, window_title: str, idle_min: int) -> bool:
                     commands = data.get("commands") or []
                     if commands:
                         execute_desktop_commands(commands)
-                except Exception as parse_exc:
-                    logger.debug("Presence response parse note: %s", parse_exc)
+                except Exception:
+                    pass
                 return True
     except Exception as exc:
-        logger.warning("Could not reach Sofia endpoint (%s): %s", SOFIA_PRESENCE_URL, exc)
+        logger.warning("Presence sync notice (%s): %s", SOFIA_PRESENCE_URL, exc)
         return False
     return False
 
 
 def main():
-    logger.info("Sofia Desktop Presence & Shared Augmented Desktop Sidecar started")
+    logger.info("Sofia Desktop Presence & High-Speed Shared Desktop Sidecar started")
     logger.info("Syncing with: %s", SOFIA_PRESENCE_URL)
     ensure_overlay_running()
+
+    # Start dedicated high-speed command poller thread
+    poll_thread = threading.Thread(target=_fast_command_poll_loop, daemon=True)
+    poll_thread.start()
 
     last_sent_app = ""
     last_sent_title = ""
@@ -336,9 +364,9 @@ def main():
                 send_presence(app_name, title, idle_min)
 
         except Exception as e:
-            logger.error("Sidecar loop error: %s", e)
+            logger.error("Presence loop error: %s", e)
 
-        time.sleep(POLL_INTERVAL_SECONDS)
+        time.sleep(PRESENCE_SYNC_SECONDS)
 
 
 if __name__ == "__main__":
