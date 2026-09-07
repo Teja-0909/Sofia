@@ -118,8 +118,9 @@ async def _call_gemini(
                                 "args": fn_args if isinstance(fn_args, dict) else {"arg": fn_args}
                             }
                         })
-            if m.get("image_bytes"):
-                b64_str = base64.b64encode(m["image_bytes"]).decode("utf-8")
+            media_data = m.get("media_bytes") or m.get("image_bytes")
+            if media_data:
+                b64_str = base64.b64encode(media_data).decode("utf-8")
                 parts.append({
                     "inlineData": {
                         "mimeType": m.get("mime_type", "image/jpeg"),
@@ -240,7 +241,11 @@ async def _call_openai_compatible(
     response_format: dict | None = None,
     tools: list[dict] | None = None
 ) -> tuple[str, dict, list[dict]]:
-    has_image = any(m.get("image_bytes") for m in messages)
+    has_image = any(
+        (m.get("media_bytes") or m.get("image_bytes"))
+        and (m.get("mime_type", "").startswith("image/") or not m.get("mime_type"))
+        for m in messages
+    )
     target_model = model
     if provider == "groq" and has_image:
         target_model = await _get_best_groq_model(api_key, has_image=True)
@@ -255,16 +260,23 @@ async def _call_openai_compatible(
             })
             continue
 
-        if m.get("image_bytes"):
-            b64_str = base64.b64encode(m["image_bytes"]).decode("utf-8")
+        media_data = m.get("media_bytes") or m.get("image_bytes")
+        if media_data:
             mime = m.get("mime_type", "image/jpeg")
-            payload_messages.append({
-                "role": m["role"],
-                "content": [
-                    {"type": "text", "text": m["content"]},
-                    {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64_str}"}},
-                ],
-            })
+            if mime.startswith("image/"):
+                b64_str = base64.b64encode(media_data).decode("utf-8")
+                payload_messages.append({
+                    "role": m["role"],
+                    "content": [
+                        {"type": "text", "text": m["content"]},
+                        {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64_str}"}},
+                    ],
+                })
+            else:
+                payload_messages.append({
+                    "role": m["role"],
+                    "content": f"{m['content']}\n\n[Note: User attached a {mime} file, which requires Gemini multimodal processing.]",
+                })
         else:
             msg_payload = {"role": m["role"], "content": m["content"]}
             if "tool_calls" in m:

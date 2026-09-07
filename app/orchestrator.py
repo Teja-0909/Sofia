@@ -865,6 +865,7 @@ async def reply(
     system_note: str | None = None,
     image_bytes: bytes | None = None,
     mime_type: str = "image/jpeg",
+    media_bytes: bytes | None = None,
 ) -> str:
     # ── Consciousness: handle sleep-wake ──
     sleep_note = await consciousness.handle_incoming_while_sleeping()
@@ -927,15 +928,18 @@ async def reply(
     combined_extra = "\n\n".join(extra_notes) if extra_notes else None
 
     system = await _build_system_prompt(combined_extra, user_text)
+    raw_media = media_bytes or image_bytes
     user_msg = {"role": "user", "content": user_text}
-    if image_bytes:
-        user_msg["image_bytes"] = image_bytes
+    if raw_media:
+        user_msg["image_bytes"] = raw_media
+        user_msg["media_bytes"] = raw_media
         user_msg["mime_type"] = mime_type
 
     if history and history[-1]["role"] == "user" and history[-1]["content"] == user_text:
         messages = history
-        if image_bytes:
-            messages[-1]["image_bytes"] = image_bytes
+        if raw_media:
+            messages[-1]["image_bytes"] = raw_media
+            messages[-1]["media_bytes"] = raw_media
             messages[-1]["mime_type"] = mime_type
     else:
         messages = history + [user_msg]
