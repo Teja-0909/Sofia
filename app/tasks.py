@@ -13,6 +13,19 @@ async def create_task(description: str, due_utc: str, is_recurring: str | None =
     desc = description.strip()
     if not desc:
         return 0
+
+    # Deduplication Guard: if an identical task is already pending, reuse existing ID
+    existing = await db.fetch_one(
+        "SELECT id, due_time FROM tasks WHERE LOWER(TRIM(description)) = LOWER(TRIM(?)) AND status = 'pending'",
+        (desc,)
+    )
+    if existing:
+        logger.info(
+            "Task deduplication: task '%s' already pending as #%s (due %s), avoiding duplicate insert",
+            desc, existing["id"], existing["due_time"]
+        )
+        return existing["id"]
+
     try:
         await db.execute(
             "INSERT INTO tasks (description, due_time, is_recurring, status) VALUES (?, ?, ?, 'pending')",

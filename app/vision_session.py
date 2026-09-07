@@ -18,6 +18,9 @@ logger = logging.getLogger(__name__)
 _PENDING_COMMANDS: list[dict[str, Any]] = []
 _COMMAND_LOCK = asyncio.Lock()
 
+# Pending futures for bi-directional command-response execution
+_PENDING_FUTURES: dict[int, asyncio.Future] = {}
+
 # Latest captured screen frame cache
 _LATEST_FRAME: bytes | None = None
 _LATEST_FRAME_MIME: str = "image/webp"
@@ -57,6 +60,46 @@ async def pop_pending_commands() -> list[dict[str, Any]]:
         cmds = list(_PENDING_COMMANDS)
         _PENDING_COMMANDS.clear()
         return cmds
+
+
+def store_command_result(command_id: int, result_data: dict[str, Any]) -> bool:
+    """Stores/resolves the execution result for a pending desktop command."""
+    global _PENDING_FUTURES
+    future = _PENDING_FUTURES.get(command_id)
+    if future and not future.done():
+        future.set_result(result_data)
+        logger.info("Resolved desktop command #%s with status: %s", command_id, result_data.get("status"))
+        return True
+    return False
+
+
+async def execute_desktop_command_and_wait(
+    cmd_type: str,
+    params: dict[str, Any] | None = None,
+    timeout: float = 15.0,
+) -> dict[str, Any]:
+    """
+    Enqueues a command for the Windows sidecar and awaits its execution result.
+    Returns the result dictionary, or a timeout dictionary if the sidecar takes too long.
+    """
+    global _PENDING_FUTURES
+    loop = asyncio.get_running_loop()
+    cmd = await enqueue_desktop_command(cmd_type, params)
+    cmd_id = cmd["id"]
+    fut = loop.create_future()
+    _PENDING_FUTURES[cmd_id] = fut
+
+    try:
+        result = await asyncio.wait_for(fut, timeout=timeout)
+        return result
+    except asyncio.TimeoutError:
+        logger.warning("Desktop command #%s ('%s') timed out after %.1fs", cmd_id, cmd_type, timeout)
+        return {
+            "status": "timeout",
+            "error": f"Desktop command timed out after {timeout}s. The Windows PC sidecar may be offline, busy, or the command took too long.",
+        }
+    finally:
+        _PENDING_FUTURES.pop(cmd_id, None)
 
 
 # ─── Frame Storage ───────────────────────────────────────────────────
@@ -162,6 +205,63 @@ async def request_screen_capture(reason: str = "Inspect screen") -> bytes | None
     return None
 
 
+async def run_desktop_command(
+    command: str,
+    cwd: str | None = None,
+    timeout_seconds: int = 15,
+) -> str:
+    """Executes a shell command on Teja's Windows PC via the sidecar and returns output."""
+    res = await execute_desktop_command_and_wait(
+        "run_command",
+        {
+            "command": command,
+            "cwd": cwd or "",
+            "timeout": max(1, min(60, timeout_seconds)),
+        },
+        timeout=float(timeout_seconds + 3),
+    )
+    if res.get("status") == "ok":
+        exit_code = res.get("exit_code", 0)
+        output = res.get("output", "")
+        return f"[Exit Code: {exit_code}]\n{output}" if output else f"[Exit Code: {exit_code}] (No output returned)"
+    return f"Execution Error: {res.get('error', 'Unknown error executing command on PC')}"
+
+
+async def read_desktop_clipboard() -> str:
+    """Reads the current text contents from Teja's Windows clipboard."""
+    res = await execute_desktop_command_and_wait("get_clipboard", timeout=8.0)
+    if res.get("status") == "ok":
+        clip_text = res.get("text", "")
+        if not clip_text:
+            return "Clipboard is currently empty or does not contain text."
+        return clip_text
+    return f"Clipboard Error: {res.get('error', 'Failed to read PC clipboard')}"
+
+
+async def set_desktop_clipboard(text: str) -> str:
+    """Writes text directly to Teja's Windows clipboard."""
+    res = await execute_desktop_command_and_wait(
+        "set_clipboard",
+        {"text": text},
+        timeout=8.0,
+    )
+    if res.get("status") == "ok":
+        return f"Successfully copied {len(text)} characters to Teja's PC clipboard."
+    return f"Clipboard Error: {res.get('error', 'Failed to write to PC clipboard')}"
+
+
+async def get_desktop_workspace_status(workspace_dir: str | None = None) -> str:
+    """Retrieves git repository status, active branch, and PC CPU/RAM usage."""
+    res = await execute_desktop_command_and_wait(
+        "workspace_status",
+        {"workspace_dir": workspace_dir or ""},
+        timeout=10.0,
+    )
+    if res.get("status") == "ok":
+        return res.get("summary", "Workspace status retrieved.")
+    return f"Workspace Error: {res.get('error', 'Failed to query workspace status')}"
+
+
 # ─── Live Watch Screen Session ─────────────────────────────────────────
 
 def is_watching() -> bool:
@@ -219,7 +319,7 @@ async def _watch_loop() -> None:
                 )
                 raw = await orchestrator.reply(
                     "Here is my active screen frame.",
-                    extra_system_note=system_note,
+                    system_note=system_note,
                     image_bytes=frame,
                     mime_type="image/webp",
                 )

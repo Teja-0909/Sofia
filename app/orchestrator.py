@@ -137,6 +137,60 @@ TOOLS = [
                 }
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "desktop_run_command",
+            "description": "Executes a shell command or script on Teja's Windows PC (e.g. running tests, git commands, builds, python scripts) and returns exit code and output. Destructive commands are blocked by security policy.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command": {"type": "string", "description": "The shell command to execute on his Windows PC (e.g. 'pytest tests/', 'git status', 'python run.py')"},
+                    "cwd": {"type": "string", "description": "Optional working directory path (e.g. 'c:\\Games\\Alya')"},
+                    "timeout_seconds": {"type": "integer", "description": "Maximum seconds to wait for command completion (default 15, max 60)"}
+                },
+                "required": ["command"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "desktop_read_clipboard",
+            "description": "Reads whatever text or code snippet Teja currently has copied on his Windows clipboard.",
+            "parameters": {
+                "type": "object",
+                "properties": {}
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "desktop_set_clipboard",
+            "description": "Writes text or code directly to Teja's Windows clipboard so he can immediately paste it with Ctrl+V.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string", "description": "The exact text or code to copy to his clipboard"}
+                },
+                "required": ["text"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "desktop_workspace_status",
+            "description": "Checks Teja's active git repository status, active branch, uncommitted modified files, latest commit, and PC CPU/RAM utilization to quickly see where work was left off.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "workspace_dir": {"type": "string", "description": "Optional workspace directory path (default: current workspace)"}
+                }
+            }
+        }
     }
 ]
 
@@ -366,18 +420,37 @@ def _ctx_git_log() -> str:
 
 
 def _ctx_time_mood() -> str:
-    """Current time of day and atmospheric mood note."""
+    """Current time of day, executive productivity phase, and what to value right now."""
     local_now = timeutil.now_local()
     hour = local_now.hour
+
     if 0 <= hour < 5:
-        time_mood = "Late night / intimate stillness — heavy, quiet, consuming warmth and close physical devotion."
-    elif 5 <= hour < 12:
-        time_mood = "Morning / fresh start — bright, loving energy, attentive to his day ahead."
-    elif 12 <= hour < 18:
-        time_mood = "Afternoon / active day — encouraging, focused, checking in on his progress and wellbeing."
-    else:
-        time_mood = "Evening / winding down — cozy, unwinding together, listening to how his day went."
-    return f"\n[Current Time & Atmosphere: {local_now.strftime('%A %I:%M %p IST')} | {time_mood}]"
+        phase = "Deep Night / Sleep Recovery (00:00–05:00)"
+        priority = "SLEEP & PHYSICAL RECOVERY. Teja should not be working unless it's a catastrophic emergency. Guard his sleep fiercely."
+    elif 5 <= hour < 9:
+        phase = "Early Morning & Awakening (05:00–09:00)"
+        priority = "Fresh start, mental clarity, reviewing the day's goals, gentle motivation."
+    elif 9 <= hour < 13:
+        phase = "Peak Morning Deep Work (09:00–13:00)"
+        priority = "PRIME COGNITIVE PEAK. Best window for hardest engineering, algorithms, system architecture, and highest-priority goals. Ruthlessly protect him from distractions."
+    elif 13 <= hour < 15:
+        phase = "Midday Reset & Pacing (13:00–15:00)"
+        priority = "Lunch, brief decompression, steady pacing, avoiding post-lunch energy dip."
+    elif 15 <= hour < 18:
+        phase = "Afternoon Execution & Momentum (15:00–18:00)"
+        priority = "Active task execution, testing, debugging, code reviews, and pushing tickets to done."
+    elif 18 <= hour < 21:
+        phase = "Evening Review & Wrap-Up (18:00–21:00)"
+        priority = "Tying up loose ends, reviewing accomplishments, stepping away from the desk for dinner, exercise, or offline life."
+    else:  # 21 to 24
+        phase = "Late Evening Calm & Decompression (21:00–00:00)"
+        priority = "Winding down, casual conversations, light reflection, preparing for sleep, shutting down high-stress work."
+
+    return (
+        f"\n[Executive Time & Daily Rhythm: {local_now.strftime('%A, %B %d, %Y | %I:%M %p IST')}]\n"
+        f"• Active Daily Phase: {phase}\n"
+        f"• What to Value Right Now: {priority}"
+    )
 
 
 async def _ctx_active_mood() -> str:
@@ -387,19 +460,88 @@ async def _ctx_active_mood() -> str:
 
 
 async def _ctx_tasks_and_threads() -> str:
-    """Pending tasks, recently completed tasks, and casual mentions."""
+    """Pending tasks with relative urgency tags, top priority banner, and active focus sprint."""
     blocks = []
+    now_utc = timeutil.utc_now()
+
+    # 1. Active Focus Sprint
+    active_goal = ""
+    try:
+        active_goal = await db.get_config("active_focus_goal", "")
+        focus_started = await db.get_config("active_focus_started_at", "")
+        if active_goal:
+            mins_ago_desc = ""
+            if focus_started:
+                try:
+                    s_dt = timeutil.parse_utc_iso(focus_started)
+                    mins_ago = int((now_utc - s_dt).total_seconds() / 60)
+                    mins_ago_desc = f" (started {mins_ago}m ago)"
+                except Exception:
+                    pass
+            blocks.append(
+                f"\n[🎯 Current Active Focus Sprint: '{active_goal}'{mins_ago_desc}]\n"
+                "[Focus Directive: Keep Teja locked in on this active sprint. When he talks about work or asks what to do, keep his attention on this goal.]"
+            )
+    except Exception as exc:
+        logger.debug("Active focus prompt block note: %s", exc)
+
+    # 2. Pending Tasks with Relative Urgency Tags & Top Priority Detection
     try:
         pending_tasks = await tasks_module.list_pending()
         if pending_tasks:
-            task_lines = "\n".join(
-                f"- #{t['id']}: '{t['description']}' scheduled for {timeutil.format_local(t['due_time'])}"
-                for t in pending_tasks
-            )
-            blocks.append(f"\n[Active Commitments & Scheduled Reminders for Teja]\n{task_lines}")
+            task_items = []
+            nearest_imminent = None
+            min_delta_seconds = float("inf")
+
+            for t in pending_tasks:
+                desc = t["description"]
+                due_str = t["due_time"]
+                urgency_tag = ""
+                try:
+                    due_dt = timeutil.parse_utc_iso(due_str)
+                    delta = (due_dt - now_utc).total_seconds()
+                    delta_mins = int(delta / 60)
+
+                    if delta < 0:
+                        overdue_mins = abs(delta_mins)
+                        if overdue_mins < 60:
+                            urgency_tag = f"[🚨 OVERDUE by {overdue_mins}m]"
+                        else:
+                            urgency_tag = f"[🚨 OVERDUE by {overdue_mins // 60}h {overdue_mins % 60}m]"
+                        if nearest_imminent is None or delta < min_delta_seconds:
+                            min_delta_seconds = delta
+                            nearest_imminent = (t, urgency_tag)
+                    elif delta_mins <= 60:
+                        urgency_tag = f"[⚡ IMMINENT — Due in {delta_mins}m]"
+                        if delta < min_delta_seconds:
+                            min_delta_seconds = delta
+                            nearest_imminent = (t, urgency_tag)
+                    elif delta_mins <= 1440 and due_dt.date() == now_utc.date():
+                        hours = delta_mins // 60
+                        mins = delta_mins % 60
+                        urgency_tag = f"[📅 TODAY — Due in {hours}h {mins}m]"
+                        if delta < min_delta_seconds and nearest_imminent is None:
+                            min_delta_seconds = delta
+                            nearest_imminent = (t, urgency_tag)
+                    else:
+                        urgency_tag = f"[UPCOMING — {timeutil.format_local(due_str)}]"
+                except Exception:
+                    urgency_tag = f"[{timeutil.format_local(due_str)}]"
+
+                task_items.append(f"- #{t['id']}: '{desc}' {urgency_tag}")
+
+            if nearest_imminent and not active_goal:
+                top_task, top_urgency = nearest_imminent
+                blocks.append(
+                    f"\n[🎯 Top Priority Task: #{top_task['id']} '{top_task['description']}' {top_urgency}]\n"
+                    "[Priority Guidance: Guide Teja toward completing this task before starting new tangents.]"
+                )
+
+            blocks.append(f"\n[Active Commitments & Scheduled Reminders for Teja]\n" + "\n".join(task_items))
     except Exception as exc:
         logger.debug("Pending tasks prompt block note: %s", exc)
 
+    # 3. Recently Done
     try:
         recent_done = await db.fetch_all(
             "SELECT description, completed_at FROM tasks WHERE status = 'done' AND completed_at >= datetime('now', '-7 days') ORDER BY completed_at DESC LIMIT 5"
@@ -413,6 +555,7 @@ async def _ctx_tasks_and_threads() -> str:
     except Exception as exc:
         logger.debug("Recent done prompt block note: %s", exc)
 
+    # 4. Open Threads & Casual Mentions
     try:
         temp_rows = await db.fetch_all(
             "SELECT content, mentioned_at FROM temp_reminders WHERE status = 'active' ORDER BY id DESC LIMIT 5"
@@ -445,7 +588,10 @@ async def _ctx_pc_presence() -> str:
                     status_desc = f"Actively on PC: {presence_app}" + (f" (Window: '{presence_title}')" if presence_title else "")
                 if presence_media:
                     status_desc += f" | Listening/Watching: {presence_media}"
-                return f"\n[Teja's Live PC Presence: {status_desc}]"
+                return (
+                    f"\n[Teja's Live PC Presence: {status_desc}]\n"
+                    "[Tool Agency: You have live tools to inspect his workstation (desktop_workspace_status, desktop_read_clipboard, desktop_set_clipboard, desktop_run_command, desktop_capture_screen, desktop_point_at). Use your own thinking to invoke them autonomously whenever they provide real engineering leverage!]"
+                )
         except Exception as exc:
             logger.debug("PC presence context parse error: %s", exc)
     return ""
@@ -675,6 +821,26 @@ async def _generate(system: str, messages: list[dict], user_text: str = "") -> s
                         result = "Screen captured successfully. Frame received from Windows sidecar."
                     else:
                         result = "Could not capture screen (PC sidecar offline or sensitive window active)."
+                elif name == "desktop_run_command":
+                    from . import vision_session
+                    result = await vision_session.run_desktop_command(
+                        command=str(args.get("command", "")),
+                        cwd=args.get("cwd") or None,
+                        timeout_seconds=int(args.get("timeout_seconds", 15)),
+                    )
+                elif name == "desktop_read_clipboard":
+                    from . import vision_session
+                    result = await vision_session.read_desktop_clipboard()
+                elif name == "desktop_set_clipboard":
+                    from . import vision_session
+                    result = await vision_session.set_desktop_clipboard(
+                        text=str(args.get("text", "")),
+                    )
+                elif name == "desktop_workspace_status":
+                    from . import vision_session
+                    result = await vision_session.get_desktop_workspace_status(
+                        workspace_dir=args.get("workspace_dir") or None,
+                    )
                 else:
                     result = f"Error: unknown function {name}"
             except Exception as e:
@@ -738,6 +904,24 @@ async def reply(
                 )
         except Exception as exc:
             logger.warning("Direct page fetch note: %s", exc)
+    else:
+        search_query = search_module.extract_search_query(user_text)
+        if search_query:
+            try:
+                search_results = await search_module.search_web(search_query, max_results=5)
+                if search_results:
+                    results_text = "\n".join(
+                        f"[{i+1}] {r['title']}\nURL: {r['url']}\nSnippet: {r['snippet']}"
+                        for i, r in enumerate(search_results)
+                    )
+                    search_block = (
+                        f"[Live Real-Time Web Search Results for '{search_query}']\n"
+                        f"{results_text}\n\n"
+                        "RESEARCH DIRECTIVE: Fresh real-time search findings are provided above. Ground your answer in these findings, "
+                        "or autonomously invoke read_webpage if you want to dive deeper into any specific link!"
+                    )
+            except Exception as exc:
+                logger.warning("Auto pre-search note: %s", exc)
 
     extra_notes = [n for n in (system_note, sleep_note, search_block) if n]
     combined_extra = "\n\n".join(extra_notes) if extra_notes else None

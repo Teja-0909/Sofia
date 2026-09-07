@@ -151,6 +151,17 @@ async def _handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWri
             cmds = await vision_session.pop_pending_commands()
             body = json.dumps({"status": "ok", "commands": cmds}).encode("utf-8")
 
+        elif path == "/api/desktop/result" and method == "POST":
+            from . import vision_session
+            try:
+                res_data = json.loads(body_bytes.decode("utf-8")) if body_bytes else {}
+                cmd_id = int(res_data.get("id", 0))
+                handled = vision_session.store_command_result(cmd_id, res_data)
+                body = json.dumps({"status": "ok", "handled": handled}).encode("utf-8")
+            except Exception as res_err:
+                logger.warning("Error parsing /api/desktop/result: %s", res_err)
+                body = json.dumps({"status": "error", "message": str(res_err)}).encode("utf-8")
+
         else:
             body = "Sofia companion is online and listening. 💖\n".encode("utf-8")
             content_type = "text/plain; charset=utf-8"

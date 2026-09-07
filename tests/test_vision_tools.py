@@ -73,16 +73,44 @@ class TestVisionDesktopTools(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Stopped", stop_msg)
 
     async def test_orchestrator_tools_registration(self):
-        """Verify that all desktop spatial tools are properly registered in orchestrator.TOOLS."""
+        """Verify that all desktop spatial and execution tools are properly registered in orchestrator.TOOLS."""
         tool_names = [t["function"]["name"] for t in orchestrator.TOOLS]
         self.assertIn("desktop_point_at", tool_names)
         self.assertIn("desktop_doodle", tool_names)
         self.assertIn("desktop_sticky_note", tool_names)
         self.assertIn("desktop_clear_overlay", tool_names)
         self.assertIn("desktop_capture_screen", tool_names)
+        self.assertIn("desktop_run_command", tool_names)
+        self.assertIn("desktop_read_clipboard", tool_names)
+        self.assertIn("desktop_set_clipboard", tool_names)
+        self.assertIn("desktop_workspace_status", tool_names)
+
+    async def test_command_result_pairing(self):
+        """Test bi-directional desktop command dispatch and result resolution."""
+        await vision_session.pop_pending_commands()
+
+        # Start execution in background task
+        exec_task = asyncio.create_task(
+            vision_session.execute_desktop_command_and_wait("run_command", {"command": "echo test"}, timeout=5.0)
+        )
+
+        # Allow command to enqueue
+        await asyncio.sleep(0.05)
+        cmds = await vision_session.pop_pending_commands()
+        self.assertEqual(len(cmds), 1)
+        cmd_id = cmds[0]["id"]
+        self.assertEqual(cmds[0]["type"], "run_command")
+
+        # Simulate sidecar resolving command
+        vision_session.store_command_result(cmd_id, {"status": "ok", "exit_code": 0, "output": "test output"})
+
+        result = await exec_task
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["exit_code"], 0)
+        self.assertEqual(result["output"], "test output")
 
     async def test_web_desktop_endpoints(self):
-        """Test web server /api/desktop/upload and /api/desktop/poll endpoints."""
+        """Test web server /api/desktop/upload, /api/desktop/poll, and /api/desktop/result endpoints."""
         import httpx
 
         # Pop any residual commands
@@ -111,6 +139,26 @@ class TestVisionDesktopTools(unittest.IsolatedAsyncioTestCase):
                 frame, mime, _ = vision_session.get_latest_screen_frame()
                 self.assertEqual(frame, dummy_bytes)
                 self.assertEqual(mime, "image/jpeg")
+
+                # 3. Test posting command execution result
+                exec_task = asyncio.create_task(
+                    vision_session.execute_desktop_command_and_wait("get_clipboard", timeout=5.0)
+                )
+                await asyncio.sleep(0.05)
+                pending = await vision_session.pop_pending_commands()
+                self.assertEqual(len(pending), 1)
+                cmd_id = pending[0]["id"]
+
+                res_resp = await client.post(
+                    "http://127.0.0.1:18494/api/desktop/result",
+                    json={"id": cmd_id, "status": "ok", "text": "Copied from test"},
+                )
+                self.assertEqual(res_resp.status_code, 200)
+                res_data = res_resp.json()
+                self.assertTrue(res_data.get("handled"))
+
+                cmd_res = await exec_task
+                self.assertEqual(cmd_res.get("text"), "Copied from test")
         finally:
             await runner.cleanup()
 

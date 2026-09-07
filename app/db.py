@@ -420,6 +420,18 @@ async def get_config(key: str, default: str) -> str:
     return row["value"] if row else default
 
 
+async def set_config(key: str, value: str) -> None:
+    from . import timeutil
+    await execute(
+        "INSERT OR REPLACE INTO app_config (key, value, updated_at) VALUES (?, ?, ?)",
+        (key, value, timeutil.utc_iso()),
+    )
+
+
+async def delete_config(key: str) -> None:
+    await execute("DELETE FROM app_config WHERE key = ?", (key,))
+
+
 async def backup_database(backup_dir: str | None = None) -> str:
     from . import timeutil
 

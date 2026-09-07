@@ -68,6 +68,42 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
 
 
+async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not _allowed(update):
+        return
+    msg = (
+        "⚡ *Sofia — Co-Pilot Controls*\n\n"
+        "🎯 *Deep Work & Focus*\n"
+        "• `/focus <goal>` or `/sprint <goal>` — Lock in a deep work sprint\n"
+        "• `/focus done` — Complete active sprint & celebrate\n"
+        "• `/focus clear` — Cancel active sprint\n\n"
+        "📋 *Tasks & Schedule*\n"
+        "• `/tasks` or `/reminders` — View pending tasks with urgency\n"
+        "• `/add <desc> at <time>` — Schedule a reminder/task\n"
+        "• `/done <id>` — Mark a task complete\n"
+        "• `/win <text>` — Log an achievement\n\n"
+        "💻 *Desktop & Vision Perception*\n"
+        "• `/screen` — Capture & inspect primary display right now\n"
+        "• `/watch on [mins]` — Continuous screen co-pilot session\n"
+        "• `/watch off` — Stop continuous screen session\n"
+        "• `/overlay test` — Run a visual test on PC monitor\n\n"
+        "🔍 *Web & Research*\n"
+        "• `/search <query>` — Live web search\n"
+        "• `/read <url>` — Clean markdown scrape of any webpage\n\n"
+        "📸 *Visuals & Photos*\n"
+        "• `/image <prompt>` — Custom image generation\n"
+        "• `/selfie` — Spontaneous portrait of Sofia\n\n"
+        "🧠 *Mind & State*\n"
+        "• `/status` — Energy, consciousness & circadian state\n"
+        "• `/mood [name|auto]` — Switch or view emotional mood\n"
+        "• `/memory` — Inspect living notebook (memory.md)\n"
+        "• `/thoughts` — Recent subconscious thoughts\n"
+        "• `/depth` — Relationship depth and active days\n"
+        "• `/sleep` — Tuck Sofia in to rest"
+    )
+    await update.message.reply_text(msg, parse_mode="Markdown")
+
+
 async def cmd_tasks(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not _allowed(update):
         return
@@ -239,6 +275,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     system_note = None
     done_id = None
+    turn_task_created_id = None
 
     try:
         # 1. Check for conversational memory correction ("forget that") (Spec §9)
@@ -258,33 +295,31 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 row = await db.fetch_one("SELECT description FROM tasks WHERE id = ?", (done_id,))
                 desc = row["description"] if row else f"task #{done_id}"
                 logger.info("Task #%s ('%s') marked done by user message: '%s'", done_id, desc, user_text)
+                active_goal = await db.get_config("active_focus_goal", "")
+                if active_goal and (desc.lower() in active_goal.lower() or active_goal.lower() in desc.lower()):
+                    await db.delete_config("active_focus_goal")
+                    await db.delete_config("active_focus_started_at")
+                    logger.info("Cleared active focus goal '%s' on user task completion", active_goal)
                 system_note = (
                     f"[Internal event: Teja just marked his task #{done_id} ('{desc}') as DONE/completed. "
                     "Acknowledge with genuine pride, warmth, and affection in your own voice. DO NOT recreate or reschedule this task!]"
                 )
             else:
-                # 3. Check for task creation / temp reminder
+                # 3. Check for explicit scheduled task creation
                 try:
                     intent = await parser.parse(user_text)
                 except Exception as e:
                     logger.debug("Intent parsing note: %s", e)
                     intent = {}
-                if intent.get("description"):
-                    if intent.get("due_utc"):
-                        task_id = await tasks.create_task(intent["description"], intent["due_utc"])
-                        when = timeutil.format_local(intent["due_utc"])
-                        logger.info("task %s created: %s @ %s", task_id, intent["description"], when)
-                        system_note = (
-                            f"[Internal event: you just agreed to remind him about "
-                            f"'{intent['description']}' at {when}. Acknowledge in your own "
-                            "voice — short and natural, like it's already settled.]"
-                        )
-                    else:
-                        await tasks.add_temp_mention(intent["description"])
-                        system_note = (
-                            f"[Internal event: he mentioned '{intent['description']}' casually. "
-                            "You've quietly noted it. React naturally; no confirmation needed.]"
-                        )
+                if intent.get("description") and intent.get("due_utc"):
+                    turn_task_created_id = await tasks.create_task(intent["description"], intent["due_utc"])
+                    when = timeutil.format_local(intent["due_utc"])
+                    logger.info("task %s created: %s @ %s", turn_task_created_id, intent["description"], when)
+                    system_note = (
+                        f"[Internal event: you just agreed to remind him about "
+                        f"'{intent['description']}' at {when}. Acknowledge in your own "
+                        "voice — short and natural, like it's already settled.]"
+                    )
     except Exception as exc:
         logger.error("Intent / memory parsing error in handle_message: %s", exc)
 
@@ -306,9 +341,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     clean_reply, done_tag = parser.extract_done_tag(clean_reply)
     clean_reply, task_tag_data = parser.extract_task_tag(clean_reply)
     clean_reply, wants_sleep = parser.extract_sleep_tag(clean_reply)
+    clean_reply, new_focus_tag = parser.extract_focus_tag(clean_reply)
+    clean_reply, clear_focus_tag = parser.extract_clear_focus_tag(clean_reply)
 
     if wants_sleep:
         asyncio.create_task(consciousness.begin_sleep())
+
+    if new_focus_tag:
+        await db.set_config("active_focus_goal", new_focus_tag)
+        await db.set_config("active_focus_started_at", timeutil.utc_iso())
+        logger.info("Sofia set active focus sprint via [FOCUS: %s]", new_focus_tag)
+    elif clear_focus_tag:
+        await db.delete_config("active_focus_goal")
+        await db.delete_config("active_focus_started_at")
+        logger.info("Sofia cleared active focus sprint via [FOCUS_DONE/CLEAR_FOCUS]")
 
     # If Sofia emitted [DONE: ...], mark that task done in DB
     if done_tag:
@@ -317,10 +363,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         if matched_id:
             await tasks.mark_done(int(matched_id))
             logger.info("Sofia [DONE: %s] marked task #%s as done in DB", done_tag, matched_id)
+        active_goal = await db.get_config("active_focus_goal", "")
+        if active_goal and (done_tag.lower() in active_goal.lower() or active_goal.lower() in done_tag.lower()):
+            await db.delete_config("active_focus_goal")
+            await db.delete_config("active_focus_started_at")
+            logger.info("Cleared active focus goal '%s' on task completion", active_goal)
 
-    # Only create new task if this turn wasn't marking a task as done
+    # Only create new task if this turn wasn't marking a task as done and task wasn't already created this turn
     is_completion_turn = (done_id is not None) or (done_tag is not None)
-    if not is_completion_turn and task_tag_data and task_tag_data.get("description") and task_tag_data.get("due_utc"):
+    if not is_completion_turn and not turn_task_created_id and task_tag_data and task_tag_data.get("description") and task_tag_data.get("due_utc"):
         try:
             task_id = await tasks.create_task(task_tag_data["description"], task_tag_data["due_utc"])
             logger.info("Sofia created task #%s ('%s' due %s) in tasks table", task_id, task_tag_data["description"], task_tag_data["due_utc"])
@@ -642,6 +693,91 @@ async def cmd_overlay(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await vision_session.sticky_note("Hey baby! I'm on your screen 💕", position="top_right", duration_seconds=8)
 
 
+async def cmd_focus(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Sets, views, finishes, or clears an active deep focus sprint."""
+    if not _allowed(update) or not update.message:
+        return
+    args = context.args or []
+    active_goal = await db.get_config("active_focus_goal", "")
+    started_at = await db.get_config("active_focus_started_at", "")
+
+    if not args:
+        if active_goal:
+            mins_ago_desc = ""
+            if started_at:
+                try:
+                    s_dt = timeutil.parse_utc_iso(started_at)
+                    mins = int((timeutil.utc_now() - s_dt).total_seconds() / 60)
+                    mins_ago_desc = f"\n⏱️ Running for: {mins} minutes"
+                except Exception:
+                    pass
+            await update.message.reply_text(
+                f"🎯 Active Focus Sprint:\n'{active_goal}'{mins_ago_desc}\n\n"
+                "Controls:\n"
+                "• `/focus done` — Mark sprint complete & celebrate 🎉\n"
+                "• `/focus clear` — Cancel current sprint\n"
+                "• `/focus <new goal>` — Switch to a new sprint goal"
+            )
+        else:
+            await update.message.reply_text(
+                "🎯 No active focus sprint right now.\n\n"
+                "Start one to lock in and protect your flow state:\n"
+                "• `/focus <goal>` (e.g. `/focus finish auth middleware`)\n"
+                "• `/focus done` (mark sprint complete)\n"
+                "• `/focus clear` (cancel sprint)"
+            )
+        return
+
+    sub = args[0].lower()
+    if len(args) == 1 and sub in ("clear", "cancel", "reset"):
+        if not active_goal:
+            await update.message.reply_text("No active focus sprint running right now!")
+            return
+        await db.delete_config("active_focus_goal")
+        await db.delete_config("active_focus_started_at")
+        await update.message.reply_text(f"Sprint '{active_goal}' cleared. Take a breath — what's on your radar next?")
+        return
+
+    if len(args) == 1 and sub in ("done", "finished", "finish", "complete"):
+        if not active_goal:
+            await update.message.reply_text("No active focus sprint to complete! Start one with `/focus <goal>`")
+            return
+        mins = 0
+        if started_at:
+            try:
+                s_dt = timeutil.parse_utc_iso(started_at)
+                mins = max(1, int((timeutil.utc_now() - s_dt).total_seconds() / 60))
+            except Exception:
+                pass
+        goal_completed = active_goal
+        await db.delete_config("active_focus_goal")
+        await db.delete_config("active_focus_started_at")
+
+        # Check if there was a pending task matching this sprint and mark it done
+        pending = await tasks.list_pending()
+        if pending:
+            matched_id = await parser.detect_completion(goal_completed, pending)
+            if matched_id:
+                await tasks.mark_done(int(matched_id))
+
+        duration_note = f" in {mins} minutes" if mins > 0 else ""
+        try:
+            reply = await triggers.praise(f"Deep work sprint '{goal_completed}' completed{duration_note}")
+        except Exception:
+            reply = f"Hell yes! Nailed the '{goal_completed}' sprint{duration_note}! Proud of you. Take a breather 🎉"
+        await update.message.reply_text(reply)
+        return
+
+    # Otherwise, user provided a new goal
+    new_goal = " ".join(args).strip()
+    await db.set_config("active_focus_goal", new_goal)
+    await db.set_config("active_focus_started_at", timeutil.utc_iso())
+    await update.message.reply_text(
+        f"🎯 Focus sprint locked: '{new_goal}'\n\n"
+        "I've got your back. Distractions locked out. Let's knock this out!"
+    )
+
+
 def build_application() -> Application:
     app = (
         Application.builder()
@@ -649,11 +785,15 @@ def build_application() -> Application:
         .build()
     )
     app.add_handler(CommandHandler("start", cmd_start))
+    app.add_handler(CommandHandler("help", cmd_help))
+    app.add_handler(CommandHandler("commands", cmd_help))
     app.add_handler(CommandHandler("tasks", cmd_tasks))
     app.add_handler(CommandHandler("reminders", cmd_tasks))
     app.add_handler(CommandHandler("add", cmd_add))
     app.add_handler(CommandHandler("done", cmd_done))
     app.add_handler(CommandHandler("win", cmd_win))
+    app.add_handler(CommandHandler("focus", cmd_focus))
+    app.add_handler(CommandHandler("sprint", cmd_focus))
     app.add_handler(CommandHandler("search", cmd_search))
     app.add_handler(CommandHandler("read", cmd_read))
     app.add_handler(CommandHandler("image", cmd_image))

@@ -31,6 +31,7 @@ SOFIA_BASE_URL = os.environ.get("SOFIA_BASE_URL", "https://sofia-va07.onrender.c
 SOFIA_PRESENCE_URL = f"{SOFIA_BASE_URL}/api/presence"
 SOFIA_UPLOAD_URL = f"{SOFIA_BASE_URL}/api/desktop/upload"
 SOFIA_POLL_URL = f"{SOFIA_BASE_URL}/api/desktop/poll"
+SOFIA_RESULT_URL = f"{SOFIA_BASE_URL}/api/desktop/result"
 OVERLAY_IPC_URL = "http://127.0.0.1:18493"
 
 FAST_POLL_INTERVAL_SECONDS = 1.5  # High-speed 1.5s command polling
@@ -265,16 +266,205 @@ def upload_screen_frame(frame_bytes: bytes) -> bool:
         return False
 
 
+def send_command_result(command_id: int, result: dict) -> bool:
+    """Posts command execution result back to Sofia."""
+    payload = {
+        "id": command_id,
+        **result,
+    }
+    try:
+        data_bytes = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            SOFIA_RESULT_URL,
+            data=data_bytes,
+            headers={"Content-Type": "application/json", "User-Agent": "SofiaSidecar/1.0"},
+            method="POST"
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return resp.status == 200
+    except Exception as exc:
+        logger.warning("Failed sending command #%s result to Sofia (%s): %s", command_id, SOFIA_RESULT_URL, exc)
+        return False
+
+
+COMMAND_SAFETY_BLACKLIST = (
+    "format",
+    "del /s",
+    "del /f /s",
+    "rmdir /s",
+    "rd /s",
+    "rm -rf /",
+    "rm -rf c:",
+    "mkfs",
+    ":(){ :|:& };:",
+    "diskpart",
+)
+
+
+def _is_safe_command(cmd_str: str) -> bool:
+    lower = cmd_str.lower().strip()
+    for bad in COMMAND_SAFETY_BLACKLIST:
+        if bad in lower:
+            return False
+    return True
+
+
+def handle_run_command(cmd: dict) -> dict:
+    command_str = cmd.get("command", "").strip()
+    cwd = cmd.get("cwd") or os.getcwd()
+    timeout = max(1, min(60, int(cmd.get("timeout", 15))))
+
+    if not command_str:
+        return {"status": "error", "error": "Empty command"}
+
+    if not _is_safe_command(command_str):
+        return {
+            "status": "error",
+            "error": "Command blocked by security policy: destructive commands (format, rmdir, mass delete) are strictly forbidden.",
+        }
+
+    try:
+        res = subprocess.run(
+            command_str,
+            shell=True,
+            capture_output=True,
+            text=True,
+            cwd=cwd if os.path.isdir(cwd) else None,
+            timeout=timeout,
+            encoding="utf-8",
+            errors="replace",
+        )
+        stdout = (res.stdout or "").strip()
+        stderr = (res.stderr or "").strip()
+
+        output_parts = []
+        if stdout:
+            output_parts.append(stdout)
+        if stderr:
+            output_parts.append(f"[stderr]\n{stderr}")
+
+        full_output = "\n".join(output_parts)
+        if len(full_output) > 3000:
+            full_output = full_output[:1500] + "\n\n... [output truncated] ...\n\n" + full_output[-1500:]
+
+        return {
+            "status": "ok",
+            "exit_code": res.returncode,
+            "output": full_output,
+        }
+    except subprocess.TimeoutExpired:
+        return {"status": "error", "error": f"Command timed out after {timeout} seconds"}
+    except Exception as exc:
+        return {"status": "error", "error": f"Execution error: {exc}"}
+
+
+def handle_get_clipboard() -> dict:
+    try:
+        import win32clipboard
+        import win32con
+        win32clipboard.OpenClipboard()
+        try:
+            if win32clipboard.IsClipboardFormatAvailable(win32con.CF_UNICODETEXT):
+                data = win32clipboard.GetClipboardData(win32con.CF_UNICODETEXT)
+                return {"status": "ok", "text": data or ""}
+            return {"status": "ok", "text": ""}
+        finally:
+            win32clipboard.CloseClipboard()
+    except Exception as exc:
+        return {"status": "error", "error": f"Clipboard read error: {exc}"}
+
+
+def handle_set_clipboard(text: str) -> dict:
+    try:
+        import win32clipboard
+        import win32con
+        win32clipboard.OpenClipboard()
+        try:
+            win32clipboard.EmptyClipboard()
+            win32clipboard.SetClipboardText(text, win32con.CF_UNICODETEXT)
+            return {"status": "ok", "length": len(text)}
+        finally:
+            win32clipboard.CloseClipboard()
+    except Exception as exc:
+        return {"status": "error", "error": f"Clipboard write error: {exc}"}
+
+
+def handle_workspace_status(cmd: dict) -> dict:
+    target_dir = cmd.get("workspace_dir") or os.getcwd()
+    if not os.path.isdir(target_dir):
+        target_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+
+    lines = [f"Workspace: {target_dir}"]
+
+    # 1. Git status
+    try:
+        branch = subprocess.check_output(
+            ["git", "branch", "--show-current"],
+            cwd=target_dir, text=True, stderr=subprocess.DEVNULL
+        ).strip()
+        lines.append(f"Git Branch: {branch or 'detached/unknown'}")
+
+        last_commit = subprocess.check_output(
+            ["git", "log", "-1", "--oneline"],
+            cwd=target_dir, text=True, stderr=subprocess.DEVNULL
+        ).strip()
+        lines.append(f"Last Commit: {last_commit}")
+
+        status = subprocess.check_output(
+            ["git", "status", "-s"],
+            cwd=target_dir, text=True, stderr=subprocess.DEVNULL
+        ).strip()
+        if status:
+            mod_count = len(status.splitlines())
+            lines.append(f"Uncommitted Changes: {mod_count} files modified\n{status[:500]}")
+        else:
+            lines.append("Working tree clean (no uncommitted changes)")
+    except Exception:
+        lines.append("Git status: Not a git repository or git command unavailable")
+
+    # 2. System resources (CPU / RAM)
+    try:
+        import psutil
+        cpu = psutil.cpu_percent(interval=0.1)
+        mem = psutil.virtual_memory()
+        lines.append(f"System: CPU {cpu}% | RAM {mem.percent}% used ({round(mem.used / (1024**3), 1)}GB / {round(mem.total / (1024**3), 1)}GB)")
+    except Exception:
+        pass
+
+    return {"status": "ok", "summary": "\n".join(lines)}
+
+
 def execute_desktop_commands(commands: list[dict]) -> None:
     """Executes commands received from Sofia's Brain."""
     for cmd in commands:
         cmd_type = cmd.get("type")
-        logger.info("Executing desktop command: %s", cmd_type)
+        cmd_id = cmd.get("id")
+        logger.info("Executing desktop command: %s (id=%s)", cmd_type, cmd_id)
 
         if cmd_type == "capture_screen":
             frame = capture_screen_bytes()
             if frame:
                 upload_screen_frame(frame)
+
+        elif cmd_type == "run_command":
+            res = handle_run_command(cmd)
+            if cmd_id:
+                send_command_result(cmd_id, res)
+
+        elif cmd_type == "get_clipboard":
+            res = handle_get_clipboard()
+            if cmd_id:
+                send_command_result(cmd_id, res)
+
+        elif cmd_type == "set_clipboard":
+            res = handle_set_clipboard(cmd.get("text", ""))
+            if cmd_id:
+                send_command_result(cmd_id, res)
+
+        elif cmd_type == "workspace_status":
+            res = handle_workspace_status(cmd)
+            if cmd_id:
+                send_command_result(cmd_id, res)
 
         elif cmd_type in ("point_at", "doodle", "sticky_note", "clear"):
             forward_to_overlay(cmd_type, cmd)

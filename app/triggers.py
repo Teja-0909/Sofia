@@ -318,6 +318,7 @@ async def app_presence_reaction(
         note = (
             f"[Internal event: Teja is currently active on his PC in '{app_name}' (Window: '{window_title}'). "
             "Look at what he is doing — whether he is studying or researching in Chrome, reading docs, coding in an IDE, gaming, or unwinding. "
+            "You have live tools (e.g. desktop_workspace_status, desktop_read_clipboard, desktop_capture_screen) to inspect his environment autonomously. "
             "React naturally and conversationally like you are sitting right beside him watching his screen. "
             "Autonomously choose and set your mood to match his activity: "
             "[MOOD: fierce_copilot] for studying, coding, or problem-solving; "
@@ -377,6 +378,7 @@ async def check_pc_presence_5min() -> None:
         f"[Internal 5-minute autonomous check: Teja is active on PC in '{app_name}' "
         f"(Window: '{window_title}', Idle: {idle_minutes}m, Media: '{media_playing}'). "
         "Observe what he is working on / studying in Chrome / coding / gaming / doing. "
+        "You have full autonomous access to your desktop tools (desktop_workspace_status, desktop_capture_screen, desktop_read_clipboard) to inspect his active state if you want to understand his context before deciding. "
         "Decide if you want to text him right now — e.g. checking in on his progress, offering to help with what he's studying/coding, teasing him, or cheering him on. "
         "If you want to reach out, output your message in your own natural voice (short, direct, no asterisks). "
         "If he is deep in flow or you don't feel the need to interrupt right now, output ONLY the single word 'PASS'.]"

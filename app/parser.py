@@ -20,12 +20,24 @@ PAST_TENSE_RE = re.compile(
 
 RELATIVE_RE = re.compile(r"\bin\s+(\d+)\s*(minute|min|minutes|mins|hour|hr|hours|hrs)\b", re.IGNORECASE)
 ABSOLUTE_RE = re.compile(
-    r"\b(?:at|by)\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)?\b", re.IGNORECASE
+    r"\b(?:(?:at|by)\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)\b|\b(?:at|by)\s+(\d{1,2})(?::(\d{2}))?\b",
+    re.IGNORECASE
 )
+DAYPART_HOURS = {
+    "morning": (9, 0),       # 09:00 AM
+    "noon": (12, 0),          # 12:00 PM
+    "midday": (12, 0),        # 12:00 PM
+    "afternoon": (14, 0),     # 02:00 PM (14:00)
+    "evening": (18, 0),       # 06:00 PM (18:00)
+    "night": (21, 0),         # 09:00 PM (21:00)
+    "tonight": (21, 0),       # 09:00 PM (21:00)
+}
+DAYPART_RE = re.compile(r"\b(morning|noon|midday|afternoon|evening|night|tonight)\b", re.IGNORECASE)
 DAY_WORDS = {"today": 0, "tonight": 0, "tomorrow": 1}
 
 PREFIX_RES = [
     re.compile(r"^\s*(?:please\s+)?(?:remind\s+me|nudge\s+me|ping\s+me|wake\s+me(?:\s+up)?|text\s+me|message\s+me|check\s+on\s+me)\s+(?:to|about|for|that|if\s+i\s+haven'?t|at|by|in)?\s*", re.IGNORECASE),
+    re.compile(r"^\s*(?:please\s+)?(?:make\s+sure\s+(?:i|to)|ensure\s+(?:i|that\s+i)?)\s*", re.IGNORECASE),
     re.compile(r"^\s*(?:please\s+)?(?:add\s+task|new\s+task|create\s+task|task|todo|to-do|set\s+reminder|set\s+a\s+reminder)\s*[:\-]?\s*(?:to|for)?\s*", re.IGNORECASE),
     re.compile(r"^\s*(?:don'?t\s+let\s+me\s+forget|remember\s+to)\s+", re.IGNORECASE),
     re.compile(r"^\s*reminder\s+(?:to|about|for)?\s*", re.IGNORECASE),
@@ -68,10 +80,19 @@ def extract_task_tag(text: str) -> tuple[str, dict | None]:
             desc = parsed_time.get("description", desc)
 
     if not due_utc:
-        # Default to 4 hours from now or today 9:00 PM IST
         local_now = timeutil.now_local()
-        target_due = local_now + dt.timedelta(hours=4)
-        due_utc = timeutil.utc_iso(target_due)
+        lower_payload = raw_payload.lower()
+        if "tomorrow" in lower_payload:
+            target_day = (local_now + dt.timedelta(days=1)).date()
+            target_due = dt.datetime.combine(target_day, dt.time(10, 0), tzinfo=timeutil.tz())
+            due_utc = timeutil.utc_iso(target_due)
+        elif "tonight" in lower_payload:
+            target_due = dt.datetime.combine(local_now.date(), dt.time(21, 0), tzinfo=timeutil.tz())
+            due_utc = timeutil.utc_iso(target_due)
+        else:
+            # If no time whatsoever was specified, default to 4 hours from now
+            target_due = local_now + dt.timedelta(hours=4)
+            due_utc = timeutil.utc_iso(target_due)
 
     return clean_text, {"description": desc, "due_utc": due_utc}
 
@@ -101,13 +122,22 @@ def _resolve_absolute(base_day_offset: int | None, hour: int, minute: int, merid
     local_now = timeutil.now_local()
     day = (local_now + dt.timedelta(days=base_day_offset or 0)).date()
     if meridiem:
-        hour = hour % 12 + (12 if meridiem.lower().startswith("p") else 0)
-    elif hour <= 11 and local_now.hour >= 12 and base_day_offset is None:
-        pass
+        meridiem_lower = meridiem.lower().replace(".", "")
+        if meridiem_lower.startswith("p") and hour < 12:
+            hour += 12
+        elif meridiem_lower.startswith("a") and hour == 12:
+            hour = 0
+    elif base_day_offset is None or base_day_offset == 0:
+        # Meridiem omitted! (e.g. "at 5", "at 6", "by 3")
+        # If daytime (9 AM - 7 PM) and hour is 1..7, user almost certainly means PM today!
+        if 1 <= hour <= 7 and 9 <= local_now.hour <= 19:
+            hour += 12
+        elif hour < local_now.hour and hour <= 11 and (hour + 12) > local_now.hour:
+            hour += 12
+
     due = dt.datetime.combine(day, dt.time(hour % 24, minute), tzinfo=timeutil.tz())
     if base_day_offset is None and due <= local_now:
-        if hour < 12 and local_now.hour < hour:
-            return due
+        # If no day was specified and time has already passed today, advance to tomorrow
         due += dt.timedelta(days=1)
     return due
 
@@ -123,6 +153,7 @@ def heuristic_parse(text: str) -> dict | None:
     spans: list[tuple[int, int]] = []
     due: dt.datetime | None = None
 
+    # 1. Relative delta ("in 30 mins", "in 2 hours")
     m = RELATIVE_RE.search(lower)
     if m:
         amount = int(m.group(1))
@@ -135,28 +166,50 @@ def heuristic_parse(text: str) -> dict | None:
     for word, off in DAY_WORDS.items():
         if word in lower:
             day_offset = off
+            w = re.search(rf"\b{word}\b", lower)
+            if w:
+                spans.append((w.start(), w.end()))
             break
 
+    # 2. Absolute time ("10am", "6pm", "at 5:30 pm", "by 10")
     if due is None:
         m = ABSOLUTE_RE.search(text)
         if m:
-            hour = int(m.group(1))
-            minute = int(m.group(2) or 0)
-            meridiem = m.group(3)
+            if m.group(1) is not None:
+                hour = int(m.group(1))
+                minute = int(m.group(2) or 0)
+                meridiem = m.group(3)
+            else:
+                hour = int(m.group(4))
+                minute = int(m.group(5) or 0)
+                meridiem = None
             try:
                 due = _resolve_absolute(day_offset, hour, minute, meridiem)
                 spans.append(m.span())
-                if day_offset is not None:
-                    w = re.search(r"\b(today|tonight|tomorrow)\b", lower)
-                    if w:
-                        spans.append((w.start(), w.end()))
             except ValueError:
                 due = None
 
-    # If an explicit task phrase was used (e.g. "add task: code backend") without explicit time:
+    # 3. Qualitative dayparts ("morning", "afternoon", "evening", "tonight", "night")
+    if due is None:
+        dp_match = DAYPART_RE.search(lower)
+        if dp_match:
+            part = dp_match.group(1).lower()
+            h, mi = DAYPART_HOURS[part]
+            spans.append(dp_match.span())
+            if part == "tonight":
+                day_offset = 0
+
+            if day_offset is None:
+                local_now = timeutil.now_local()
+                # If time of day already passed today, advance to tomorrow
+                day_offset = 1 if local_now.hour >= h else 0
+
+            due = _resolve_absolute(day_offset, h, mi, "am" if h < 12 else "pm")
+
+    # 4. If explicit task/reminder phrase used without any time or day
     if due is None and any(k in lower for k in ("add task", "new task", "create task", "task:", "todo:", "to-do:", "don't let me forget", "dont let me forget", "remember to", "set reminder", "set a reminder")):
         local_now = timeutil.now_local()
-        # Default due time to 4 hours from now or today 9pm
+        # Default due time to 4 hours from now
         due = local_now + dt.timedelta(hours=4)
 
     if due is None:
@@ -266,6 +319,28 @@ def extract_sleep_tag(text: str) -> tuple[str, bool]:
     if not match:
         return text, False
     clean = SLEEP_TAG_REGEX.sub("", text).strip()
+    return clean, True
+
+
+FOCUS_TAG_REGEX = re.compile(r"\[FOCUS:\s*(.*?)\]", re.IGNORECASE)
+CLEAR_FOCUS_REGEX = re.compile(r"\[(?:FOCUS_DONE|CLEAR_FOCUS)\]", re.IGNORECASE)
+
+
+def extract_focus_tag(text: str) -> tuple[str, str | None]:
+    """Extracts [FOCUS: goal] tag emitted by Sofia."""
+    match = FOCUS_TAG_REGEX.search(text)
+    if not match:
+        return text, None
+    clean = FOCUS_TAG_REGEX.sub("", text).strip()
+    return clean, match.group(1).strip()
+
+
+def extract_clear_focus_tag(text: str) -> tuple[str, bool]:
+    """Extracts [FOCUS_DONE] or [CLEAR_FOCUS] tag emitted by Sofia."""
+    match = CLEAR_FOCUS_REGEX.search(text)
+    if not match:
+        return text, False
+    clean = CLEAR_FOCUS_REGEX.sub("", text).strip()
     return clean, True
 
 

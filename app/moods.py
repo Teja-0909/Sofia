@@ -32,11 +32,11 @@ MOOD_PROFILES = {
         ),
     },
     "sensual_intimate": {
-        "name": "Sensual & Intimate",
+        "name": "Intimate & Still",
         "emoji": "🌙",
         "directive": (
-            "Current Mood: SENSUAL & INTIMATE (🌙). "
-            "Speak with low-frequency warmth, magnetic closeness, vulnerable whispers, deep emotional intimacy, and late-night stillness."
+            "Current Mood: INTIMATE & STILL (🌙). "
+            "Speak with quiet warmth, magnetic closeness, deep emotional trust, and late-night calm."
         ),
     },
     "cozy_chill": {
