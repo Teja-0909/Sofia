@@ -17,10 +17,18 @@ class AllProvidersFailed(Exception):
 
 def _provider_chain() -> list[tuple[str, str, str]]:
     chain = []
-    # 1. Primary: Google Gemini 2.0 / 1.5 Flash
+    # 1. Primary: Google Gemini Flash
     if config.GEMINI_API_KEY:
         seen = set()
-        for gm in (config.GEMINI_MODEL, "gemini-2.0-flash", "gemini-1.5-flash"):
+        for gm in (
+            config.GEMINI_MODEL,
+            "gemini-3.5-flash-lite",
+            "gemini-flash-lite-latest",
+            "gemini-3.1-flash-lite",
+            "gemini-3.6-flash",
+            "gemini-flash-latest",
+            "gemini-3-flash-preview",
+        ):
             if gm and gm not in seen:
                 seen.add(gm)
                 chain.append(("gemini", gm, "gemini"))
@@ -327,7 +335,10 @@ async def chat(
                     response_format,
                     tools
                 )
-            await _log_usage(provider, model, usage)
+            try:
+                asyncio.create_task(_log_usage(provider, model, usage))
+            except Exception as log_err:
+                logger.debug("Async log usage note: %s", log_err)
             return text, tool_calls
         except Exception as exc:
             logger.error("Provider '%s' (%s) failed: %s", provider, model, exc)
