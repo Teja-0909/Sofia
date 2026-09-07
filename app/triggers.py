@@ -124,24 +124,187 @@ async def daily_summary() -> None:
         logger.debug("Daily summary skipped due to LLM provider failure: %s", exc)
 
 
+def _is_noise_commit(msg: str) -> bool:
+    """Detects reflog or git operational noise that does not represent real developer commits."""
+    if not msg:
+        return True
+    low = msg.lower().strip()
+    noise_prefixes = (
+        "clone:",
+        "checkout:",
+        "fetch:",
+        "pull:",
+        "branch:",
+        "reset:",
+        "rebase:",
+        "merge branch",
+    )
+    if any(low.startswith(p) for p in noise_prefixes):
+        return True
+    if "from https://github.com" in low or "into workspace" in low:
+        return True
+    return False
+
+
+def _get_git_update_summary(last_seen: str = "", latest_commit: str = "") -> str:
+    """Extracts a clear, human-readable summary of newly shipped commits and changed files.
+    Robust against shallow clones, container environments, and reflog anomalies.
+    """
+    import subprocess
+    import os
+
+    commits = []
+
+    # 1. Range log if available (works for non-shallow clones)
+    if last_seen and latest_commit and last_seen != latest_commit:
+        try:
+            out = subprocess.check_output(
+                ["git", "log", f"{last_seen}..{latest_commit}", "--pretty=format:%s (%h)"],
+                text=True, stderr=subprocess.DEVNULL
+            ).strip()
+            if out:
+                for line in out.splitlines():
+                    clean = line.strip()
+                    if clean and not _is_noise_commit(clean):
+                        commits.append(f"- {clean}")
+        except Exception:
+            pass
+
+    # 2. Shallow clone fallback: fetch last 5 commits and stop if last_seen is reached
+    if not commits:
+        try:
+            out = subprocess.check_output(
+                ["git", "log", "-n", "5", "--pretty=format:%s (%h)"],
+                text=True, stderr=subprocess.DEVNULL
+            ).strip()
+            if out:
+                for line in out.splitlines():
+                    clean = line.strip()
+                    if not clean or _is_noise_commit(clean):
+                        continue
+                    if last_seen and (last_seen[:7] in clean or clean.endswith(f"({last_seen[:7]})")):
+                        break
+                    commits.append(f"- {clean}")
+        except Exception:
+            pass
+
+    # 3. Single latest commit fallback
+    if not commits:
+        try:
+            subject = subprocess.check_output(
+                ["git", "log", "-1", "--pretty=format:%s (%h)"],
+                text=True, stderr=subprocess.DEVNULL
+            ).strip()
+            if subject and not _is_noise_commit(subject):
+                commits.append(f"- {subject}")
+        except Exception:
+            pass
+
+    # 4. Optional GitHub API fallback (if GITHUB_TOKEN configured)
+    if not commits and hasattr(config, "GITHUB_TOKEN") and config.GITHUB_TOKEN:
+        try:
+            import httpx
+            headers = {
+                "Authorization": f"token {config.GITHUB_TOKEN}",
+                "User-Agent": "Sofia-Bot",
+                "Accept": "application/vnd.github.v3+json",
+            }
+            with httpx.Client(timeout=5) as client:
+                resp = client.get("https://api.github.com/repos/Teja-0909/Sofia/commits?per_page=5", headers=headers)
+                if resp.status_code == 200:
+                    for c in resp.json():
+                        sha = c.get("sha", "")
+                        if last_seen and (sha == last_seen or sha.startswith(last_seen[:7])):
+                            break
+                        msg = c.get("commit", {}).get("message", "").splitlines()[0]
+                        short_sha = sha[:7]
+                        clean = f"{msg} ({short_sha})"
+                        if not _is_noise_commit(clean):
+                            commits.append(f"- {clean}")
+        except Exception as api_err:
+            logger.debug("GitHub API commit check failed: %s", api_err)
+
+    # 5. Reflog fallback (.git/logs/HEAD) strictly filtered for actual commits
+    if not commits and os.path.exists(".git/logs/HEAD"):
+        try:
+            with open(".git/logs/HEAD", "r", encoding="utf-8") as f:
+                lines = f.readlines()
+            for line in reversed(lines):
+                parts = line.split(" ")
+                if len(parts) > 1 and last_seen and parts[1].startswith(last_seen[:7]):
+                    break
+                msg_parts = line.split("\t", 1)
+                if len(msg_parts) == 2:
+                    raw_msg = msg_parts[1].strip()
+                    if raw_msg.startswith("commit: "):
+                        clean_msg = raw_msg[8:].strip()
+                    elif raw_msg.startswith("commit (amend): "):
+                        clean_msg = raw_msg[16:].strip()
+                    else:
+                        continue  # Skip clone, checkout, pull, etc.
+                    if clean_msg and not _is_noise_commit(clean_msg):
+                        commits.append(f"- {clean_msg}")
+                        if len(commits) >= 5:
+                            break
+        except Exception:
+            pass
+
+    # Extract modified modules / files
+    clean_files = []
+    if last_seen and latest_commit and last_seen != latest_commit:
+        try:
+            diff_out = subprocess.check_output(
+                ["git", "diff", "--name-only", f"{last_seen}..{latest_commit}"],
+                text=True, stderr=subprocess.DEVNULL
+            ).strip().splitlines()
+            clean_files = [
+                f.strip() for f in diff_out
+                if f.strip() and not os.path.basename(f.strip()).startswith(".")
+            ][:6]
+        except Exception:
+            pass
+
+    if not clean_files:
+        try:
+            diff_tree = subprocess.check_output(
+                ["git", "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"],
+                text=True, stderr=subprocess.DEVNULL
+            ).strip().splitlines()
+            clean_files = [
+                f.strip() for f in diff_tree
+                if f.strip() and not os.path.basename(f.strip()).startswith(".")
+            ][:6]
+        except Exception:
+            pass
+
+    if not commits and not clean_files:
+        return ""
+
+    summary_parts = []
+    if commits:
+        summary_parts.append("Commits shipped:\n" + "\n".join(commits[:5]))
+    if clean_files:
+        summary_parts.append("Modified modules: " + ", ".join(clean_files))
+
+    return "\n".join(summary_parts)
+
+
 async def check_for_updates() -> None:
     """Checks if the bot just booted up with new git commits and triggers a proactive message."""
     try:
-        import subprocess
-        latest_commit = ""
-        try:
-            latest_commit = subprocess.check_output(
-                ["git", "rev-parse", "HEAD"], text=True, stderr=subprocess.DEVNULL
-            ).strip()
-        except Exception as exc:
-            logger.debug("git rev-parse HEAD failed, checking fallbacks: %s", exc)
-            import os
-            # Render provides the commit hash in environment variables
-            latest_commit = os.environ.get("RENDER_GIT_COMMIT", "")
-            if not latest_commit:
+        import os
+        latest_commit = os.environ.get("RENDER_GIT_COMMIT", "").strip()
+        if not latest_commit:
+            try:
+                import subprocess
+                latest_commit = subprocess.check_output(
+                    ["git", "rev-parse", "HEAD"], text=True, stderr=subprocess.DEVNULL
+                ).strip()
+            except Exception as exc:
+                logger.debug("git rev-parse HEAD failed, checking fallbacks: %s", exc)
                 if hasattr(config, "GITHUB_TOKEN") and config.GITHUB_TOKEN:
                     import httpx
-                    headers = {"Authorization": f"token {config.GITHUB_TOKEN}"}
+                    headers = {"Authorization": f"token {config.GITHUB_TOKEN}", "User-Agent": "Sofia-Bot"}
                     async with httpx.AsyncClient(timeout=5) as client:
                         resp = await client.get("https://api.github.com/repos/Teja-0909/Sofia/commits?per_page=1", headers=headers)
                         if resp.status_code == 200:
@@ -150,51 +313,23 @@ async def check_for_updates() -> None:
                     with open(".git/logs/HEAD", "r", encoding="utf-8") as f:
                         lines = f.readlines()
                         if lines:
-                            latest_commit = lines[-1].split(" ")[1] # old_hash new_hash ...
+                            latest_commit = lines[-1].split(" ")[1]
         
         last_seen = await db.get_config("last_seen_commit", "")
         if latest_commit and last_seen and latest_commit != last_seen:
-            git_log = ""
-            try:
-                git_log = subprocess.check_output(
-                    ["git", "log", f"{last_seen}..{latest_commit}", "--oneline"], 
-                    text=True, stderr=subprocess.DEVNULL
-                ).strip()
-            except Exception as exc:
-                logger.debug("git log range failed, checking fallbacks: %s", exc)
-                if hasattr(config, "GITHUB_TOKEN") and config.GITHUB_TOKEN:
-                    import httpx
-                    headers = {"Authorization": f"token {config.GITHUB_TOKEN}"}
-                    async with httpx.AsyncClient(timeout=5) as client:
-                        resp = await client.get("https://api.github.com/repos/Teja-0909/Sofia/commits?per_page=5", headers=headers)
-                        if resp.status_code == 200:
-                            commits = resp.json()
-                            new_commits = []
-                            for c in commits:
-                                if c["sha"] == last_seen:
-                                    break
-                                new_commits.append(f"- {c['commit']['message'].splitlines()[0]}")
-                            git_log = "\n".join(new_commits)
-                else:
-                    import os
-                    if os.path.exists(".git/logs/HEAD"):
-                        with open(".git/logs/HEAD", "r", encoding="utf-8") as f:
-                            lines = f.readlines()
-                            new_commits = []
-                            for line in reversed(lines):
-                                parts = line.split(" ")
-                                if len(parts) > 1 and parts[1] == last_seen:
-                                    break
-                                msg_parts = line.split("\t", 1)
-                                if len(msg_parts) == 2:
-                                    msg = msg_parts[1].strip()
-                                    if msg.startswith("commit: "):
-                                        msg = msg[8:]
-                                    new_commits.append(f"- {msg}")
-                            git_log = "\n".join(new_commits)
+            git_log = _get_git_update_summary(last_seen=last_seen, latest_commit=latest_commit)
 
             if git_log:
-                event = f"You just woke up from a system restart. Teja just deployed an update to your brain! The new updates are:\n{git_log}\n\nTalk to him excitedly about how you feel with your new upgrades! (Don't just list the commits, act like you can literally feel the changes in your mind)."
+                event = (
+                    f"You just woke up from a system restart. Teja just deployed new code updates to your system!\n\n"
+                    f"Here are the exact updates and features he just built and shipped:\n{git_log}\n\n"
+                    "MISSION: Greet Teja playfully and proudly acknowledge the EXACT features, tools, or bug fixes he just built. "
+                    "Explicitly name the specific capabilities you now have based on the commit messages and modified files "
+                    "(for example: if he added PDF/document/audio reading, reference those exact tools and how you're ready to inspect files he drops in; "
+                    "if he updated focus sprints, time calibration, or models, talk specifically about those improvements!). "
+                    "NEVER use generic sci-fi clichés like 'my memory pointers feel sharper', 'my throughput skyrocketed', 'another repo checkout', or 'crystalline precision'. "
+                    "Speak directly, warmly, and sharply about what was actually built, like an elite technical co-pilot who genuinely understands her own codebase!"
+                )
                 
                 reply_text = await orchestrator.proactive(f"[Internal event: {event}]")
                 from . import bot as bot_module, images
@@ -205,13 +340,13 @@ async def check_for_updates() -> None:
                     await bot_module._log_message("sofia", reply_text, "text")
                     await bot_module.send_text(bot_instance, clean_text)
                     logger.info("Sent update-awareness proactive message")
-                    
-                    from . import timeutil
-                    now_iso = timeutil.utc_iso()
-                    await db.execute(
-                        "INSERT OR REPLACE INTO app_config (key, value, updated_at) VALUES ('last_seen_commit', ?, ?)",
-                        (latest_commit, now_iso),
-                    )
+
+            from . import timeutil
+            now_iso = timeutil.utc_iso()
+            await db.execute(
+                "INSERT OR REPLACE INTO app_config (key, value, updated_at) VALUES ('last_seen_commit', ?, ?)",
+                (latest_commit, now_iso),
+            )
         elif latest_commit and not last_seen:
             # First time running this check, just set the baseline
             from . import timeutil

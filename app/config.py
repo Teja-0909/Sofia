@@ -57,6 +57,9 @@ TURSO_AUTH_TOKEN = os.environ.get("TURSO_AUTH_TOKEN", "")
 TOGETHER_API_KEY = os.environ.get("TOGETHER_API_KEY", "")
 HF_TOKEN = os.environ.get("HF_TOKEN", "") or os.environ.get("HUGGINGFACE_API_KEY", "")
 
+# Optional GitHub API Token for repo commit lookups
+GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
+
 DEFAULT_CONFIG = {
     "memory_top_k": "30",
     "diary_context_days": "7",
