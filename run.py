@@ -40,7 +40,7 @@ async def run_bot() -> None:
             logger.info("Cleared lingering Telegram webhook to ensure clean polling")
         except Exception as wh_exc:
             logger.debug("Webhook clear note: %s", wh_exc)
-        await app.updater.start_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=False)
+        await app.updater.start_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=False, bootstrap_retries=5)
         logger.info("Sofia bot is online, listening for Telegram messages...")
 
         try:

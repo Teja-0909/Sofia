@@ -130,8 +130,19 @@ async def _handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWri
             body_bytes += more
 
         if path == "/health":
+            import os
+            commit_sha = os.environ.get("RENDER_GIT_COMMIT", "")
+            if not commit_sha:
+                try:
+                    import subprocess
+                    commit_sha = subprocess.check_output(
+                        ["git", "rev-parse", "--short", "HEAD"], text=True, stderr=subprocess.DEVNULL
+                    ).strip()
+                except Exception:
+                    commit_sha = "unknown"
             body = json.dumps({
                 "status": "healthy",
+                "commit": commit_sha,
                 "timestamp_local": timeutil.now_local().strftime("%Y-%m-%d %H:%M:%S %Z"),
                 "timestamp_utc": timeutil.utc_iso(),
                 "timezone": config.TIMEZONE,
