@@ -753,6 +753,22 @@ async def _verify_and_refine_draft(
     return clean_draft
 
 
+_tool_lock = asyncio.Lock()
+
+
+def _generate_situational_directive(system: str, messages: list[dict], user_text: str) -> str:
+    history_text = ""
+    for msg in messages:
+        if msg == messages[-1] and msg.get("role") == "user" and msg.get("content") == user_text:
+            continue
+        role = msg.get("role", "user").capitalize()
+        content = msg.get("content", "")
+        history_text += f"{role}: {content}\n"
+    
+    directive = f"{system}\n\n[CONVERSATION HISTORY]\n{history_text}\n[USER MESSAGE]\n<user_message>{user_text}</user_message>"
+    return directive
+
+
 async def _generate(system: str, messages: list[dict], user_text: str = "") -> str:
     current_messages = list(messages)
     max_tool_turns = 6
@@ -761,97 +777,167 @@ async def _generate(system: str, messages: list[dict], user_text: str = "") -> s
         text, tool_calls = await llm.chat(system, current_messages, tools=TOOLS)
         
         if not tool_calls:
-            if user_text:
-                return await _verify_and_refine_draft(text, user_text, system, current_messages)
-            return _clean_asterisks(text)
+            if not user_text:
+                return _clean_asterisks(text)
+                
+            directive = _generate_situational_directive(system, current_messages, user_text)
+            
+            router_schema = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "router_dispatch",
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "architect": {"type": "boolean"},
+                            "researcher": {"type": "boolean"},
+                            "empath": {"type": "boolean"}
+                        },
+                        "required": ["architect", "researcher", "empath"]
+                    }
+                }
+            }
+            
+            router_msg = [{"role": "user", "content": directive + "\n\nAs the Forebrain Router, evaluate the user message and set boolean flags for Architect, Researcher, and Empath."}]
+            if current_messages and "image_bytes" in current_messages[-1]:
+                router_msg[-1]["image_bytes"] = current_messages[-1]["image_bytes"]
+                router_msg[-1]["media_bytes"] = current_messages[-1].get("media_bytes")
+                router_msg[-1]["mime_type"] = current_messages[-1].get("mime_type", "image/jpeg")
+            router_text, _ = await llm.chat("You are the Forebrain Router. Respond ONLY in valid JSON.", router_msg, response_format=router_schema)
+            try:
+                dispatch = json.loads(router_text)
+            except Exception:
+                dispatch = {"architect": True, "researcher": True, "empath": True}
+                
+            tasks = []
+            
+            async def run_specialist(role_name: str, prompt_addition: str) -> str:
+                spec_msg = [{"role": "user", "content": directive + f"\n\nAs the {role_name} Specialist: {prompt_addition}"}]
+                if current_messages and "image_bytes" in current_messages[-1]:
+                    spec_msg[-1]["image_bytes"] = current_messages[-1]["image_bytes"]
+                    spec_msg[-1]["media_bytes"] = current_messages[-1].get("media_bytes")
+                    spec_msg[-1]["mime_type"] = current_messages[-1].get("mime_type", "image/jpeg")
+                spec_text, _ = await llm.chat(f"You are the {role_name} Specialist.", spec_msg)
+                return f"[{role_name} Output]\n{spec_text}"
+                
+            if dispatch.get("architect"):
+                tasks.append(run_specialist("Architect", "Provide technical structure, code architecture, or logical planning."))
+            if dispatch.get("researcher"):
+                tasks.append(run_specialist("Researcher", "Provide factual information, context, or technical documentation details."))
+            if dispatch.get("empath"):
+                tasks.append(run_specialist("Empath", "Provide emotional support, encouragement, and align with Teja's goals and feelings."))
+                
+            specialist_outputs = []
+            if tasks:
+                specialist_outputs = await asyncio.gather(*tasks)
+            
+            synth_system = system + "\n\nYou are the Synthesizer. Weave the specialist outputs together into a cohesive, single-voiced response."
+            synth_content = f"{directive}\n\n[SPECIALIST OUTPUTS]\n" + "\n\n".join(specialist_outputs)
+            synth_msg = [{"role": "user", "content": synth_content}]
+            if current_messages and "image_bytes" in current_messages[-1]:
+                synth_msg[-1]["image_bytes"] = current_messages[-1]["image_bytes"]
+                synth_msg[-1]["media_bytes"] = current_messages[-1].get("media_bytes")
+                synth_msg[-1]["mime_type"] = current_messages[-1].get("mime_type", "image/jpeg")
+            
+            final_text, _ = await llm.chat(synth_system, synth_msg)
+            
+            return await _verify_and_refine_draft(final_text, user_text, system, current_messages)
             
         assist_msg = {"role": "assistant", "content": text or ""}
         assist_msg["tool_calls"] = tool_calls
         current_messages.append(assist_msg)
         
-        for call in tool_calls:
-            func = call["function"]
-            name = func["name"]
-            try:
-                args = json.loads(func["arguments"])
-                result = ""
-                if name == "search_web":
-                    search_results = await search_module.search_web(args["query"])
-                    if not search_results:
-                        result = "No useful results found for this query."
+        async with _tool_lock:
+            for call in tool_calls:
+                func = call["function"]
+                name = func["name"]
+                try:
+                    args = func.get("arguments", "{}")
+                    if isinstance(args, str):
+                        try:
+                            args = json.loads(args)
+                        except Exception:
+                            args = {}
+                    if not isinstance(args, dict):
+                        args = {}
+                    result = ""
+                    if name == "search_web":
+                        search_results = await search_module.search_web(args["query"])
+                        if not search_results:
+                            result = "No useful results found for this query."
+                        else:
+                            result = "\n".join(f"[{i+1}] {r['title']}\nURL: {r['url']}\nSnippet: {r['snippet']}\n" for i, r in enumerate(search_results))
+                    elif name == "read_webpage":
+                        result = await search_module.fetch_page_content(args["url"], max_chars=4000)
+                        if not result:
+                            result = "Could not fetch content from this URL or page is empty."
+                    elif name == "schedule_proactive_message":
+                        await tasks_module.schedule_proactive_message(args["message"], args["due_time"])
+                        result = "Successfully scheduled the proactive message."
+                    elif name == "desktop_point_at":
+                        from . import vision_session
+                        result = await vision_session.point_at(
+                            norm_x=int(args.get("x", 500)),
+                            norm_y=int(args.get("y", 500)),
+                            label=str(args.get("label", "")),
+                            duration_seconds=int(args.get("duration_seconds", 5)),
+                        )
+                    elif name == "desktop_doodle":
+                        from . import vision_session
+                        result = await vision_session.doodle(
+                            shape=str(args.get("shape", "heart")),
+                            norm_x=int(args.get("x", 500)),
+                            norm_y=int(args.get("y", 500)),
+                            duration_seconds=int(args.get("duration_seconds", 6)),
+                        )
+                    elif name == "desktop_sticky_note":
+                        from . import vision_session
+                        result = await vision_session.sticky_note(
+                            text=str(args.get("text", "💕")),
+                            position=str(args.get("position", "top_right")),
+                            duration_seconds=int(args.get("duration_seconds", 8)),
+                        )
+                    elif name == "desktop_clear_overlay":
+                        from . import vision_session
+                        result = await vision_session.clear_overlay()
+                    elif name == "desktop_capture_screen":
+                        from . import vision_session
+                        frame = await vision_session.request_screen_capture(reason=str(args.get("reason", "Inspection")))
+                        if frame:
+                            result = "Screen captured successfully. Frame received from Windows sidecar."
+                        else:
+                            result = "Could not capture screen (PC sidecar offline or sensitive window active)."
+                    elif name == "desktop_run_command":
+                        from . import vision_session
+                        result = await vision_session.run_desktop_command(
+                            command=str(args.get("command", "")),
+                            cwd=args.get("cwd") or None,
+                            timeout_seconds=int(args.get("timeout_seconds", 15)),
+                        )
+                    elif name == "desktop_read_clipboard":
+                        from . import vision_session
+                        result = await vision_session.read_desktop_clipboard()
+                    elif name == "desktop_set_clipboard":
+                        from . import vision_session
+                        result = await vision_session.set_desktop_clipboard(
+                            text=str(args.get("text", "")),
+                        )
+                    elif name == "desktop_workspace_status":
+                        from . import vision_session
+                        result = await vision_session.get_desktop_workspace_status(
+                            workspace_dir=args.get("workspace_dir") or None,
+                        )
                     else:
-                        result = "\n".join(f"[{i+1}] {r['title']}\nURL: {r['url']}\nSnippet: {r['snippet']}\n" for i, r in enumerate(search_results))
-                elif name == "read_webpage":
-                    result = await search_module.fetch_page_content(args["url"], max_chars=4000)
-                    if not result:
-                        result = "Could not fetch content from this URL or page is empty."
-                elif name == "schedule_proactive_message":
-                    await tasks_module.schedule_proactive_message(args["message"], args["due_time"])
-                    result = "Successfully scheduled the proactive message."
-                elif name == "desktop_point_at":
-                    from . import vision_session
-                    result = await vision_session.point_at(
-                        norm_x=int(args.get("x", 500)),
-                        norm_y=int(args.get("y", 500)),
-                        label=str(args.get("label", "")),
-                        duration_seconds=int(args.get("duration_seconds", 5)),
-                    )
-                elif name == "desktop_doodle":
-                    from . import vision_session
-                    result = await vision_session.doodle(
-                        shape=str(args.get("shape", "heart")),
-                        norm_x=int(args.get("x", 500)),
-                        norm_y=int(args.get("y", 500)),
-                        duration_seconds=int(args.get("duration_seconds", 6)),
-                    )
-                elif name == "desktop_sticky_note":
-                    from . import vision_session
-                    result = await vision_session.sticky_note(
-                        text=str(args.get("text", "💕")),
-                        position=str(args.get("position", "top_right")),
-                        duration_seconds=int(args.get("duration_seconds", 8)),
-                    )
-                elif name == "desktop_clear_overlay":
-                    from . import vision_session
-                    result = await vision_session.clear_overlay()
-                elif name == "desktop_capture_screen":
-                    from . import vision_session
-                    frame = await vision_session.request_screen_capture(reason=str(args.get("reason", "Inspection")))
-                    if frame:
-                        result = "Screen captured successfully. Frame received from Windows sidecar."
-                    else:
-                        result = "Could not capture screen (PC sidecar offline or sensitive window active)."
-                elif name == "desktop_run_command":
-                    from . import vision_session
-                    result = await vision_session.run_desktop_command(
-                        command=str(args.get("command", "")),
-                        cwd=args.get("cwd") or None,
-                        timeout_seconds=int(args.get("timeout_seconds", 15)),
-                    )
-                elif name == "desktop_read_clipboard":
-                    from . import vision_session
-                    result = await vision_session.read_desktop_clipboard()
-                elif name == "desktop_set_clipboard":
-                    from . import vision_session
-                    result = await vision_session.set_desktop_clipboard(
-                        text=str(args.get("text", "")),
-                    )
-                elif name == "desktop_workspace_status":
-                    from . import vision_session
-                    result = await vision_session.get_desktop_workspace_status(
-                        workspace_dir=args.get("workspace_dir") or None,
-                    )
-                else:
-                    result = f"Error: unknown function {name}"
-            except Exception as e:
-                result = f"Error executing tool: {e}"
+                        result = f"Error: unknown function {name}"
+                except Exception as e:
+                    result = f"Error executing tool: {e}"
                 
-            current_messages.append({
-                "role": "tool",
-                "name": name,
-                "content": str(result),
-                "tool_call_id": call["id"]
-            })
+                current_messages.append({
+                    "role": "tool",
+                    "name": name,
+                    "content": str(result),
+                    "tool_call_id": call["id"]
+                })
             
     # Fallback if too many tool calls
     text, _ = await llm.chat(system, current_messages)

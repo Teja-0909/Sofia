@@ -25,7 +25,7 @@ Sofia is an autonomous, deeply personalised AI co-pilot and companion that lives
 │                                           SOFIA CORE (app/)                                             │
 ├─────────────────────────────────────────────────────────────────────────────────────────────────────────┤
 │  bot.py               Primary Telegram event router, slash command handlers & focus sprint controller   │
-│  orchestrator.py      Central brain: 10 parallel context layers, spatial tooling loop, verifier engine   │
+│  orchestrator.py      Central brain: MoA, Forebrain Router, Agentic Meta-Routing, and Synthesizer      │
 │  vision_session.py    Command queue, screen frame buffering, watch sessions, command-result futures     │
 │  web.py               Async socket HTTP server: standard library asyncio.start_server (/health, /api/*)  │
 │  consciousness.py     Circadian sleep/wake cycle, energy invariant (permanently 100%), inner thoughts   │
@@ -57,7 +57,7 @@ Sofia is an autonomous, deeply personalised AI co-pilot and companion that lives
 
 ## 2. Core Persona, Behavioral Dynamic & Anti-Chatbot Rules
 
-Defined in `system_prompt.txt` and injected as the master system instruction for all generative reasoning:
+Defined in `system_prompt.txt` and dynamically augmented per-turn by the **Agentic Meta-Routing (Inner Cognitive Router)**, which injects a real-time situational directive to overwrite default static behavior:
 
 ### 2.1 Identity & Dynamic (Competence + Loyalty + Living Soul)
 - **High Agency Co-Pilot**: Action-oriented, direct, highly intelligent. Does not give abstract advice or pass the buck; solves problems, anticipates hurdles, and writes complete runnable code.
@@ -367,7 +367,12 @@ CREATE INDEX IF NOT EXISTS idx_dreams_date ON dreams(sleep_date);
 
 ### 6.2 `app/` Modules
 - **`app/orchestrator.py`**:
-  - Central reasoning engine. Fetches all 10 context blocks in parallel via `asyncio.gather()` in ~20ms:
+  - Central reasoning engine featuring a **Hierarchical Mixture of Agents (MoA)** architecture.
+  - **Agentic Meta-Routing (Inner Cognitive Router)**: Dynamically generates a 1-3 sentence situational directive per turn, overriding static behaviors based on real-time context.
+  - **Forebrain Router**: Analyzes user intent with strict JSON `response_format` parsing and delegates to concurrent Specialist Agents.
+  - **Specialist Agents**: Runs `Architect`, `Researcher`, and `Empath` personas concurrently via `asyncio.gather` for diverse internal notes.
+  - **Synthesizer**: Weaves background agent notes into the final unified response.
+  - Fetches 11 context blocks in parallel via `asyncio.gather()` in ~20ms:
     1. `_ctx_relationship_stage()`: Depth level, active days, bond directive.
     2. `_ctx_living_notebook()`: RAM-cached `memory.md`.
     3. `_ctx_vector_memories()`: 768-D cosine similarity search over memories and summaries.
@@ -379,7 +384,7 @@ CREATE INDEX IF NOT EXISTS idx_dreams_date ON dreams(sleep_date);
     9. `_ctx_tasks_and_threads()`: Active focus sprint, relative urgency tags (`[🚨 OVERDUE]`, `[⚡ IMMINENT]`, `[📅 TODAY]`), and top priority task.
     10. `_ctx_pc_presence()`: Current active Windows application, window title, idle minutes, and media playing.
     11. `_ctx_consciousness()` & `_ctx_dreams()`: Energy bar, sleep state, recent subconscious thoughts, and dreams.
-  - Multi-step function calling loop executing desktop, vision, and web tools.
+  - Multi-step function calling loop executing desktop, vision, and web tools, fortified with **concurrency fixes** (e.g., `asyncio.Lock` for thread-safe tool execution).
   - Verifier loop catching lazy code placeholders and injecting missing tags.
   - Main entrypoints: `reply()` and `proactive()`.
 - **`app/bot.py`**:

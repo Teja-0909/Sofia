@@ -206,11 +206,17 @@ class TestAlisaCore(unittest.IsolatedAsyncioTestCase):
                 mime_type="image/png",
             )
             self.assertIn("python error", reply)
-            mock_chat.assert_called_once()
-            called_messages = mock_chat.call_args[0][1]
-            last_msg = called_messages[-1]
-            self.assertEqual(last_msg["image_bytes"], dummy_img)
-            self.assertEqual(last_msg["mime_type"], "image/png")
+            
+            # Find the call that actually has the image attached (synthesizer or router)
+            found_image = False
+            for call_args in mock_chat.call_args_list:
+                called_messages = call_args[0][1]
+                last_msg = called_messages[-1]
+                if "image_bytes" in last_msg and last_msg["image_bytes"] == dummy_img:
+                    self.assertEqual(last_msg["mime_type"], "image/png")
+                    found_image = True
+                    break
+            self.assertTrue(found_image)
 
     async def test_web_server_endpoints(self):
         from app import web
