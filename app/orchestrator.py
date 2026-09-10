@@ -758,9 +758,15 @@ _tool_lock = asyncio.Lock()
 
 def _generate_situational_directive(system: str, messages: list[dict], user_text: str) -> str:
     history_text = ""
-    for msg in messages:
-        if msg == messages[-1] and msg.get("role") == "user" and msg.get("content") == user_text:
+    skip_done = False
+    filtered_messages = []
+    for msg in reversed(messages):
+        if not skip_done and msg.get("role") == "user" and msg.get("content") == user_text:
+            skip_done = True
             continue
+        filtered_messages.append(msg)
+        
+    for msg in reversed(filtered_messages):
         role = msg.get("role", "user").capitalize()
         content = msg.get("content", "")
         history_text += f"{role}: {content}\n"
