@@ -4,6 +4,7 @@ Runs silently in the background (0% CPU, invisible window, starts automatically 
 """
 
 import os
+import pathlib
 import sys
 
 STARTUP_DIR = os.path.join(
@@ -12,7 +13,7 @@ STARTUP_DIR = os.path.join(
 )
 
 PYTHONW_PATH = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
-SIDECAR_PATH = r"C:\Games\Alya\scripts\sidecar.py"
+SIDECAR_PATH = str(pathlib.Path(__file__).resolve().parent / "sidecar.py")
 VBS_PATH = os.path.join(STARTUP_DIR, "SofiaSidecar.vbs")
 
 VBS_CONTENT = f'''Set WshShell = CreateObject("WScript.Shell")

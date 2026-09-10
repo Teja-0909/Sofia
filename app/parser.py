@@ -1,8 +1,11 @@
 import datetime as dt
 import json
+import logging
 import re
 
 from . import db, llm, timeutil
+
+logger = logging.getLogger(__name__)
 
 FUTURE_INTENT_WORDS = (
     "remind me", "reminder", "nudge me", "ping me", "wake me", "text me",

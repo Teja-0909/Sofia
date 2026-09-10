@@ -1,4 +1,4 @@
-﻿import datetime as dt
+import datetime as dt
 import os
 import tempfile
 import unittest

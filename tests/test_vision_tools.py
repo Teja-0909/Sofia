@@ -6,9 +6,9 @@ import asyncio
 import os
 import tempfile
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
-from app import config, db, orchestrator, timeutil, vision_session, web
+from app import bot, config, db, orchestrator, timeutil, vision_session, web
 
 
 class TestVisionDesktopTools(unittest.IsolatedAsyncioTestCase):
@@ -161,6 +161,44 @@ class TestVisionDesktopTools(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(cmd_res.get("text"), "Copied from test")
         finally:
             await runner.cleanup()
+
+    @patch("app.vision_session.request_screen_capture", new_callable=AsyncMock)
+    @patch("app.orchestrator.reply", autospec=True)
+    async def test_cmd_screen_orchestrator_call(self, mock_reply, mock_capture):
+        """Regression test for /screen handler in app/bot.py: ensures orchestrator.reply is called with system_note (not extra_system_note)."""
+        config.ALLOWED_USER_ID = 12345
+        update = MagicMock()
+        update.effective_user.id = 12345
+        update.message.reply_text = AsyncMock()
+        context = MagicMock()
+
+        dummy_jpeg = b"\xff\xd8\xff\xe0\x00\x10JFIF_fake_screen"
+        mock_capture.return_value = dummy_jpeg
+        mock_reply.return_value = "I see your desktop with code open."
+
+        await bot.cmd_screen(update, context)
+
+        # Ensure request_screen_capture was called with the user trigger reason
+        mock_capture.assert_awaited_once_with("User requested /screen")
+
+        # Verify orchestrator.reply was called once with valid arguments conforming to its signature
+        mock_reply.assert_awaited_once()
+        _, kwargs = mock_reply.call_args
+
+        # Ensure correct system_note argument is used and extra_system_note is absent
+        self.assertIn("system_note", kwargs)
+        self.assertNotIn("extra_system_note", kwargs)
+        self.assertIn("/screen", kwargs["system_note"])
+        self.assertEqual(kwargs.get("image_bytes"), dummy_jpeg)
+        self.assertEqual(kwargs.get("mime_type"), "image/jpeg")
+
+        # Ensure bot replied with orchestrator response and not the hiccup error fallback
+        self.assertEqual(update.message.reply_text.call_count, 2)
+        initial_msg = update.message.reply_text.call_args_list[0][0][0]
+        self.assertIn("Looking at your screen", initial_msg)
+        final_reply = update.message.reply_text.call_args_list[1][0][0]
+        self.assertEqual(final_reply, "I see your desktop with code open.")
+        self.assertNotIn("hiccup", final_reply)
 
 
 if __name__ == "__main__":

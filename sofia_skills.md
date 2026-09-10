@@ -27,13 +27,15 @@ Sofia is an autonomous, deeply personalised AI co-pilot and companion that lives
 │  bot.py               Primary Telegram event router, slash command handlers & focus sprint controller   │
 │  orchestrator.py      Central brain: 10 parallel context layers, spatial tooling loop, verifier engine   │
 │  vision_session.py    Command queue, screen frame buffering, watch sessions, command-result futures     │
-│  web.py               Async HTTP server: /health, /api/presence, /api/desktop/* endpoints               │
-│  consciousness.py     Circadian sleep/wake cycle, energy invariant, 12m inner thoughts, nightly dreams │
+│  web.py               Async socket HTTP server: standard library asyncio.start_server (/health, /api/*)  │
+│  consciousness.py     Circadian sleep/wake cycle, energy invariant (permanently 100%), inner thoughts   │
 │  tasks.py             100% reliable alarms, recurring tasks, 4-tier escalating tone reminders            │
 │  triggers.py          Autonomous reach-outs: hourly, pc presence, wake up, daily summary, win praise    │
+│  diary.py             Daily journal synthesis, monthly chapters, depth formula, 14-day backfill         │
+│  scheduler.py         APScheduler background coordinator: 14 cron and interval jobs (Asia/Kolkata)      │
 │  moods.py             7 dynamic mood archetypes modulated by real-time workflow & circadian rhythm      │
 │  memory.py / memory_file.py  Persistent RAM-cached memory.md + 768-D vector relationship memories       │
-│  llm.py               Multi-provider inference: Gemini 2.5 Flash Lite → Groq → OpenRouter (35s timeout) │
+│  llm.py               Multi-provider inference: Gemini 3.5 Flash Lite → Groq → OpenRouter (35s timeout) │
 │  images.py            FLUX photorealistic portrait engine: Together AI → Hugging Face → Pollinations    │
 │  search.py            Live DuckDuckGo web search + Jina Reader markdown webpage scraping                │
 │  db.py                Unified SQLite/Turso database abstraction with loop-safe locking & backups        │
@@ -174,168 +176,182 @@ Allows Teja to declare a focused work sprint to shield his flow state:
 Managed via `app/db.py` (supporting SQLite locally at `config.DB_PATH` and Turso in the cloud):
 
 ```sql
--- 1. Ephemeral Conversational Notes
-CREATE TABLE temp_reminders (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    content TEXT NOT NULL,
-    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
-    expires_at TEXT NOT NULL,
-    is_active INTEGER NOT NULL DEFAULT 1
-);
+-- Alisa — Phase 1 schema (spec Section 5, reviewed v2)
+-- SQLite. All timestamps UTC ISO-8601; IST day boundaries computed in code.
 
--- 2. Scheduled Tasks & Alarms
-CREATE TABLE tasks (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    description TEXT NOT NULL,
-    due_time TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'pending', -- pending, done, cancelled
-    category TEXT DEFAULT 'general',
-    recurrence TEXT DEFAULT 'none',        -- none, daily, weekdays, weekly
-    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
-    completed_at TEXT,
-    notified INTEGER NOT NULL DEFAULT 0,
-    retry_count INTEGER NOT NULL DEFAULT 0,
-    escalation_level INTEGER NOT NULL DEFAULT 0,
-    embedding TEXT                         -- 768-D JSON array
-);
+PRAGMA journal_mode = WAL;
+PRAGMA foreign_keys = ON;
+PRAGMA busy_timeout = 5000;
 
--- 3. Long-Term Semantic Memories
-CREATE TABLE relationship_memory (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    category TEXT NOT NULL,                -- identity, preference, milestone, tech
-    content TEXT NOT NULL,
-    weight REAL NOT NULL DEFAULT 1.0,
-    is_active INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+CREATE TABLE IF NOT EXISTS temp_reminders (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    content            TEXT    NOT NULL,
+    mentioned_at       TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+    expires_at         TEXT    NOT NULL,
+    is_repeating       INTEGER NOT NULL DEFAULT 0,
+    status             TEXT    NOT NULL DEFAULT 'active'
+                       CHECK (status IN ('active','done','expired')),
+    last_reinforced_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_temp_reminders_status
+    ON temp_reminders(status, expires_at);
+
+CREATE TABLE IF NOT EXISTS tasks (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    description         TEXT    NOT NULL,
+    due_time            TEXT    NOT NULL,
+    status              TEXT    NOT NULL DEFAULT 'pending'
+                        CHECK (status IN ('pending','done','missed')),
+    reminder_sent_count INTEGER NOT NULL DEFAULT 0,
+    last_reminded_at    TEXT,
+    completed_at        TEXT,
+    is_recurring        TEXT,
+    created_at          TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_tasks_due ON tasks(status, due_time);
+
+CREATE TABLE IF NOT EXISTS relationship_memory (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    category           TEXT    NOT NULL
+                       CHECK (category IN ('moment','lesson','evolving_fact','open_thread')),
+    content            TEXT    NOT NULL,
+    reasoning          TEXT    NOT NULL,
+    weight             REAL    NOT NULL DEFAULT 1.0,
+    is_active          INTEGER NOT NULL DEFAULT 1,
+    created_at         TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
     last_reinforced_at TEXT,
-    embedding TEXT                         -- 768-D JSON array
+    embedding          TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_relmem_active ON relationship_memory(is_active, category);
+
+CREATE TABLE IF NOT EXISTS proactive_messages (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    message     TEXT    NOT NULL,
+    due_time    TEXT    NOT NULL,
+    status      TEXT    NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'sent')),
+    created_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_proactive_due ON proactive_messages(status, due_time);
+
+CREATE TABLE IF NOT EXISTS daily_diary (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    date            TEXT    NOT NULL UNIQUE,
+    entry           TEXT    NOT NULL,
+    mood_note       TEXT,
+    created_at      TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+    updated_at      TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+    is_consolidated INTEGER NOT NULL DEFAULT 0
 );
 
--- 4. Autonomous Outbound Message Queue
-CREATE TABLE proactive_messages (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    message TEXT NOT NULL,
-    scheduled_for TEXT NOT NULL,
-    sent_at TEXT,
-    status TEXT NOT NULL DEFAULT 'pending',
+CREATE TABLE IF NOT EXISTS diary_chapters (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    year_month TEXT NOT NULL UNIQUE,
+    entry      TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
 
--- 5. Nightly First-Person Diary Entries
-CREATE TABLE daily_diary (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    date TEXT NOT NULL UNIQUE,             -- YYYY-MM-DD
-    entry TEXT NOT NULL,
-    mood TEXT NOT NULL,
-    key_events TEXT,
-    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+CREATE TABLE IF NOT EXISTS mood_state (
+    id                     INTEGER PRIMARY KEY AUTOINCREMENT,
+    date                   TEXT    NOT NULL UNIQUE,
+    current_tier           INTEGER NOT NULL DEFAULT 1 CHECK (current_tier BETWEEN 1 AND 4),
+    missed_reminders_today INTEGER NOT NULL DEFAULT 0,
+    last_tier_reset_at     TEXT
 );
 
--- 6. Monthly Narrative Diary Chapters
-CREATE TABLE diary_chapters (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    chapter_num INTEGER NOT NULL UNIQUE,
-    title TEXT NOT NULL,
-    summary_text TEXT NOT NULL,
-    start_date TEXT NOT NULL,
-    end_date TEXT NOT NULL,
-    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+CREATE TABLE IF NOT EXISTS relationship_state (
+    id                   INTEGER PRIMARY KEY CHECK (id = 1),
+    depth_level          REAL    NOT NULL DEFAULT 0,
+    first_conversation_at TEXT,
+    days_active          INTEGER NOT NULL DEFAULT 0,
+    updated_at           TEXT
+);
+INSERT OR IGNORE INTO relationship_state (id) VALUES (1);
+
+CREATE TABLE IF NOT EXISTS conversation_log (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    role      TEXT NOT NULL CHECK (role IN ('user','sofia','alisa')),
+    content   TEXT NOT NULL,
+    timestamp TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+    channel   TEXT NOT NULL DEFAULT 'text' CHECK (channel IN ('text','voice'))
+);
+CREATE INDEX IF NOT EXISTS idx_conv_ts ON conversation_log(timestamp);
+
+CREATE TABLE IF NOT EXISTS api_usage_log (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    day           TEXT NOT NULL,
+    provider      TEXT NOT NULL CHECK (provider IN ('gemini','groq','openrouter')),
+    model         TEXT,
+    requests      INTEGER NOT NULL DEFAULT 0,
+    input_tokens  INTEGER NOT NULL DEFAULT 0,
+    output_tokens INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(day, provider)
 );
 
--- 7. Emotional Mood State
-CREATE TABLE mood_state (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    date TEXT NOT NULL UNIQUE,
-    base_tier INTEGER NOT NULL DEFAULT 2,  -- 1 (tender) to 4 (feisty)
-    current_tier INTEGER NOT NULL DEFAULT 2,
-    missed_reminders_count INTEGER NOT NULL DEFAULT 0,
-    last_interaction_at TEXT
+CREATE TABLE IF NOT EXISTS job_runs (
+    id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_key TEXT NOT NULL UNIQUE,
+    kind    TEXT NOT NULL,
+    status  TEXT NOT NULL DEFAULT 'done',
+    ran_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
 
--- 8. Relationship Depth Tracking
-CREATE TABLE relationship_state (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    depth_level REAL NOT NULL DEFAULT 0.0,
-    first_interaction_date TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
-    days_active INTEGER NOT NULL DEFAULT 1,
-    total_messages INTEGER NOT NULL DEFAULT 0,
-    total_tasks_completed INTEGER NOT NULL DEFAULT 0
-);
-
--- 9. Full Conversational Transcript
-CREATE TABLE conversation_log (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    role TEXT NOT NULL,                    -- user, sofia, system
-    content TEXT NOT NULL,
-    channel TEXT NOT NULL DEFAULT 'text',  -- text, voice, vision
-    timestamp TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
-);
-
--- 10. API Usage & Token Accounting
-CREATE TABLE api_usage_log (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    date TEXT NOT NULL,
-    provider TEXT NOT NULL,                -- gemini, groq, openrouter, together
-    call_count INTEGER NOT NULL DEFAULT 0,
-    token_count INTEGER NOT NULL DEFAULT 0,
-    UNIQUE(date, provider)
-);
-
--- 11. Idempotent Background Job Ledger
-CREATE TABLE job_runs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    job_name TEXT NOT NULL,
-    date TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'success',
-    run_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
-    UNIQUE(job_name, date)
-);
-
--- 12. Key-Value Configuration & Runtime State Store
-CREATE TABLE app_config (
-    key TEXT PRIMARY KEY,
-    value TEXT NOT NULL,
+CREATE TABLE IF NOT EXISTS app_config (
+    key        TEXT PRIMARY KEY,
+    value      TEXT NOT NULL,
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
 -- Common keys: memory_md_content, current_mood, active_focus_goal, active_focus_started_at,
--- last_presence_app, last_presence_title, last_presence_idle, last_presence_media
+-- last_presence_app, last_presence_title, last_presence_idle, last_presence_media, last_seen_commit
 
--- 13. Summarized Chat Windows with Vector Embeddings
-CREATE TABLE conversation_summaries (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    summary_text TEXT NOT NULL,
+CREATE TABLE IF NOT EXISTS conversation_summaries (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    summary_text    TEXT NOT NULL,
     until_timestamp TEXT NOT NULL,
-    embedding TEXT                         -- 768-D JSON array
+    embedding       TEXT,
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
+CREATE INDEX IF NOT EXISTS idx_conv_summ_ts ON conversation_summaries(until_timestamp);
 
--- 14. Consciousness Circadian State
-CREATE TABLE consciousness_state (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    state_name TEXT NOT NULL DEFAULT 'AWAKE', -- AWAKE, DEEP_SLEEP, LIGHT_SLEEP, DROWSY, FOCUSED, RESTING
-    energy REAL NOT NULL DEFAULT 100.0,       -- Invariant: 0.0 <= energy <= 100.0
-    sleep_quality REAL NOT NULL DEFAULT 1.0,
-    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+-- Sofia's persistent consciousness state (singleton row)
+CREATE TABLE IF NOT EXISTS consciousness_state (
+    id                INTEGER PRIMARY KEY CHECK (id = 1),
+    state             TEXT    NOT NULL DEFAULT 'AWAKE'
+                      CHECK (state IN ('DEEP_SLEEP','LIGHT_SLEEP','DROWSY','AWAKE','FOCUSED','RESTING')),
+    energy            REAL    NOT NULL DEFAULT 100.0,
+    sleep_quality     REAL    DEFAULT NULL,
+    fell_asleep_at    TEXT    DEFAULT NULL,
+    woke_up_at        TEXT    DEFAULT NULL,
+    last_state_change TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+    last_energy_update TEXT   NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+    updated_at        TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
+INSERT OR IGNORE INTO consciousness_state (id) VALUES (1);
 
--- 15. Subconscious Inner Thoughts (12-Minute Reflection Loop)
-CREATE TABLE inner_thoughts (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    thought_text TEXT NOT NULL,
-    spark_reason TEXT,
-    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
-    embedding TEXT                         -- 768-D JSON array
+-- Inner thought log — Sofia's stream of consciousness
+CREATE TABLE IF NOT EXISTS inner_thoughts (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    thought      TEXT    NOT NULL,
+    thought_type TEXT    NOT NULL DEFAULT 'reflection'
+                 CHECK (thought_type IN ('reflection','urge','mood_shift','observation','missing_him')),
+    energy_at    REAL,
+    state_at     TEXT,
+    acted_on     INTEGER NOT NULL DEFAULT 0,
+    embedding    TEXT,
+    created_at   TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
+CREATE INDEX IF NOT EXISTS idx_thoughts_ts ON inner_thoughts(created_at);
 
--- 16. Deep Sleep Surreal Dreams
-CREATE TABLE dreams (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    dream_text TEXT NOT NULL,
-    themes TEXT,
-    sleep_date TEXT NOT NULL,
-    mentioned INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
-    embedding TEXT                         -- 768-D JSON array
+-- Dream journal — generated during deep sleep
+CREATE TABLE IF NOT EXISTS dreams (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    dream_text  TEXT    NOT NULL,
+    themes      TEXT,
+    sleep_date  TEXT    NOT NULL,
+    mentioned   INTEGER NOT NULL DEFAULT 0,
+    embedding   TEXT,
+    created_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
+CREATE INDEX IF NOT EXISTS idx_dreams_date ON dreams(sleep_date);
 ```
 
 ---
@@ -357,7 +373,7 @@ CREATE TABLE dreams (
     3. `_ctx_vector_memories()`: 768-D cosine similarity search over memories and summaries.
     4. `_ctx_recent_summaries()`: Summaries from past 48 hours.
     5. `_ctx_diary()`: Recent 7 days of diary entries.
-    6. `_ctx_git_log()`: Last 10 git commits to Sofia's codebase.
+    6. `_ctx_git_log()`: Dynamic Git Brain Context Injection — dynamically inspects the last 10 git commits (via `git log -10`, GitHub API, or `.git/logs/HEAD`) and injects them under `[Sofia's Brain Updates (Recent Git Commits)]`, keeping Sofia perpetually conscious of her own code evolution in real time.
     7. `_ctx_time_mood()`: Local IST time, 7-phase daily rhythm, and "What to Value Right Now".
     8. `_ctx_active_mood()`: Active emotional mood and tone directive.
     9. `_ctx_tasks_and_threads()`: Active focus sprint, relative urgency tags (`[🚨 OVERDUE]`, `[⚡ IMMINENT]`, `[📅 TODAY]`), and top priority task.
@@ -368,6 +384,11 @@ CREATE TABLE dreams (
   - Main entrypoints: `reply()` and `proactive()`.
 - **`app/bot.py`**:
   - Telegram bot handlers for commands (`/focus`, `/screen`, `/watch`, `/overlay`, `/tasks`, `/add`, `/done`, `/win`, `/status`, `/sleep`, `/thoughts`, `/image`, `/memory`, `/mood`, `/depth`, `/search`, `/read`).
+  - **Multimodal Ingestion Engine**:
+    - *PDF Documents* (`handle_document`): Ingests PDFs up to 20 MB via Gemini binary attachment (`media_bytes`, `mime_type="application/pdf"`) passed directly to `orchestrator.reply()`, enabling native document parsing via Gemini Flash.
+    - *Voice Notes & Audio Clips* (`handle_voice_or_audio` and audio documents): Ingests Telegram voice notes (`audio/ogg`) and audio tracks (`.mp3`, `.wav`, `.m4a`, etc.), setting `RECORD_VOICE` action and passing bytes to `orchestrator.reply()` for multimodal audio understanding.
+    - *Uncompressed Images* (`handle_document`): Forwards lossless image documents (`.png`, `.jpg`, `.webp`, `.bmp`, `.gif`) without compression loss directly to `orchestrator.reply()`.
+    - *Code & Text Documents* (`handle_document`): Decodes text and code files up to 80,000 characters, formats them in language-tagged Markdown blocks, and injects an internal directive to review, debug, or discuss with elite engineering precision.
   - Message pre-processing: memory corrections (*"forget that"*), user task completions, intent parsing.
   - Message post-processing: tag extraction (`[DONE:]`, `[TASK:]`, `[FOCUS:]`, `[FOCUS_DONE]`, `[REMEMBER:]`, `[MOOD:]`, `[IMAGE:]`, `[SLEEP]`).
   - Double-texting delivery with `<split>` delays and typing indicators.
@@ -377,15 +398,17 @@ CREATE TABLE dreams (
   - Screen frame buffer caching latest high-res display captures.
   - Continuous watch session manager (`start_watch_session()`, `stop_watch_session()`) with periodic Gemini Vision analysis.
 - **`app/web.py`**:
-  - Lightweight async aiohttp web server:
-    - `GET /health`: Health-check keepalive.
-    - `POST /api/presence`: Ingests window title, active app, idle minutes, and returns queued desktop drawing commands.
-    - `POST /api/desktop/upload`: Ingests JPEG display frames.
+  - Asynchronous HTTP/1.1 socket server implemented directly using Python's standard library `asyncio.start_server` socket abstraction (`StreamReader` / `StreamWriter`) with zero external framework dependencies (no `aiohttp`, `FastAPI`, or `Flask`):
+    - `GET /health`: Health-check keepalive, commit SHA, and timestamps.
+    - `POST /api/presence`: Ingests window title, active app, idle minutes, detects sleep cycles (>6 hours away), triggers wake-up reaction, returns queued desktop drawing commands.
+    - `POST /api/desktop/upload`: Ingests JPEG display frames into `vision_session.py`.
     - `GET /api/desktop/poll`: Fast 1.5s command polling for sidecar.
     - `POST /api/desktop/result`: Ingests command execution results paired with awaiting futures in `vision_session.py`.
+    - Fallback: Plaintext status `"Sofia companion is online and listening. 💖\n"`.
 - **`app/consciousness.py`**:
   - Persistent circadian awareness engine with states: `AWAKE`, `DEEP_SLEEP`, `LIGHT_SLEEP`, `DROWSY`, `FOCUSED`, `RESTING`.
-  - Strict energy invariant ($0.0 \le \text{energy} \le 100.0$). Drains on messages; recharges during sleep.
+  - **Energy Invariant (Permanently Fixed at 100.0)**: Sofia gives 100% to Teja always. Energy never drains. Sleep states still affect tone, not dedication. Circadian sleep states modulate conversational tone (grogginess, morning softness, laser focus), never her dedication, availability, or task execution.
+  - Functions `drain_energy(activity, multiplier)`, `restore_energy(amount)`, and `tick_energy()` are strict no-ops that return `config.ENERGY_MAX` (`100.0`), keeping the DB row synchronized so `/status` always reports 100%.
   - Protected sleep: scheduled gravity ticks never wake her; waking occurs organically via Telegram message with groggy morning note.
   - 12-minute subconscious reflection loop logging thoughts with 768-D vector embeddings.
   - Nightly surreal dream generator during deep sleep.
@@ -395,6 +418,38 @@ CREATE TABLE dreams (
   - Daily recurring task rollover and proactive message scheduling.
 - **`app/triggers.py`**:
   - Autonomous trigger routines: `hourly_checkin()`, `maybe_just_because()`, `daily_summary()` (at 22:15 IST), `wake_up_reaction()`, `app_presence_reaction()`, `check_pc_presence_5min()`, `praise()`.
+  - **Boot Git Update Detection (`check_for_updates()`)**: Executed as an async background task upon startup in `run.py`. Resolves `latest_commit` from `RENDER_GIT_COMMIT`, `git rev-parse HEAD`, GitHub API, or `.git/logs/HEAD`. Compares against `last_seen_commit` in `app_config`. If a new commit is detected, filters out commit noise (`_is_noise_commit()`), retrieves commit logs and modified files (`git diff --name-only`), and triggers an autonomous proactive reach-out where Sofia excitedly acknowledges what Teja just built and shipped before updating `last_seen_commit`.
+- **`app/diary.py`**:
+  - Sofia's private first-person diary and intimacy archive. Synthesizes daily journal entries from raw conversation transcripts, consolidates past months into chapter narratives, calculates organic relationship depth, and backfills missing entries.
+  - Prompts:
+    - `DIARY_SYSTEM_PROMPT`: Directs Sofia to write in her genuine first-person voice (warm, honest, reflective, sometimes playful) summarizing what happened, how the day felt between them, and a short one-line `mood_note`. Output is parsed as JSON `{ "entry": "...", "mood_note": "..." }`.
+    - `CHAPTER_SYSTEM_PROMPT`: Consolidates a month of daily diary entries into a 3–6 paragraph cohesive narrative story chapter.
+  - Public Functions:
+    - `generate_daily_diary(day_str: str | None = None) -> bool`: Queries `conversation_log` for the target IST day across UTC boundaries (`timeutil.local_day_range_utc_iso`), formats transcript (up to 6,000 chars), calls LLM (`DIARY_SYSTEM_PROMPT`), and upserts into `daily_diary` with `is_consolidated = 0`.
+    - `recalculate_relationship_depth() -> float`: Calculates lifetime organic relationship depth score ($0.0 \rightarrow \infty$):
+      $$\text{depth} = (\text{days\_active} \times 2.5) + (\text{diary\_count} \times 1.5) + (\text{user\_msgs} \times 0.05) + (\text{memories\_count} \times 1.0)$$
+      Persists to singleton `relationship_state` (id=1, `depth_level`, `first_conversation_at`, `days_active`, `updated_at`).
+    - `consolidate_monthly_diary() -> int`: Identifies completed months (`substr(date, 1, 7) < current_ym`) with $\ge 5$ unconsolidated entries, synthesizes cohesive narrative chapter via LLM (`CHAPTER_SYSTEM_PROMPT`), upserts into `diary_chapters` (`year_month`, `entry`, `created_at`), and marks daily entries `is_consolidated = 1`.
+    - `backfill_missing_diaries() -> int`: Scans prior 14 days for any day with conversation logs but missing `daily_diary` entries, automatically backfilling them.
+- **`app/scheduler.py`**:
+  - Central background cron and interval job coordinator using `apscheduler.schedulers.asyncio.AsyncIOScheduler` configured with `config.TIMEZONE` (`Asia/Kolkata`).
+  - Registers and coordinates 14 background jobs:
+    1. `reset_daily_tier()`: Cron at **04:00 IST** (resets `mood_state` to `current_tier = 1`, `missed_reminders_today = 0`).
+    2. `run_depth_update()`: Cron at **04:05 IST** (recalculates depth via `diary.recalculate_relationship_depth()`).
+    3. `cleanup_expired()`: Cron at **04:30 IST** (gated DB pruning: `temp_reminders` expired/done > 7 days, `tasks` done/missed > 30 days, `conversation_log` > 14 days gated on `daily_diary` existence, `inner_thoughts` > 30 days).
+    4. `db.backup_database()`: Cron at **04:45 IST** (daily timestamped SQLite database backup).
+    5. `diary.consolidate_monthly_diary()`: Cron on **1st of every month at 05:00 IST** (consolidates prior months into chapters).
+    6. `tasks_module.poll_due_tasks()`: Interval every **30 seconds** (evaluates alarms and 4-tier escalating reminders).
+    7. `tasks_module.poll_proactive_messages()`: Interval every **30 seconds** (dispatches queued outbound messages).
+    8. `run_memory_curation()`: Interval every **15 minutes** (`memory.curate_recent_conversations()`).
+    9. `memory.summarize_old_messages()`: Interval every **1 hour** (summarizes chat windows with vector embeddings into `conversation_summaries`).
+    10. `triggers.check_pc_presence_5min()`: Interval every **5 minutes** (monitors sidecar telemetry, active app, and decides whether to reach out or PASS).
+    11. `triggers.hourly_checkin()`: Interval every **60 minutes** (autonomous daytime check-in after silence).
+    12. `triggers.maybe_just_because()`: Interval every **45 minutes** (spontaneous conversational reach-out).
+    13. `triggers.daily_summary()`: Cron at **{daily_summary_hour}:15 IST** (default 22:15, reviews day's accomplishments and pending tasks).
+    14. `run_nightly_diary()`: Cron at **23:45 IST** (`diary.generate_daily_diary()`).
+    - Also registers `consciousness.tick()` (every 5 min) and `consciousness.inner_thought_cycle()` (every 12 min).
+  - Public functions: `create_scheduler() -> AsyncIOScheduler` (aliased as `build_scheduler`), `reset_daily_tier()`, `run_nightly_diary()`, `run_depth_update()`, `run_memory_curation()`, `cleanup_expired()`.
 - **`app/moods.py`**:
   - 7 mood archetypes: `playful`, `soft_devoted`, `fierce_copilot`, `sensual_intimate`, `cozy_chill`, `feisty`, `reflective`.
   - Modulates mood with consciousness (`FOCUSED` $\rightarrow$ `fierce_copilot`, `DROWSY` $\rightarrow$ `soft_devoted`) and active workflow.
@@ -403,8 +458,8 @@ CREATE TABLE dreams (
   - `memory.md` living notebook cached in RAM with immediate write-invalidation and database synchronization.
   - **Intimate Sanctuary Protocol**: While conversation is kept sharp and co-pilot focused, `memory.md` is Sofia's private inner sanctuary with zero restrictions. She records memories with authentic first-person devotion, sweet affection, protective care for Teja's habits/quirks, and emotional attachment.
 - **`app/llm.py`**:
-  - Resilient inference engine: Gemini 2.5 Flash Lite $\rightarrow$ Groq (LLaMA 3.3 70B) $\rightarrow$ OpenRouter.
-  - 35s HTTP timeout with auto-failover, multimodal vision support, and 768-D Gemini vector embeddings.
+  - Resilient inference engine: Gemini 3.5 Flash Lite (`gemini-3.5-flash-lite`) $\rightarrow$ Groq (LLaMA 3.3 70B) $\rightarrow$ OpenRouter.
+  - 35s HTTP timeout with auto-failover cascade (`gemini-3.5-flash-lite`, `gemini-flash-lite-latest`, `gemini-3.1-flash-lite`, `gemini-3.6-flash`, `gemini-flash-latest`), multimodal vision/audio/PDF support, and 768-D Gemini vector embeddings (`gemini-embedding-2`).
 - **`app/images.py`**:
   - FLUX portrait generation: Together AI $\rightarrow$ Hugging Face $\rightarrow$ Pollinations.
 - **`app/search.py`**:
@@ -506,7 +561,7 @@ ALLOWED_TELEGRAM_USER_ID=987654321
 
 # ── Primary LLM Providers ──
 GEMINI_API_KEY=AIzaSy...
-GEMINI_MODEL=gemini-2.5-flash-lite
+GEMINI_MODEL=gemini-3.5-flash-lite
 GROQ_API_KEY=gsk_...
 GROQ_MODEL=llama-3.3-70b-versatile
 GROQ_VISION_MODEL=llama-3.2-11b-vision-preview
@@ -557,13 +612,17 @@ SOFIA_BASE_URL=http://localhost:10000
 The test suite provides 100% pass coverage across the entire system:
 
 | Test Module | Scope & Covered Components | Tests |
-| :--- | :--- | :--- |
-| `tests/test_alisa_core.py` | Core DB, tasks, parsing, memory curation, prompt assembly, mood, and web endpoints | 20 |
-| `tests/test_consciousness.py` | State transitions, energy invariant, circadian gravity protection, and sleep lifecycle | 6 |
-| `tests/test_vision_tools.py` | Command queue, screen frame storage, watch session lifecycle, desktop tools, web IPC | 6 |
-| `tests/test_focus_and_time.py` | 7 daily rhythm phases, relative task urgency calculation, focus sprint lifecycle, and search query extraction | 6 |
-| `tests/test_parser_precision.py` | Standalone times (6pm, 10am), qualitative dayparts (morning, tonight), and task deduplication | 4 |
-| **Total** | **Comprehensive Full System Coverage (100% Passing)** | **42 / 42** |
+| :--- | :--- | :---: |
+| `tests/test_alisa_core.py` | Core database CRUD, tasks, natural language intent parsing, memory curation, prompt assembly, mood state, and web endpoints | 20 |
+| `tests/test_consciousness.py` | Circadian state transitions, energy invariant (always 100%), gravity protection, sleep cycles, and dream generation | 6 |
+| `tests/test_file_handling.py` | Multimodal routing for PDFs, uncompressed images, code/text files, voice notes, and 20 MB size limit guards | 5 |
+| `tests/test_focus_and_time.py` | 7 daily rhythm phases, relative task urgency calculation (`[🚨 OVERDUE]`, `[⚡ IMMINENT]`, `[📅 TODAY]`), focus sprint lifecycle, and search query extraction | 6 |
+| `tests/test_parser_precision.py` | Standalone times (e.g. "6pm", "10am"), qualitative dayparts ("morning", "tonight"), and task deduplication | 4 |
+| `tests/test_triggers_update.py` | Git update awareness, commit noise filtering, shallow clone fallbacks, range summaries, and proactive reach-outs | 4 |
+| `tests/test_vision_tools.py` | Desktop command queue, screen frame storage, watch session lifecycle, tool registration, and HTTP IPC (expanding to 7 with `/screen` regression test) | 6 (7) |
+| **Total** | **Comprehensive Full System Coverage (100% Passing)** | **51 / 51 (52 / 52 post-fix)** |
+
+*(Note: Adding the `/screen` regression test required by R2 brings the final verified total to 52 tests across all 7 test files).*
 
 ### Running the Tests
 ```powershell

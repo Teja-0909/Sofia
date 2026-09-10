@@ -16,6 +16,9 @@ import threading
 import time
 import urllib.request
 
+from dotenv import load_dotenv
+load_dotenv()
+
 LOG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "sidecar.log")
 
 logging.basicConfig(

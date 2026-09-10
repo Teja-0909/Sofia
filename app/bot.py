@@ -875,7 +875,7 @@ async def cmd_screen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     try:
         reply = await orchestrator.reply(
             "Here is what is currently on my screen.",
-            extra_system_note=note,
+            system_note=note,
             image_bytes=frame,
             mime_type="image/jpeg",
         )

@@ -26,3 +26,4 @@ env/
 *.swp
 sidecar.log
 memory.md
+.agents/
