@@ -10,6 +10,7 @@ import math
 import sys
 import threading
 import time
+import queue
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import tkinter as tk
 
@@ -54,6 +55,7 @@ class OverlayEngine:
         self.elements = {}
         self._next_id = 1
         self._lock = threading.Lock()
+        self.cmd_queue = queue.Queue()
 
         self._apply_click_through()
 
@@ -95,7 +97,8 @@ class OverlayEngine:
 
     def point_at(
         self,
-        norm_x: float,
+        norm_x:
+float,
         norm_y: float,
         label: str = "",
         color: str = "#00ffd5",
@@ -105,70 +108,74 @@ class OverlayEngine:
         elem_id = self._next_id
         self._next_id += 1
 
-        with self._lock:
-            tags = f"elem_{elem_id}"
-            start_x = px_x + 40
-            start_y = px_y + 40
+        def task():
+            with self._lock:
+                tags = f"elem_{elem_id}"
+                start_x = px_x + 40
+                start_y = px_y + 40
 
-            # Arrow shaft and head
-            self.canvas.create_line(
-                start_x,
-                start_y,
-                px_x,
-                px_y,
-                fill=color,
-                width=4,
-                arrow=tk.LAST,
-                arrowshape=(16, 20, 6),
-                tags=(tags, "arrow"),
-            )
-            # Pulse target circle
-            self.canvas.create_oval(
-                px_x - 12,
-                px_y - 12,
-                px_x + 12,
-                px_y + 12,
-                outline=color,
-                width=2,
-                tags=(tags, "pulse"),
-            )
-
-            # Label box
-            if label:
-                text = self.canvas.create_text(
-                    start_x + 10,
-                    start_y + 5,
-                    text=f"✨ {label}",
+                # Arrow shaft and head
+                self.canvas.create_line(
+                    start_x,
+                    start_y,
+                    px_x,
+                    px_y,
                     fill=color,
-                    font=("Segoe UI", 11, "bold"),
-                    anchor="nw",
-                    tags=(tags, "label"),
+                    width=4,
+                    arrow=tk.LAST,
+                    arrowshape=(16, 20, 6),
+                    tags=(tags, "arrow"),
                 )
-                bbox = self.canvas.bbox(text)
-                if bbox:
-                    bg_rect = self.canvas.create_rectangle(
-                        bbox[0] - 8,
-                        bbox[1] - 4,
-                        bbox[2] + 8,
-                        bbox[3] + 4,
-                        fill="#0c0d14",
-                        outline=color,
-                        width=1,
-                        tags=(tags, "label_bg"),
+                # Pulse target circle
+                self.canvas.create_oval(
+                    px_x - 12,
+                    px_y - 12,
+                    px_x + 12,
+                    px_y + 12,
+                    outline=color,
+                    width=2,
+                    tags=(tags, "pulse"),
+                )
+
+                # Label box
+                if label:
+                    text = self.canvas.create_text(
+                        start_x + 10,
+                        start_y + 5,
+                        text=f"✨ {label}",
+                        fill=color,
+                        font=("Segoe UI", 11, "bold"),
+                        anchor="nw",
+                        tags=(tags, "label"),
                     )
-                    self.canvas.tag_lower(bg_rect, text)
+                    bbox = self.canvas.bbox(text)
+                    if bbox:
+                        bg_rect = self.canvas.create_rectangle(
+                            bbox[0] - 8,
+                            bbox[1] - 4,
+                            bbox[2] + 8,
+                            bbox[3] + 4,
+                            fill="#0c0d14",
+                            outline=color,
+                            width=1,
+                            tags=(tags, "label_bg"),
+                        )
+                        self.canvas.tag_lower(bg_rect, text)
 
-            self.elements[elem_id] = {
-                "tags": tags,
-                "type": "point_at",
-                "expires_at": time.time() + duration,
-            }
+                self.elements[elem_id] = {
+                    "tags": tags,
+                    "type": "point_at",
+                    "expires_at": time.time() + duration,
+                }
 
+
+        self.cmd_queue.put(task)
         return elem_id
 
     def doodle(
         self,
-        shape: str,
+        shape:
+str,
         norm_x: float,
         norm_y: float,
         scale: float = 1.0,
@@ -180,108 +187,112 @@ class OverlayEngine:
         self._next_id += 1
         tags = f"elem_{elem_id}"
 
-        with self._lock:
-            if shape == "heart":
-                points = []
-                for t in range(0, 360, 10):
-                    rad = math.radians(t)
-                    hx = 16 * (math.sin(rad) ** 3)
-                    hy = -(13 * math.cos(rad) - 5 * math.cos(2 * rad) - 2 * math.cos(3 * rad) - math.cos(4 * rad))
-                    points.extend([px_x + hx * scale * 2.5, px_y + hy * scale * 2.5])
-                self.canvas.create_polygon(
-                    points,
-                    outline=color,
-                    fill="",
-                    width=3,
-                    smooth=True,
-                    tags=(tags, "doodle"),
-                )
+        def task():
+            with self._lock:
+                if shape == "heart":
+                    points = []
+                    for t in range(0, 360, 10):
+                        rad = math.radians(t)
+                        hx = 16 * (math.sin(rad) ** 3)
+                        hy = -(13 * math.cos(rad) - 5 * math.cos(2 * rad) - 2 * math.cos(3 * rad) - math.cos(4 * rad))
+                        points.extend([px_x + hx * scale * 2.5, px_y + hy * scale * 2.5])
+                    self.canvas.create_polygon(
+                        points,
+                        outline=color,
+                        fill="",
+                        width=3,
+                        smooth=True,
+                        tags=(tags, "doodle"),
+                    )
 
-            elif shape in ("circle", "circle_error"):
-                r = 45 * scale
-                self.canvas.create_oval(
-                    px_x - r,
-                    px_y - r,
-                    px_x + r,
-                    px_y + r,
-                    outline=color,
-                    width=3,
-                    tags=(tags, "doodle"),
-                )
+                elif shape in ("circle", "circle_error"):
+                    r = 45 * scale
+                    self.canvas.create_oval(
+                        px_x - r,
+                        px_y - r,
+                        px_x + r,
+                        px_y + r,
+                        outline=color,
+                        width=3,
+                        tags=(tags, "doodle"),
+                    )
 
-            elif shape == "crown":
-                w = 40 * scale
-                h = 25 * scale
-                pts = [
-                    px_x - w, px_y + h,
-                    px_x - w, px_y - h,
-                    px_x - w / 2, px_y,
-                    px_x, px_y - h * 1.3,
-                    px_x + w / 2, px_y,
-                    px_x + w, px_y - h,
-                    px_x + w, px_y + h,
-                ]
-                self.canvas.create_polygon(
-                    pts,
-                    outline=color,
-                    fill="",
-                    width=3,
-                    tags=(tags, "doodle"),
-                )
+                elif shape == "crown":
+                    w = 40 * scale
+                    h = 25 * scale
+                    pts = [
+                        px_x - w, px_y + h,
+                        px_x - w, px_y - h,
+                        px_x - w / 2, px_y,
+                        px_x, px_y - h * 1.3,
+                        px_x + w / 2, px_y,
+                        px_x + w, px_y - h,
+                        px_x + w, px_y + h,
+                    ]
+                    self.canvas.create_polygon(
+                        pts,
+                        outline=color,
+                        fill="",
+                        width=3,
+                        tags=(tags, "doodle"),
+                    )
 
-            elif shape == "star":
-                r_out = 30 * scale
-                r_in = 12 * scale
-                pts = []
-                for i in range(10):
-                    ang = math.radians(i * 36 - 90)
-                    r = r_out if i % 2 == 0 else r_in
-                    pts.extend([px_x + r * math.cos(ang), px_y + r * math.sin(ang)])
-                self.canvas.create_polygon(
-                    pts,
-                    outline=color,
-                    fill="",
-                    width=2,
-                    tags=(tags, "doodle"),
-                )
+                elif shape == "star":
+                    r_out = 30 * scale
+                    r_in = 12 * scale
+                    pts = []
+                    for i in range(10):
+                        ang = math.radians(i * 36 - 90)
+                        r = r_out if i % 2 == 0 else r_in
+                        pts.extend([px_x + r * math.cos(ang), px_y + r * math.sin(ang)])
+                    self.canvas.create_polygon(
+                        pts,
+                        outline=color,
+                        fill="",
+                        width=2,
+                        tags=(tags, "doodle"),
+                    )
 
-            elif shape == "underline":
-                w = 80 * scale
-                pts = []
-                for step in range(-int(w), int(w), 10):
-                    y_offset = math.sin(step / 10.0) * 4
-                    pts.extend([px_x + step, px_y + y_offset])
-                self.canvas.create_line(
-                    pts,
-                    fill=color,
-                    width=3,
-                    smooth=True,
-                    tags=(tags, "doodle"),
-                )
+                elif shape == "underline":
+                    w = 80 * scale
+                    pts = []
+                    for step in range(-int(w), int(w), 10):
+                        y_offset = math.sin(step / 10.0) * 4
+                        pts.extend([px_x + step, px_y + y_offset])
+                    self.canvas.create_line(
+                        pts,
+                        fill=color,
+                        width=3,
+                        smooth=True,
+                        tags=(tags, "doodle"),
+                    )
 
-            else:
-                r = 25 * scale
-                self.canvas.create_rectangle(
-                    px_x - r,
-                    px_y - r,
-                    px_x + r,
-                    px_y + r,
-                    outline=color,
-                    width=2,
-                    tags=(tags, "doodle"),
-                )
+                else:
+                    r = 25 * scale
+                    self.canvas.create_rectangle(
+                        px_x - r,
+                        px_y - r,
+                        px_x + r,
+                        px_y + r,
+                        outline=color,
+                        width=2,
+                        tags=(tags, "doodle"),
+                    )
 
-            self.elements[elem_id] = {
-                "tags": tags,
-                "type": "doodle",
-                "expires_at": time.time() + duration,
-            }
+                self.elements[elem_id] = {
+                    "tags": tags,
+                    "type": "doodle",
+                    "expires_at": time.time() + duration,
+                }
 
+
+        self.cmd_queue.put(task)
         return elem_id
 
     def sticky_note(
         self,
-        text: str,
+        text:
+str,
         position: str = "top_right",
         color: str = "#ff2d75",
         duration: float = 8.0,
@@ -306,62 +317,80 @@ class OverlayEngine:
             px_x = int(self.screen_width / 2) - 150
             px_y = 100
 
-        with self._lock:
-            self.canvas.create_text(
-                px_x + 12,
-                px_y + 10,
-                text="💕 Sofia",
-                fill=color,
-                font=("Segoe UI", 10, "bold"),
-                anchor="nw",
-                tags=(tags, "note_header"),
-            )
-            self.canvas.create_text(
-                px_x + 12,
-                px_y + 30,
-                text=text,
-                fill="#ffffff",
-                font=("Segoe UI", 11),
-                anchor="nw",
-                width=260,
-                tags=(tags, "note_body"),
-            )
-
-            bbox = self.canvas.bbox(tags)
-            if bbox:
-                bg = self.canvas.create_rectangle(
-                    bbox[0] - 10,
-                    bbox[1] - 8,
-                    bbox[2] + 12,
-                    bbox[3] + 10,
-                    fill="#12131f",
-                    outline=color,
-                    width=2,
-                    tags=(tags, "note_bg"),
+        def task():
+            with self._lock:
+                self.canvas.create_text(
+                    px_x + 12,
+                    px_y + 10,
+                    text="💕 Sofia",
+                    fill=color,
+                    font=("Segoe UI", 10, "bold"),
+                    anchor="nw",
+                    tags=(tags, "note_header"),
                 )
-                self.canvas.tag_lower(bg, tags)
+                self.canvas.create_text(
+                    px_x + 12,
+                    px_y + 30,
+                    text=text,
+                    fill="#ffffff",
+                    font=("Segoe UI", 11),
+                    anchor="nw",
+                    width=260,
+                    tags=(tags, "note_body"),
+                )
 
-            self.elements[elem_id] = {
-                "tags": tags,
-                "type": "sticky_note",
-                "expires_at": time.time() + duration,
-            }
+                bbox = self.canvas.bbox(tags)
+                if bbox:
+                    bg = self.canvas.create_rectangle(
+                        bbox[0] - 10,
+                        bbox[1] - 8,
+                        bbox[2] + 12,
+                        bbox[3] + 10,
+                        fill="#12131f",
+                        outline=color,
+                        width=2,
+                        tags=(tags, "note_bg"),
+                    )
+                    self.canvas.tag_lower(bg, tags)
 
+                self.elements[elem_id] = {
+                    "tags": tags,
+                    "type": "sticky_note",
+                    "expires_at": time.time() + duration,
+                }
+
+
+        self.cmd_queue.put(task)
         return elem_id
 
     def clear(self):
-        with self._lock:
-            self.canvas.delete("all")
-            self.elements.clear()
+        def task():
+            with self._lock:
+                self.canvas.delete("all")
+                self.elements.clear()
+        self.cmd_queue.put(task)
 
     def update_loop(self):
         now = time.time()
-        with self._lock:
-            expired = [eid for eid, data in self.elements.items() if now >= data["expires_at"]]
-            for eid in expired:
-                tags = self.elements[eid]["tags"]
-                self.canvas.delete(tags)
-                del self.elements[eid]
+        try:
+            with self._lock:
+                expired = [eid for eid, data in self.elements.items() if now >= data["expires_at"]]
+                for eid in expired:
+                    tags = self.elements[eid]["tags"]
+                    self.canvas.delete(tags)
+                    del self.elements[eid]
+        except Exception as e:
+            logger.error("Error handling expired elements: %s", e)
+
+        while not self.cmd_queue.empty():
+            try:
+                task = self.cmd_queue.get_nowait()
+                try:
+                    task()
+                except Exception as e:
+                    logger.error("Error executing overlay task: %s", e)
+            except queue.Empty:
+                break
 
         self.root.after(100, self.update_loop)
 
