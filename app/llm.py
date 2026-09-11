@@ -290,7 +290,19 @@ async def _call_openai_compatible(
         else:
             msg_payload = {"role": m["role"], "content": m["content"]}
             if "tool_calls" in m:
-                msg_payload["tool_calls"] = m["tool_calls"]
+                clean_tool_calls = []
+                for tc in m["tool_calls"]:
+                    func = tc.get("function", {})
+                    clean_tc = {
+                        "id": tc.get("id"),
+                        "type": tc.get("type", "function"),
+                        "function": {
+                            "name": func.get("name"),
+                            "arguments": func.get("arguments")
+                        }
+                    }
+                    clean_tool_calls.append(clean_tc)
+                msg_payload["tool_calls"] = clean_tool_calls
             payload_messages.append(msg_payload)
 
     json_payload = {

@@ -9,7 +9,7 @@ BASE_DIR = pathlib.Path(__file__).resolve().parent.parent
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
 ALLOWED_USER_ID = int(os.environ.get("ALLOWED_TELEGRAM_USER_ID", "0") or 0)
-DB_PATH = os.environ.get("DB_PATH", str(BASE_DIR / "alisa.db"))
+DB_PATH = os.environ.get("DB_PATH") or str(BASE_DIR / "alisa.db")
 
 
 def _normalize_tz(tz_name: str) -> str:
