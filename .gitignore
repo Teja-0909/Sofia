@@ -27,3 +27,8 @@ env/
 sidecar.log
 memory.md
 .agents/
+
+# Debug & test artifacts
+test_tools_out*.txt
+scripts/test_*.py
+scripts/patch_*.py
