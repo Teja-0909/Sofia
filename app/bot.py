@@ -672,6 +672,54 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await _process_and_send_reply(update, context, raw_reply, user_text=prompt_text)
         return
 
+    # 1b. Word Documents (.docx)
+    if ext == ".docx" or mime_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+        prompt_text = user_caption or f"Please read and analyze this Word document: '{file_name}'"
+        system_note = (
+            f"[Internal event: Teja shared a Word document named '{file_name}' ({file_size/1024:.1f} KB). "
+            "Read, analyze, summarize, or answer his questions about the contents.]"
+        )
+        try:
+            try:
+                import io
+                import zipfile
+                import xml.etree.ElementTree as ET
+                import re
+                
+                docx_text = ""
+                with zipfile.ZipFile(io.BytesIO(file_bytes)) as docx:
+                    xml_content = docx.read('word/document.xml')
+                    docx_text = " ".join(re.findall(r'<w:t[^>]*>(.*?)</w:t>', xml_content.decode('utf-8')))
+                
+                max_chars = 80_000
+                if len(docx_text) > max_chars:
+                    docx_text = docx_text[:max_chars] + f"\n\n[... Truncated: showing first {max_chars} chars of {len(docx_text)} total characters ...]"
+                
+                combined_prompt = (
+                    f"[Teja shared Word doc: '{file_name}' ({file_size/1024:.1f} KB)]\n"
+                    f"```text\n"
+                    f"{docx_text}\n"
+                    f"```\n\n"
+                    + prompt_text
+                )
+                raw_reply = await orchestrator.reply(
+                    combined_prompt,
+                    system_note=system_note,
+                )
+            except Exception as docx_exc:
+                logger.warning("DOCX extraction failed, falling back to native handling: %s", docx_exc)
+                raw_reply = await orchestrator.reply(
+                    prompt_text,
+                    system_note=system_note,
+                    media_bytes=file_bytes,
+                    mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                )
+        except Exception as exc:
+            logger.error("DOCX processing error: %s", exc)
+            raw_reply = orchestrator.FALLBACK_MESSAGE
+        await _process_and_send_reply(update, context, raw_reply, user_text=prompt_text)
+        return
+
     # 2. Images sent as Documents (uncompressed)
     if ext in IMAGE_EXTENSIONS or mime_type.startswith("image/"):
         actual_mime = mime_type if mime_type.startswith("image/") else f"image/{ext.lstrip('.')}"

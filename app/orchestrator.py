@@ -787,10 +787,14 @@ async def _generate(system: str, messages: list[dict], user_text: str = "") -> s
                 return _clean_asterisks(text)
                 
             # Smart MoA Bypass
-            if len(user_text) < 150 and '\n' not in user_text and '```' not in user_text:
+            if len(user_text) < 150 and '\n' not in user_text and '```' not in user_text and '?' not in user_text:
                 words = set(re.findall(r'\b\w+\b', user_text.lower()))
-                complex_triggers = {'why', 'how', 'what', 'code', 'bug', 'error', 'fix', 'test', 'run', 'make', 'build', 'analyze', 'explain', 'search'}
-                if not words.intersection(complex_triggers):
+                technical_triggers = {
+                    'code', 'bug', 'error', 'fix', 'test', 'run', 'make', 'build', 'analyze', 'explain',
+                    'search', 'debug', 'issue', 'problem', 'solve', 'implement', 'script', 'function',
+                    'database', 'sql', 'query', 'app', 'system', 'review', 'check', 'look'
+                }
+                if not words.intersection(technical_triggers):
                     return await _verify_and_refine_draft(text, user_text, system, current_messages)
                 
             directive = _generate_situational_directive(system, current_messages, user_text)
