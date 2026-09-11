@@ -6,5 +6,5 @@ python-dotenv>=1.0
 tzdata
 libsql-client>=0.3.0
 ddgs>=9.0
-
+pymupdf>=1.22
 

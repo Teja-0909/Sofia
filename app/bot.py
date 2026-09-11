@@ -636,12 +636,36 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             "Read, analyze, summarize, or answer his questions about the contents with deep clarity and technical sharpness.]"
         )
         try:
-            raw_reply = await orchestrator.reply(
-                prompt_text,
-                system_note=system_note,
-                media_bytes=file_bytes,
-                mime_type="application/pdf",
-            )
+            try:
+                import fitz
+                doc_pdf = fitz.open(stream=file_bytes, filetype="pdf")
+                pdf_text = ""
+                for page in doc_pdf:
+                    pdf_text += page.get_text()
+                doc_pdf.close()
+                max_chars = 80_000
+                if len(pdf_text) > max_chars:
+                    pdf_text = pdf_text[:max_chars] + f"\n\n[... Truncated: showing first {max_chars} chars of {len(pdf_text)} total characters ...]"
+                
+                combined_prompt = (
+                    f"[Teja shared PDF: '{file_name}' ({file_size/1024:.1f} KB)]\n"
+                    f"```text\n"
+                    f"{pdf_text}\n"
+                    f"```\n\n"
+                    + prompt_text
+                )
+                raw_reply = await orchestrator.reply(
+                    combined_prompt,
+                    system_note=system_note,
+                )
+            except Exception as pdf_exc:
+                logger.warning("PyMuPDF extraction failed, falling back to LLM native vision: %s", pdf_exc)
+                raw_reply = await orchestrator.reply(
+                    prompt_text,
+                    system_note=system_note,
+                    media_bytes=file_bytes,
+                    mime_type="application/pdf",
+                )
         except Exception as exc:
             logger.error("PDF processing error: %s", exc)
             raw_reply = orchestrator.FALLBACK_MESSAGE
