@@ -24,7 +24,7 @@ TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "search_web",
+            "name": "sofia_search_web",
             "description": "Searches the web and returns a list of titles, snippets, and URLs. Use this first to find relevant links.",
             "parameters": {
                 "type": "object",
@@ -867,7 +867,7 @@ async def _generate(system: str, messages: list[dict], user_text: str = "") -> s
                     if not isinstance(args, dict):
                         args = {}
                     result = ""
-                    if name == "search_web":
+                    if name == "sofia_search_web" or name == "search_web":
                         search_results = await search_module.search_web(args["query"])
                         if not search_results:
                             result = "No useful results found for this query."

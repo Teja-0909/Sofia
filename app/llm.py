@@ -113,12 +113,17 @@ async def _call_gemini(
                         except Exception:
                             fn_args = {}
                     if fn_name:
-                        parts.append({
-                            "functionCall": {
+                        if "_raw_fc" in fn:
+                            fc = fn["_raw_fc"]
+                        else:
+                            fc = {
                                 "name": fn_name,
                                 "args": fn_args if isinstance(fn_args, dict) else {"arg": fn_args}
                             }
-                        })
+                        part_dict = {"functionCall": fc}
+                        if "thoughtSignature" in fn:
+                            part_dict["thoughtSignature"] = fn["thoughtSignature"]
+                        parts.append(part_dict)
             media_data = m.get("media_bytes") or m.get("image_bytes")
             if media_data:
                 b64_str = base64.b64encode(media_data).decode("utf-8")
@@ -215,13 +220,17 @@ async def _call_gemini(
     for part in parts:
         if "functionCall" in part:
             fc = part["functionCall"]
+            fn_dict = {
+                "name": fc["name"],
+                "arguments": json.dumps(fc.get("args", {})),
+                "_raw_fc": fc
+            }
+            if "thoughtSignature" in part:
+                fn_dict["thoughtSignature"] = part["thoughtSignature"]
             tool_calls.append({
                 "id": "call_gemini_" + fc["name"],
                 "type": "function",
-                "function": {
-                    "name": fc["name"],
-                    "arguments": json.dumps(fc.get("args", {}))
-                }
+                "function": fn_dict
             })
 
     usage_raw = data.get("usageMetadata", {})
