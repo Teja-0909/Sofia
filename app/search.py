@@ -200,52 +200,97 @@ async def search_web(query: str, max_results: int = 5) -> list[dict]:
     return results
 
 
-async def deep_react_research(query: str, max_pages: int = 3) -> str:
-    """Multi-turn ReAct research agent: searches, verifies quality, re-queries authoritative domains, and scrapes tables."""
-    # Step 1: Initial search
-    raw_results = await search_web(query, max_results=5)
+async def react_research_loop(query: str, context: str = "") -> str:
+    """Multi-turn ReAct research agent: plans, searches, evaluates, loops, and scrapes top results."""
+    from . import llm
+    import json
+    
+    plan_schema = {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "search_plan",
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "queries": {"type": "array", "items": {"type": "string"}}
+                },
+                "required": ["queries"]
+            }
+        }
+    }
+    
+    eval_schema = {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "search_evaluation",
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "sufficient": {"type": "boolean"},
+                    "follow_up_queries": {"type": "array", "items": {"type": "string"}}
+                },
+                "required": ["sufficient", "follow_up_queries"]
+            }
+        }
+    }
 
-    # Step 2: Quality verification & Self-Correction (Re-query if results lack concrete detail)
-    has_concrete_results = any(
-        any(k in r.get("snippet", "").lower() for k in ("won", "p1", "podium", "winner", "victory", "champion", "results", "guide", "import", "class", "def"))
-        for r in raw_results
-    )
-    if not has_concrete_results and len(raw_results) > 0:
-        # Re-query with authoritative target terms
-        fallback_query = f"{query} race results classification official"
-        extra_results = await search_web(fallback_query, max_results=3)
-        if extra_results:
-            raw_results = extra_results + raw_results
-
-    if not raw_results:
-        return ""
-
-    # Step 3: Pick authoritative destination URLs (Wikipedia, Formula1, Motorsport, Official Docs)
+    all_results = []
     urls_to_browse = []
-    for r in raw_results:
+    
+    # Step 1: Plan
+    plan_msg = [{"role": "user", "content": f"User question: {query}\nContext: {context}\nPlan 2-3 specific search queries to find the answer."}]
+    plan_resp, _ = await llm.chat("You are a search planner. Return a list of queries.", plan_msg, response_format=plan_schema)
+    try:
+        current_queries = json.loads(plan_resp).get("queries", [query])
+    except Exception:
+        current_queries = [query]
+        
+    for iteration in range(2):
+        # Step 2: Search
+        search_tasks = [search_web(q, max_results=3) for q in current_queries]
+        search_results_list = await asyncio.gather(*search_tasks)
+        for r_list in search_results_list:
+            all_results.extend(r_list)
+            
+        # Compile text for evaluation
+        results_text = "\n".join(f"[{r.get('title')}]({r.get('url')}): {r.get('snippet')}" for r in all_results[:10])
+        
+        # Step 3: Evaluate
+        eval_msg = [{"role": "user", "content": f"Question: {query}\n\nSearch Results:\n{results_text}\n\nDo we have enough info? If not, provide follow-up queries."}]
+        eval_resp, _ = await llm.chat("You are a search evaluator. Determine if the search results sufficiently answer the question.", eval_msg, response_format=eval_schema)
+        try:
+            eval_data = json.loads(eval_resp)
+            if eval_data.get("sufficient") or iteration == 1:
+                break
+            current_queries = eval_data.get("follow_up_queries", [])
+            if not current_queries:
+                break
+        except Exception:
+            break
+            
+    # Step 4: Scrape top 2 unique URLs
+    for r in all_results:
         u = r.get("url", "")
-        if u and not any(bad in u.lower() for bad in ("bing.com/aclick", "youtube.com", "instagram.com", "tiktok.com", "facebook.com", "twitter.com", "x.com")):
+        if u and not any(bad in u.lower() for bad in ("bing.com", "youtube.com", "instagram.com", "tiktok.com", "facebook.com", "twitter.com", "x.com")):
             if u not in urls_to_browse:
                 urls_to_browse.append(u)
-            if len(urls_to_browse) >= max_pages:
+            if len(urls_to_browse) >= 2:
                 break
-
-    # Step 4: Scrape destination pages and DOM tables concurrently
+                
     page_tasks = [fetch_page_content(u, max_chars=3500) for u in urls_to_browse]
     page_contents = await asyncio.gather(*page_tasks, return_exceptions=True)
-
-    # Step 5: Synthesize comprehensive research document
+    
+    # Step 5: Synthesize
     sections = []
     sections.append("### Search Index & Snippets:")
-    for r in raw_results[:5]:
+    for r in all_results[:10]:
         title = r.get("title") or "Source"
         sections.append(f"• **{title}** ({r.get('url')}):\n  {r.get('snippet')}")
-
+        
     for url, content in zip(urls_to_browse, page_contents):
         if isinstance(content, str) and len(content.strip()) > 60:
             sections.append(f"\n### [Scraped Page & DOM Tables from {url}]:\n{content}\n")
-
+            
     return "\n\n".join(sections)
-
-
-deep_research = deep_react_research
+    
+deep_react_research = react_research_loop

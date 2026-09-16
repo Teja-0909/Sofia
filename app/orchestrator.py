@@ -29,7 +29,8 @@ TOOLS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "description": "The search query (e.g. 'F1 race results 2024')"}
+                    "query": {"type": "string", "description": "The search query (e.g. 'F1 race results 2024')"},
+                    "deep_research": {"type": "boolean", "description": "Set to true for complex research questions to use the ReAct research loop."}
                 },
                 "required": ["query"]
             }
@@ -913,11 +914,16 @@ async def _generate(system: str, messages: list[dict], user_text: str = "") -> s
                         args = {}
                     result = ""
                     if name == "sofia_search_web" or name == "search_web":
-                        search_results = await search_module.search_web(args["query"])
-                        if not search_results:
-                            result = "No useful results found for this query."
+                        if args.get("deep_research"):
+                            result = await search_module.react_research_loop(args["query"])
+                            if not result:
+                                result = "No useful results found for this query."
                         else:
-                            result = "\n".join(f"[{i+1}] {r['title']}\nURL: {r['url']}\nSnippet: {r['snippet']}\n" for i, r in enumerate(search_results))
+                            search_results = await search_module.search_web(args["query"])
+                            if not search_results:
+                                result = "No useful results found for this query."
+                            else:
+                                result = "\n".join(f"[{i+1}] {r['title']}\nURL: {r['url']}\nSnippet: {r['snippet']}\n" for i, r in enumerate(search_results))
                     elif name == "read_webpage":
                         result = await search_module.fetch_page_content(args["url"], max_chars=4000)
                         if not result:
