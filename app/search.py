@@ -245,22 +245,26 @@ async def react_research_loop(query: str, context: str = "") -> str:
     except Exception:
         current_queries = [query]
         
-    for iteration in range(2):
+    for iteration in range(3):
         # Step 2: Search
         search_tasks = [search_web(q, max_results=3) for q in current_queries]
         search_results_list = await asyncio.gather(*search_tasks)
+        iteration_results = []
         for r_list in search_results_list:
-            all_results.extend(r_list)
+            iteration_results.extend(r_list)
             
-        # Compile text for evaluation
-        results_text = "\n".join(f"[{r.get('title')}]({r.get('url')}): {r.get('snippet')}" for r in all_results[:10])
+        all_results.extend(iteration_results)
+            
+        # Compile text for evaluation (use up to 15 most recent results to ensure new ones are seen)
+        eval_results = all_results[-15:]
+        results_text = "\n".join(f"[{r.get('title')}]({r.get('url')}): {r.get('snippet')}" for r in eval_results)
         
         # Step 3: Evaluate
         eval_msg = [{"role": "user", "content": f"Question: {query}\n\nSearch Results:\n{results_text}\n\nDo we have enough info? If not, provide follow-up queries."}]
         eval_resp, _ = await llm.chat("You are a search evaluator. Determine if the search results sufficiently answer the question.", eval_msg, response_format=eval_schema)
         try:
             eval_data = json.loads(eval_resp)
-            if eval_data.get("sufficient") or iteration == 1:
+            if eval_data.get("sufficient") or iteration == 2:
                 break
             current_queries = eval_data.get("follow_up_queries", [])
             if not current_queries:
