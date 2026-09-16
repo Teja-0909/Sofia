@@ -858,6 +858,40 @@ async def _generate(system: str, messages: list[dict], user_text: str = "") -> s
             
             final_text, _ = await llm.chat(synth_system, synth_msg)
             
+            # Component 1: The Critic Agent
+            is_question = '?' in user_text or any(k in user_text.lower() for k in ('how', 'what', 'why', 'can you', 'analyze', 'debug', 'research', 'explain'))
+            if tasks and is_question and len(final_text) > 200:
+                critic_schema = {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "critic_verdict",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "pass": {"type": "boolean"},
+                                "confidence": {"type": "number"},
+                                "issues": {"type": "array", "items": {"type": "string"}},
+                                "suggestions": {"type": "array", "items": {"type": "string"}}
+                            },
+                            "required": ["pass", "confidence", "issues", "suggestions"]
+                        }
+                    }
+                }
+                critic_system = "You are the Critic. Evaluate the synthesized response against the user's message for factual gaps, logical consistency, completeness, and depth. Return JSON."
+                critic_user_msg = f"User Message:\n{user_text}\n\nDraft Response:\n{final_text}\n\nEvaluate the draft."
+                critic_resp, _ = await llm.chat(critic_system, [{"role": "user", "content": critic_user_msg}], response_format=critic_schema)
+                try:
+                    verdict = json.loads(critic_resp)
+                    passed = verdict.get("pass", True)
+                    conf = verdict.get("confidence", 1.0)
+                    if not passed and conf < 0.8:
+                        issues = verdict.get("issues", [])
+                        suggestions = verdict.get("suggestions", [])
+                        refine_sys = synth_system + f"\n\nCRITIC FEEDBACK: The previous draft was rejected.\nIssues: {issues}\nSuggestions: {suggestions}\nRewrite the response to address these issues."
+                        final_text, _ = await llm.chat(refine_sys, synth_msg)
+                except Exception:
+                    pass
+            
             return await _verify_and_refine_draft(final_text, user_text, system, current_messages)
             
         assist_msg = {"role": "assistant", "content": text or ""}
