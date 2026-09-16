@@ -830,7 +830,11 @@ async def _generate(system: str, messages: list[dict], user_text: str = "") -> s
             tasks = []
             
             async def run_specialist(role_name: str, prompt_addition: str) -> str:
-                spec_msg = [{"role": "user", "content": directive + f"\n\nAs the {role_name} Specialist: {prompt_addition}"}]
+                thinking_protocol = ""
+                if role_name in ("Architect", "Researcher"):
+                    thinking_protocol = "\n\nBefore answering, work through these steps internally:\n1. UNDERSTAND: What exactly is being asked? Restate the core question.\n2. ASSESS: What do I know about this? What am I uncertain about?\n3. PLAN: What's my approach to answering this well?\n4. EXECUTE: Now provide your thorough analysis.\n5. VERIFY: Does my answer actually address the question? Any gaps?"
+                    
+                spec_msg = [{"role": "user", "content": directive + f"\n\nAs the {role_name} Specialist: {prompt_addition}{thinking_protocol}"}]
                 if current_messages and "image_bytes" in current_messages[-1]:
                     spec_msg[-1]["image_bytes"] = current_messages[-1]["image_bytes"]
                     spec_msg[-1]["media_bytes"] = current_messages[-1].get("media_bytes")
