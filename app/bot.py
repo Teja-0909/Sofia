@@ -637,8 +637,8 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         )
         try:
             try:
-                import fitz
-                doc_pdf = fitz.open(stream=file_bytes, filetype="pdf")
+                import pymupdf
+                doc_pdf = pymupdf.open(stream=file_bytes, filetype="pdf")
                 pdf_text = ""
                 for page in doc_pdf:
                     pdf_text += page.get_text()

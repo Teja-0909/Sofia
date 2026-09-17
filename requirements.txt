@@ -8,3 +8,7 @@ libsql-client>=0.3.0
 ddgs>=9.0
 pymupdf>=1.22
 
+pillow
+mss
+psutil
+pywin32

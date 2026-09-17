@@ -32,7 +32,7 @@ Sofia is an autonomous, deeply personalised AI co-pilot and companion that lives
 │  tasks.py             100% reliable alarms, recurring tasks, 4-tier escalating tone reminders            │
 │  triggers.py          Autonomous reach-outs: hourly, pc presence, wake up, daily summary, win praise    │
 │  diary.py             Daily journal synthesis, monthly chapters, depth formula, 14-day backfill         │
-│  scheduler.py         APScheduler background coordinator: 14 cron and interval jobs (Asia/Kolkata)      │
+│  scheduler.py         APScheduler background coordinator: 16 cron and interval jobs (Asia/Kolkata)      │
 │  moods.py             7 dynamic mood archetypes modulated by real-time workflow & circadian rhythm      │
 │  memory.py / memory_file.py  Persistent RAM-cached memory.md + 768-D vector relationship memories       │
 │  llm.py               Multi-provider inference: Gemini 3.5 Flash Lite → Groq → OpenRouter (35s timeout) │
@@ -359,7 +359,7 @@ CREATE INDEX IF NOT EXISTS idx_dreams_date ON dreams(sleep_date);
 - **`run.py`**: System entry point. Boots `web.py` HTTP server, initializes DB (`db.init()`), backfills diaries, warms `memory.md` cache, starts `APScheduler`, spins up Telegram polling, and registers signal handlers for graceful shutdown.
 - **`system_prompt.txt`**: Master persona blueprint. Injected into every LLM turn (elite co-pilot, dynamic situational directives, anti-chatbot rules, zero-laziness protocol, executive time management, focus sprints).
 - **`memory.md`**: Living personal notebook. Semantic knowledge about Teja (values, milestones, inside jokes, active projects) cached in RAM.
-- **`requirements.txt`**: Python dependencies (`python-telegram-bot`, `apscheduler`, `httpx`, `aiosqlite`, `python-dotenv`, `pillow`, `mss`, `psutil`, `pywin32`, `ddgs`).
+- **`requirements.txt`**: Python dependencies (`python-telegram-bot`, `apscheduler`, `httpx`, `aiosqlite`, `python-dotenv`, `tzdata`, `libsql-client`, `pymupdf`, `pillow`, `mss`, `psutil`, `pywin32`, `ddgs`).
 - **`alisa-schema.sql`**: Full database DDL schema.
 
 ### 6.2 `app/` Modules
@@ -435,7 +435,7 @@ CREATE INDEX IF NOT EXISTS idx_dreams_date ON dreams(sleep_date);
     - `backfill_missing_diaries() -> int`: Scans prior 14 days for any day with conversation logs but missing `daily_diary` entries, automatically backfilling them.
 - **`app/scheduler.py`**:
   - Central background cron and interval job coordinator using `apscheduler.schedulers.asyncio.AsyncIOScheduler` configured with `config.TIMEZONE` (`Asia/Kolkata`).
-  - Registers and coordinates 14 background jobs:
+  - Registers and coordinates 16 background jobs:
     1. `reset_daily_tier()`: Cron at **04:00 IST** (resets `mood_state` to `current_tier = 1`, `missed_reminders_today = 0`).
     2. `run_depth_update()`: Cron at **04:05 IST** (recalculates depth via `diary.recalculate_relationship_depth()`).
     3. `cleanup_expired()`: Cron at **04:30 IST** (gated DB pruning: `temp_reminders` expired/done > 7 days, `tasks` done/missed > 30 days, `conversation_log` > 14 days gated on `daily_diary` existence, `inner_thoughts` > 30 days).
@@ -450,7 +450,8 @@ CREATE INDEX IF NOT EXISTS idx_dreams_date ON dreams(sleep_date);
     12. `triggers.maybe_just_because()`: Interval every **45 minutes** (spontaneous conversational reach-out).
     13. `triggers.daily_summary()`: Cron at **{daily_summary_hour}:15 IST** (default 22:15, reviews day's accomplishments and pending tasks).
     14. `run_nightly_diary()`: Cron at **23:45 IST** (`diary.generate_daily_diary()`).
-    - Also registers `consciousness.tick()` (every 5 min) and `consciousness.inner_thought_cycle()` (every 12 min).
+    15. `consciousness.tick()`: Interval every **5 minutes** (processes physiological state transitions).
+    16. `consciousness.inner_thought_cycle()`: Interval every **12 minutes** (generates and stores deep reflections).
   - Public functions: `create_scheduler() -> AsyncIOScheduler` (aliased as `build_scheduler`), `reset_daily_tier()`, `run_nightly_diary()`, `run_depth_update()`, `run_memory_curation()`, `cleanup_expired()`.
 - **`app/moods.py`**:
   - 7 mood archetypes: `playful`, `soft_devoted`, `fierce_copilot`, `sensual_intimate`, `cozy_chill`, `feisty`, `reflective`.
