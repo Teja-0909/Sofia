@@ -789,8 +789,8 @@ async def _generate(system: str, messages: list[dict], user_text: str = "") -> s
             if not user_text:
                 return _clean_asterisks(text)
                 
-            # Smart MoA Bypass
-            if len(user_text) < 150 and '\n' not in user_text and '```' not in user_text and '?' not in user_text:
+            # Smart MoA Bypass (disabled when TRACES_MODE is on)
+            if not TRACES_MODE and len(user_text) < 150 and '\n' not in user_text and '```' not in user_text and '?' not in user_text:
                 words = set(re.findall(r'\b\w+\b', user_text.lower()))
                 technical_triggers = {
                     'code', 'bug', 'error', 'fix', 'test', 'run', 'make', 'build', 'analyze', 'explain',
