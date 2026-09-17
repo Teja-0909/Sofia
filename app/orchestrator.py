@@ -834,7 +834,7 @@ async def _generate(system: str, messages: list[dict], user_text: str = "") -> s
             async def run_specialist(role_name: str, prompt_addition: str) -> str:
                 thinking_protocol = ""
                 if role_name in ("Architect", "Researcher"):
-                    thinking_protocol = "Before answering, work through these steps internally:\n1. UNDERSTAND: What exactly is being asked? Restate the core question.\n2. ASSESS: What do I know about this? What am I uncertain about?\n3. PLAN: What's my approach to answering this well?\n4. EXECUTE: Now provide your thorough analysis.\n5. VERIFY: Does my answer actually address the question? Any gaps?\n\n"
+                    thinking_protocol = "You MUST wrap your internal reasoning process inside <thought>...</thought> tags. Inside the tags, step through: 1. UNDERSTAND, 2. ASSESS, 3. PLAN, 4. EXECUTE, 5. VERIFY. After the </thought> tag, write your actual specialist notes.\n\n"
                     prompt_addition = thinking_protocol + prompt_addition
                     
                 spec_msg = [{"role": "user", "content": directive + f"\n\nAs the {role_name} Specialist: {prompt_addition}"}]
@@ -856,7 +856,7 @@ async def _generate(system: str, messages: list[dict], user_text: str = "") -> s
             if tasks:
                 specialist_outputs = await asyncio.gather(*tasks)
             
-            synth_system = system + "\n\nYou are the Synthesizer. Weave the specialist outputs together into a cohesive, single-voiced response."
+            synth_system = system + "\n\nYou are the Synthesizer. Weave the specialist outputs together into a cohesive, single-voiced response. IMPORTANT: The specialist outputs contain <thought>...</thought> blocks. Read them for context, but NEVER output or leak the thought blocks into your final response. Do not repeat the same conversational point twice."
             synth_content = f"{directive}\n\n[SPECIALIST OUTPUTS]\n" + "\n\n".join(specialist_outputs)
             synth_msg = [{"role": "user", "content": synth_content}]
             if current_messages and "image_bytes" in current_messages[-1]:
