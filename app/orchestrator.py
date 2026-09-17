@@ -789,17 +789,6 @@ async def _generate(system: str, messages: list[dict], user_text: str = "") -> s
             if not user_text:
                 return _clean_asterisks(text)
                 
-            # Smart MoA Bypass (disabled when TRACES_MODE is on)
-            if not TRACES_MODE and len(user_text) < 150 and '\n' not in user_text and '```' not in user_text and '?' not in user_text:
-                words = set(re.findall(r'\b\w+\b', user_text.lower()))
-                technical_triggers = {
-                    'code', 'bug', 'error', 'fix', 'test', 'run', 'make', 'build', 'analyze', 'explain',
-                    'search', 'debug', 'issue', 'problem', 'solve', 'implement', 'script', 'function',
-                    'database', 'sql', 'query', 'app', 'system', 'review', 'check', 'look'
-                }
-                if not words.intersection(technical_triggers):
-                    return await _verify_and_refine_draft(text, user_text, system, current_messages)
-                
             directive = _generate_situational_directive(system, current_messages, user_text)
             
             router_schema = {
@@ -809,16 +798,17 @@ async def _generate(system: str, messages: list[dict], user_text: str = "") -> s
                     "schema": {
                         "type": "object",
                         "properties": {
+                            "direct": {"type": "boolean", "description": "true if this is a casual/simple message that can be answered directly without specialist agents (greetings, short banter, acknowledgements). false if the message needs analysis, research, technical help, emotional depth, or any non-trivial reasoning."},
                             "architect": {"type": "boolean"},
                             "researcher": {"type": "boolean"},
                             "empath": {"type": "boolean"}
                         },
-                        "required": ["architect", "researcher", "empath"]
+                        "required": ["direct", "architect", "researcher", "empath"]
                     }
                 }
             }
             
-            router_msg = [{"role": "user", "content": directive + "\n\nAs the Forebrain Router, evaluate the user message and set boolean flags for Architect, Researcher, and Empath."}]
+            router_msg = [{"role": "user", "content": directive + "\n\nAs the Forebrain Router, evaluate the user message. Set 'direct' to true ONLY for casual greetings, simple acknowledgements, or trivial banter that need no specialist analysis. For anything requiring thought, research, emotional depth, or technical reasoning, set 'direct' to false and activate the appropriate specialists."}]
             if current_messages and "image_bytes" in current_messages[-1]:
                 router_msg[-1]["image_bytes"] = current_messages[-1]["image_bytes"]
                 router_msg[-1]["media_bytes"] = current_messages[-1].get("media_bytes")
@@ -827,7 +817,14 @@ async def _generate(system: str, messages: list[dict], user_text: str = "") -> s
             try:
                 dispatch = json.loads(router_text)
             except Exception:
-                dispatch = {"architect": True, "researcher": True, "empath": True}
+                dispatch = {"direct": False, "architect": True, "researcher": True, "empath": True}
+            
+            # LLM-driven bypass: if the Router says 'direct' and no specialists needed, skip MoA
+            if dispatch.get("direct") and not any(dispatch.get(k) for k in ("architect", "researcher", "empath")):
+                if not TRACES_MODE:
+                    return await _verify_and_refine_draft(text, user_text, system, current_messages)
+                # In TRACES_MODE, override direct so we can see full pipeline
+                dispatch["empath"] = True
                 
             tasks = []
             
