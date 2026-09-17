@@ -98,11 +98,24 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "• `/mood [name|auto]` — Switch or view emotional mood\n"
         "• `/memory` — Inspect living notebook (memory.md)\n"
         "• `/thoughts` — Recent subconscious thoughts\n"
+        "• `/traces` — Toggle MoA internal thinking traces\n"
         "• `/depth` — Relationship depth and active days\n"
         "• `/sleep` — Tuck Sofia in to rest"
     )
     await update.message.reply_text(msg, parse_mode="Markdown")
 
+
+async def cmd_traces(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not _allowed(update):
+        return
+    import app.orchestrator as orchestrator
+    orchestrator.TRACES_MODE = not getattr(orchestrator, "TRACES_MODE", False)
+    status = "ON" if orchestrator.TRACES_MODE else "OFF"
+    await update.message.reply_text(
+        f"🔬 *Internal Traces Mode: {status}*\n\n"
+        "Sofia will now append her internal MoA reasoning, specialist outputs, and Critic verdicts to her responses.",
+        parse_mode="Markdown"
+    )
 
 async def cmd_tasks(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not _allowed(update):
@@ -1114,6 +1127,7 @@ def build_application() -> Application:
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CommandHandler("sleep", cmd_sleep))
     app.add_handler(CommandHandler("thoughts", cmd_thoughts))
+    app.add_handler(CommandHandler("traces", cmd_traces))
     app.add_handler(CommandHandler("screen", cmd_screen))
     app.add_handler(CommandHandler("watch", cmd_watch))
     app.add_handler(CommandHandler("overlay", cmd_overlay))

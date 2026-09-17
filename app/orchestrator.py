@@ -20,6 +20,8 @@ _MAX_CONTEXT_TOKENS = 120_000  # conservative ceiling for Gemini Flash
 
 FALLBACK_MESSAGE = "give me a second, having some trouble connecting"
 
+TRACES_MODE = False
+
 TOOLS = [
     {
         "type": "function",
@@ -898,6 +900,17 @@ async def _generate(system: str, messages: list[dict], user_text: str = "") -> s
                 except Exception:
                     pass
             
+            if TRACES_MODE and tasks:
+                trace_logs = []
+                trace_logs.append(f"**🧠 Forebrain Router:**\n```json\n{router_text}\n```")
+                for so in specialist_outputs:
+                    trace_logs.append(f"**{so.split(' Output]')[0].strip('[')} Specialist:**\n{so.split(' Output]')[1].strip()}")
+                if 'critic_resp' in locals():
+                    trace_logs.append(f"**⚖️ Critic Verdict:**\n```json\n{critic_resp}\n```")
+                
+                trace_str = "\n\n---\n### 🔬 Internal MoA Traces\n\n" + "\n\n".join(trace_logs)
+                final_text += trace_str
+
             return await _verify_and_refine_draft(final_text, user_text, system, current_messages)
             
         assist_msg = {"role": "assistant", "content": text or ""}
