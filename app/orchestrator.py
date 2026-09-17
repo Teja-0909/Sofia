@@ -829,11 +829,27 @@ async def _generate(system: str, messages: list[dict], user_text: str = "") -> s
             tasks = []
             
             async def run_specialist(role_name: str, prompt_addition: str) -> str:
-                spec_system = f"You are the {role_name} Specialist — an INTERNAL analysis agent. You are writing private analytical notes that will be read by a Synthesizer agent, NOT by the user. NEVER write a conversational reply. NEVER address the user directly. Write concise, structured observations and findings."
-                if role_name in ("Architect", "Researcher"):
-                    spec_system += "\n\nTHINKING PROTOCOL (mandatory): First output a <thought> block containing: 1. UNDERSTAND: restate the core question, 2. ASSESS: what you know vs uncertain, 3. PLAN: your approach, 4. EXECUTE: your analysis, 5. VERIFY: check for gaps. Then close with </thought>. After the thought block, write your final specialist notes."
-                    
-                spec_msg = [{"role": "user", "content": directive + f"\n\nAs the {role_name} Specialist, write your internal analysis notes on this. {prompt_addition}"}]
+                spec_system = (
+                    f"You are the {role_name} analysis module inside a multi-agent system. "
+                    "CRITICAL RULES:\n"
+                    "1. You are NOT the final assistant. You are an internal module writing PRIVATE NOTES for a Synthesizer.\n"
+                    "2. NEVER write a message addressed to the user. NEVER say 'you' referring to the user.\n"
+                    "3. Write in third person analytical voice: 'The user is asking about...', 'Key observations:', 'Recommended approach:'.\n"
+                    "4. Output format: <thought>[your 5-step reasoning]</thought> then your concise analytical notes.\n\n"
+                    "THINKING PROTOCOL:\n"
+                    "<thought>\n"
+                    "1. UNDERSTAND: What is the user asking?\n"
+                    "2. ASSESS: What do I know? What am I uncertain about?\n"
+                    "3. PLAN: How should I approach this?\n"
+                    "4. EXECUTE: My analysis.\n"
+                    "5. VERIFY: Does this address the question? Any gaps?\n"
+                    "</thought>\n"
+                    "Then write your specialist notes."
+                )
+                
+                # Only pass conversation context, NOT Sofia's personality directive
+                last_user_msg = user_text or ""
+                spec_msg = [{"role": "user", "content": f"Analyze this user message and write internal {role_name.lower()} notes.\n\nUser message: \"{last_user_msg}\"\n\n{prompt_addition}"}]
                 if current_messages and "image_bytes" in current_messages[-1]:
                     spec_msg[-1]["image_bytes"] = current_messages[-1]["image_bytes"]
                     spec_msg[-1]["media_bytes"] = current_messages[-1].get("media_bytes")
@@ -846,7 +862,7 @@ async def _generate(system: str, messages: list[dict], user_text: str = "") -> s
             if dispatch.get("researcher"):
                 tasks.append(run_specialist("Researcher", "Focus on: factual information, context, documentation, and evidence-based analysis."))
             if dispatch.get("empath"):
-                tasks.append(run_specialist("Empath", "Focus on: emotional tone, relationship context, encouragement, and alignment with Teja's feelings and goals."))
+                tasks.append(run_specialist("Empath", "Focus on: emotional tone, relationship dynamics, mood assessment, and what kind of energy the user needs right now."))
                 
             specialist_outputs = []
             if tasks:
