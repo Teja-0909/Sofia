@@ -11,4 +11,4 @@ pymupdf>=1.22
 pillow
 mss
 psutil
-pywin32
+pywin32; sys_platform == 'win32'
