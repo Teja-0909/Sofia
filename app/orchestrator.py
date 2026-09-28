@@ -194,6 +194,46 @@ TOOLS = [
                 }
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "mark_task_done",
+            "description": "Marks a scheduled task or reminder as completed.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "task_id": {"type": "integer", "description": "The numeric ID of the task to mark as done."}
+                },
+                "required": ["task_id"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_task",
+            "description": "Creates a new task or scheduled reminder.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "description": {"type": "string", "description": "The task description or what needs to be reminded."},
+                    "due_time": {"type": "string", "description": "The due time in ISO 8601 UTC format (YYYY-MM-DDTHH:MM:SSZ)."}
+                },
+                "required": ["description", "due_time"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_tasks",
+            "description": "Lists all pending tasks and scheduled reminders.",
+            "parameters": {
+                "type": "object",
+                "properties": {}
+            }
+        }
     }
 ]
 
@@ -583,7 +623,9 @@ async def _ctx_pc_presence() -> str:
     if (presence_app or presence_title) and presence_time:
         try:
             p_time = dt.datetime.fromisoformat(presence_time.replace("Z", "+00:00"))
-            if (dt.datetime.now(dt.timezone.utc) - p_time).total_seconds() < 900:
+            delta_seconds = (dt.datetime.now(dt.timezone.utc) - p_time).total_seconds()
+            
+            if delta_seconds < 900:
                 idle_int = int(presence_idle) if presence_idle.isdigit() else 0
                 if idle_int >= 15:
                     status_desc = f"Away from PC (idle for {idle_int} minutes)"
@@ -591,13 +633,17 @@ async def _ctx_pc_presence() -> str:
                     status_desc = f"Actively on PC: {presence_app}" + (f" (Window: '{presence_title}')" if presence_title else "")
                 if presence_media:
                     status_desc += f" | Listening/Watching: {presence_media}"
-                return (
-                    f"\n[Teja's Live PC Presence: {status_desc}]\n"
-                    "[Tool Agency: You have live tools to inspect his workstation (desktop_workspace_status, desktop_read_clipboard, desktop_set_clipboard, desktop_run_command, desktop_capture_screen, desktop_point_at). Use your own thinking to invoke them autonomously whenever they provide real engineering leverage!]"
-                )
+            else:
+                away_mins = int(delta_seconds / 60)
+                if away_mins < 60:
+                    status_desc = f"Away / Offline (Last seen {away_mins} minutes ago)"
+                else:
+                    status_desc = f"Away / Offline (Last seen {away_mins // 60}h {away_mins % 60}m ago)"
+            
+            return f"\n[Teja's Live PC Presence: {status_desc}]"
         except Exception as exc:
             logger.debug("PC presence context parse error: %s", exc)
-    return ""
+    return "\n[Teja's Live PC Presence: Unknown / Not connected]"
 
 
 async def _build_system_prompt(extra_note: str | None = None, user_text: str = "") -> str:
@@ -732,26 +778,7 @@ async def _verify_and_refine_draft(
         except Exception as exc:
             logger.warning("Verification retry note: %s", exc)
 
-    # 2. Check for Task Pretense Auto-Repair (If draft claims task is scheduled but missing tag)
-    lower = clean_draft.lower()
-    claimed_task = any(p in lower for p in ("added the task", "scheduled a reminder", "i'll remind you", "set a reminder", "created a reminder", "added to your tasks"))
-    has_task_tag = bool(re.search(r"\[(?:TASK|REMINDER|SCHEDULE):", clean_draft, re.IGNORECASE))
-    if claimed_task and not has_task_tag:
-        intent = await parser.parse(user_text)
-        if intent.get("description") and intent.get("due_utc"):
-            when = intent.get("due_utc")
-            clean_draft += f" [TASK: {intent['description']} | {when}]"
-            logger.info("Verifier auto-injected missing [TASK: %s] tag into draft", intent['description'])
 
-    # 3. Check for Task Done Pretense Auto-Repair
-    claimed_done = any(p in lower for p in ("marked it as done", "marked it done", "marked as done", "checked off your task", "task is marked complete"))
-    has_done_tag = bool(re.search(r"\[(?:DONE|COMPLETE|FINISHED):", clean_draft, re.IGNORECASE))
-    if claimed_done and not has_done_tag:
-        pending = await tasks_module.list_pending()
-        matched_id = await parser.detect_completion(user_text, pending) if pending else None
-        if matched_id:
-            clean_draft += f" [DONE: {matched_id}]"
-            logger.info("Verifier auto-injected missing [DONE: %s] tag into draft", matched_id)
 
     return clean_draft
 
@@ -1014,6 +1041,33 @@ async def _generate(system: str, messages: list[dict], user_text: str = "") -> s
                         result = await vision_session.get_desktop_workspace_status(
                             workspace_dir=args.get("workspace_dir") or None,
                         )
+                    elif name == "mark_task_done":
+                        task_id = args.get("task_id")
+                        if task_id is None:
+                            result = "Error: task_id is required."
+                        else:
+                            success = await tasks_module.mark_done(int(task_id))
+                            if success:
+                                result = f"Successfully marked task #{task_id} as done."
+                            else:
+                                result = f"Error: Could not mark task #{task_id} as done (not found or already done)."
+                    elif name == "create_task":
+                        desc = args.get("description")
+                        due = args.get("due_time")
+                        if not desc or not due:
+                            result = "Error: description and due_time are required."
+                        else:
+                            try:
+                                task_id = await tasks_module.create_task(desc, due)
+                                result = f"Successfully created task #{task_id} ('{desc}') due at {due}."
+                            except Exception as e:
+                                result = f"Error creating task: {e}"
+                    elif name == "list_tasks":
+                        pending = await tasks_module.list_pending()
+                        if not pending:
+                            result = "No pending tasks."
+                        else:
+                            result = "Pending tasks:\n" + "\n".join(f"- #{t['id']}: '{t['description']}' due {t['due_time']}" for t in pending)
                     else:
                         result = f"Error: unknown function {name}"
                 except Exception as e:

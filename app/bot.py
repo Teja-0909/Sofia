@@ -17,7 +17,6 @@ logger = logging.getLogger(__name__)
 
 _bot_instance = None
 
-DONE_WORDS = ("done", "did it", "finished", "completed", "over with", "wrapped up")
 
 
 def get_bot():
@@ -251,24 +250,8 @@ async def cmd_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await _handle_image_generation(update, context, desc)
 
 
-async def _detect_task_completion(user_text: str) -> str | None:
-    lower = user_text.lower().strip()
-    if not any(w in lower for w in DONE_WORDS):
-        return None
-    pending = await tasks.list_pending()
-    if not pending:
-        return None
-    for t in pending:
-        desc_words = set(t["description"].lower().split()) - {
-            "the", "a", "an", "to", "at", "me", "my", "and", "if", "i"
-        }
-        msg_words = set(lower.split())
-        overlap = desc_words & msg_words
-        if len(overlap) >= max(1, len(desc_words) // 3):
-            return t["id"]
-    if len(pending) == 1 and len(lower.split()) <= 4:
-        return pending[0]["id"]
-    return None
+
+
 
 
 MAX_TELEGRAM_FILE_SIZE = 20 * 1024 * 1024  # 20 MB
@@ -317,11 +300,56 @@ async def _process_and_send_reply(
 
     # If Sofia emitted [DONE: ...], mark that task done in DB
     if done_tag:
+        import re as _re
         pending = await tasks.list_pending()
-        matched_id = await parser.detect_completion(done_tag, pending) if pending else None
+        matched_id = None
+
+        # 1. Direct ID match: [DONE: 3] or [DONE: #3]
+        id_match = _re.search(r'^\s*#?(\d+)\s*$', done_tag)
+        if id_match:
+            candidate = int(id_match.group(1))
+            if any(t["id"] == candidate for t in pending):
+                matched_id = candidate
+
+        # 2. Fuzzy description match against pending task descriptions
+        if matched_id is None and pending:
+            done_lower = done_tag.lower().strip()
+            _stop = {"the", "a", "an", "to", "at", "me", "my", "and", "if", "i", "for"}
+            best_score = 0
+            for t in pending:
+                desc_lower = t["description"].lower().strip()
+                # Exact or substring match
+                if done_lower == desc_lower or done_lower in desc_lower or desc_lower in done_lower:
+                    matched_id = t["id"]
+                    break
+                # Word overlap scoring
+                done_words = set(done_lower.split()) - _stop
+                desc_words = set(desc_lower.split()) - _stop
+                if done_words and desc_words:
+                    overlap = len(done_words & desc_words)
+                    score = overlap / max(len(done_words), len(desc_words))
+                    if score > best_score and score >= 0.3:
+                        best_score = score
+                        matched_id = t["id"]
+
+        # 3. Fallback: if only one pending task, assume it's the one
+        if matched_id is None and len(pending) == 1:
+            matched_id = pending[0]["id"]
+
+        # 4. Last resort: LLM semantic match (prefix with "I completed:" so
+        #    detect_completion sees a completion statement, not a bare description)
+        if matched_id is None and pending:
+            matched_id = await parser.detect_completion(
+                f"I completed: {done_tag}", pending
+            )
+
         if matched_id:
             await tasks.mark_done(int(matched_id))
             logger.info("Sofia [DONE: %s] marked task #%s as done in DB", done_tag, matched_id)
+        else:
+            logger.warning("Sofia emitted [DONE: %s] but could not match to any pending task: %s",
+                           done_tag, [t["description"] for t in pending])
+
         active_goal = await db.get_config("active_focus_goal", "")
         if active_goal and (done_tag.lower() in active_goal.lower() or active_goal.lower() in done_tag.lower()):
             await db.delete_config("active_focus_goal")
@@ -439,14 +467,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 "Acknowledge naturally and warmly, confirming you've let it go.]"
             )
         else:
-            # 2. Check for task completion
+            # 2. Lightweight safety net for task completion (single task case)
             pending = await tasks.list_pending()
-            done_id = await parser.detect_completion(user_text, pending) if pending else None
-            if done_id is not None:
+            if pending and len(pending) == 1 and user_text.lower().strip() in ("done", "finished", "completed", "did it"):
+                done_id = pending[0]["id"]
                 await tasks.mark_done(int(done_id))
-                row = await db.fetch_one("SELECT description FROM tasks WHERE id = ?", (done_id,))
-                desc = row["description"] if row else f"task #{done_id}"
-                logger.info("Task #%s ('%s') marked done by user message: '%s'", done_id, desc, user_text)
+                desc = pending[0]["description"]
+                logger.info("Task #%s ('%s') marked done by bare user message: '%s'", done_id, desc, user_text)
                 active_goal = await db.get_config("active_focus_goal", "")
                 if active_goal and (desc.lower() in active_goal.lower() or active_goal.lower() in desc.lower()):
                     await db.delete_config("active_focus_goal")
@@ -456,22 +483,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     f"[Internal event: Teja just marked his task #{done_id} ('{desc}') as DONE/completed. "
                     "Acknowledge with genuine pride, warmth, and affection in your own voice. DO NOT recreate or reschedule this task!]"
                 )
-            else:
-                # 3. Check for explicit scheduled task creation
-                try:
-                    intent = await parser.parse(user_text)
-                except Exception as e:
-                    logger.debug("Intent parsing note: %s", e)
-                    intent = {}
-                if intent.get("description") and intent.get("due_utc"):
-                    turn_task_created_id = await tasks.create_task(intent["description"], intent["due_utc"])
-                    when = timeutil.format_local(intent["due_utc"])
-                    logger.info("task %s created: %s @ %s", turn_task_created_id, intent["description"], when)
-                    system_note = (
-                        f"[Internal event: you just agreed to remind him about "
-                        f"'{intent['description']}' at {when}. Acknowledge in your own "
-                        "voice — short and natural, like it's already settled.]"
-                    )
     except Exception as exc:
         logger.error("Intent / memory parsing error in handle_message: %s", exc)
 

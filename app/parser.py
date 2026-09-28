@@ -369,7 +369,9 @@ async def detect_completion(text: str, pending_tasks: list[dict]) -> int | None:
         "finished it", "completed it"
     )
     if any(lower == p or lower.startswith(p) or lower.endswith(p) for p in completion_phrases):
-        return pending_tasks[0]["id"]
+        if len(pending_tasks) == 1:
+            return pending_tasks[0]["id"]
+        # Multiple tasks pending — don't guess, let word overlap or LLM decide below
 
     # 3. Word overlap heuristic against pending task descriptions
     for t in pending_tasks:
@@ -378,7 +380,12 @@ async def detect_completion(text: str, pending_tasks: list[dict]) -> int | None:
         }
         msg_words = set(lower.split())
         overlap = desc_words & msg_words
-        if len(overlap) >= max(1, len(desc_words) // 2) and any(w in lower for w in ("done", "did", "finish", "complete", "ate", "had", "mark", "checked")):
+        if len(overlap) >= max(1, len(desc_words) // 3) and any(w in lower for w in (
+            "done", "did", "finish", "finished", "complete", "completed",
+            "ate", "had", "went", "submitted", "pushed", "sent", "bought",
+            "watched", "read", "studied", "practiced", "exercised",
+            "mark", "checked", "wrapped", "over"
+        )):
             return t["id"]
 
     # 4. Semantic matching via LLM
@@ -387,9 +394,15 @@ async def detect_completion(text: str, pending_tasks: list[dict]) -> int | None:
 Teja's active pending tasks:
 {tasks_text}
 
-Determine if Teja is stating that he completed or finished any of his active tasks.
-- If he completed a specific task, return the completed task ID.
-- If he is NOT indicating completion, return null.
+Determine if Teja's message indicates he completed or is done with any of these tasks.
+Match BOTH explicit AND implicit completion signals:
+- Explicit: "done", "finished", "mark it done", "completed the assignment"
+- Implicit: "just had dinner" (matches a dinner task), "back from gym" (matches a gym task),
+  "submitted the PR" (matches a code push task), "just woke up" (matches a sleep/wake task)
+If he completed a specific task, return the completed task ID.
+If he is NOT indicating completion of any listed task, return null.
+IMPORTANT: Be generous in matching — if the message strongly implies the activity in a task
+was performed, that counts as completion even without the word "done".
 """
 
     schema = {
