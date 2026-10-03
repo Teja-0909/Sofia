@@ -208,7 +208,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "check_pc_presence",
-            "description": "Checks if Teja is currently active on his PC, what window is focused, and if he is away or idle.",
+            "description": "Reads the latest timestamped sidecar sample of the focused app/window and input idle time. Reports freshness or an explicit unavailable state. This is not a screen capture, a list of open apps/tabs, or proof that Teja is away, offline or has closed anything. Use for current PC observations rather than conversation history.",
             "parameters": {
                 "type": "object",
                 "properties": {}
