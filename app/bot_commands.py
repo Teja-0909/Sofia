@@ -578,7 +578,7 @@ async def cmd_focus(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             return
         await db.delete_config("active_focus_goal")
         await db.delete_config("active_focus_started_at")
-        await update.message.reply_text(f"Sprint '{active_goal}' cleared. Take a breath — what's on your radar next?")
+        await update.message.reply_text(f"Sprint '{active_goal}' cleared.")
         return
 
     if len(args) == 1 and sub in ("done", "finished", "finish", "complete"):
@@ -607,7 +607,7 @@ async def cmd_focus(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         try:
             reply = await triggers.praise(f"Deep work sprint '{goal_completed}' completed{duration_note}")
         except Exception:
-            reply = f"Hell yes! Nailed the '{goal_completed}' sprint{duration_note}! Proud of you. Take a breather 🎉"
+            reply = f"Sprint '{goal_completed}' marked complete{duration_note}. Nice."
         await _log_message("user", f"I just finished a deep work sprint: {goal_completed}{duration_note}")
         await _log_message("sofia", reply)
         for part in split_telegram_text(reply):

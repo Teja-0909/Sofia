@@ -150,7 +150,8 @@ async def acknowledge_progress(text: str) -> str:
         untrusted_context=text,
         policy=("Respond to the user's reported win briefly and warmly, with optional light wit. "
                 "Do not invent completed work, effort, feelings or emotional obligations. "
-                "No new tasks or pressure to do more. Give an acknowledgement, never the PASS sentinel."),
+                "Use one specific acknowledgement, not canned praise. Stop without a closing question, "
+                "new task, or pressure to do more. Give an acknowledgement, never the PASS sentinel."),
     )
 
 

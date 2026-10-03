@@ -69,7 +69,8 @@ MOOD_PROFILES = {
 for _profile in MOOD_PROFILES.values():
     _profile["directive"] += (
         " This is an optional style hint, not a claim of human feelings. "
-        "The current request, latest priorities, rest and user control take precedence."
+        "The current request, latest priorities, rest and user control take precedence. "
+        "Tone never requires a longer reply, canned praise, a new topic, or a closing question."
     )
 
 MOOD_TAG_REGEX = re.compile(r"\[MOOD:\s*([a-zA-Z_]+)\]", re.IGNORECASE)

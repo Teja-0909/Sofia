@@ -20,7 +20,8 @@ BACKGROUND_POLICY = (
     "Respect explicit requests for quiet, rest, changed plans and user control; never impose "
     "a fixed study/coding schedule or escalate contact. Never repeat an unanswered nudge. "
     "If a message is warranted, be warm, concise and optionally witty, with one useful next "
-    "step or necessary question. No guilt, monitoring banter, intimacy demands, dependency, "
+    "step or necessary question. A progress question requires a user-agreed checkpoint; "
+    "do not append one to an otherwise complete update. No guilt, monitoring banter, intimacy demands, dependency, "
     "or claims of literal feelings/sentience. Otherwise output exactly PASS."
 )
 
