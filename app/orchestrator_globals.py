@@ -11,6 +11,16 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "research_status",
+            "description": "Reads the current saved state/result of the user's background research. Never creates, steers or cancels work.",
+            "parameters": {"type": "object", "properties": {
+                "job_id": {"type": "integer", "description": "Optional numeric research ID, e.g. 1 for R1. Omit to list recent jobs."},
+            }},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "sofia_search_web",
             "description": "Searches the web and returns a list of titles, snippets, and URLs. Use this first to find relevant links.",
             "parameters": {
@@ -234,4 +244,3 @@ LAZY_CODE_PATTERNS = [
     re.compile(r"\b(?:remaining code is straightforward|you can implement the rest|fill in the rest|left as an exercise)\b", re.IGNORECASE)
 ]
 _tool_lock = asyncio.Lock()
-

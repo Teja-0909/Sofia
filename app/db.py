@@ -448,6 +448,8 @@ async def init() -> None:
         await execute("ALTER TABLE tasks ADD COLUMN kind TEXT NOT NULL DEFAULT 'reminder'")
     from . import outcome_migrations
     await outcome_migrations.migrate()
+    from . import research_store
+    await research_store.migrate()
     await validate_required_schema()
 
 

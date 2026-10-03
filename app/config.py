@@ -82,6 +82,33 @@ WEB_AUTH_TOKEN = os.environ.get("WEB_AUTH_TOKEN", "")
 # Direct generation is the default; opt in to one selective reviewer + synthesis.
 ENABLE_SPECIALISTS = os.environ.get("ENABLE_SPECIALISTS", "false").lower() == "true"
 
+# Public, signed-out background research. Deployment/credentials are separate
+# approvals; importing the application never launches a browser or a worker.
+ENABLE_RESEARCH_JOBS = os.environ.get("ENABLE_RESEARCH_JOBS", "false").lower() == "true"
+ENABLE_RESEARCH_BROWSER = os.environ.get("ENABLE_RESEARCH_BROWSER", "false").lower() == "true"
+BROWSER_WORKER_URL = os.environ.get("BROWSER_WORKER_URL", "")
+BROWSER_WORKER_TOKEN = os.environ.get("BROWSER_WORKER_TOKEN", "")
+BROWSER_WORKER_TIMEOUT_SECONDS = 30
+
+
+def _research_limit(name: str, maximum: int) -> int:
+    """Deployment may lower resource ceilings, never lift the safety bounds."""
+    try:
+        return max(1, min(maximum, int(os.environ.get(name, str(maximum)))))
+    except ValueError:
+        return maximum
+
+
+RESEARCH_MAX_ACTIVE = _research_limit("RESEARCH_MAX_ACTIVE", 3)
+RESEARCH_MAX_DAILY = _research_limit("RESEARCH_MAX_DAILY", 10)
+RESEARCH_MAX_QUERIES = _research_limit("RESEARCH_MAX_QUERIES", 6)
+RESEARCH_MAX_PAGES = _research_limit("RESEARCH_MAX_PAGES", 6)
+RESEARCH_MAX_BROWSER_RENDERS = _research_limit("RESEARCH_MAX_BROWSER_RENDERS", 2)
+RESEARCH_MAX_MODEL_CALLS = _research_limit("RESEARCH_MAX_MODEL_CALLS", 8)
+RESEARCH_MAX_SECONDS = _research_limit("RESEARCH_MAX_SECONDS", 120)
+RESEARCH_MAX_INPUT_TOKENS = _research_limit("RESEARCH_MAX_INPUT_TOKENS", 60000)
+RESEARCH_MAX_OUTPUT_TOKENS = _research_limit("RESEARCH_MAX_OUTPUT_TOKENS", 10000)
+
 # Staged rollout: state tracking first; one-shot delivery requires both flags.
 ENABLE_OUTCOMES = os.environ.get("ENABLE_OUTCOMES", "false").lower() == "true"
 ENABLE_OUTCOME_CHECKPOINTS = os.environ.get("ENABLE_OUTCOME_CHECKPOINTS", "false").lower() == "true"

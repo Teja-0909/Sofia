@@ -58,6 +58,31 @@ async def send_text(bot_instance, text: str) -> None:
             await asyncio.sleep(delay)
 
 
+class ResearchDeliveryNotStarted(RuntimeError):
+    """A local preflight rejected delivery before any Telegram request."""
+
+
+async def send_research_result(bot_instance, chat_id: str, text: str) -> int:
+    """One bounded requested-result send; the durable runner owns its receipt.
+
+    No retries or auxiliary model calls: an exception after dispatch can mean
+    Telegram accepted the message. Never interpret it as permission to resend.
+    """
+    if not config.ENABLE_RESEARCH_JOBS:
+        raise ResearchDeliveryNotStarted("Research delivery is disabled")
+    if str(chat_id) != str(config.ALLOWED_USER_ID):
+        raise PermissionError("Research delivery is unavailable for this chat")
+    if await db.get_config("proactivity_paused", "false") == "true":
+        raise ResearchDeliveryNotStarted("Research delivery is paused")
+    if not isinstance(text, str) or not text.strip() or len(text) > 3900:
+        raise ValueError("Research delivery must be one bounded message")
+    receipt = await bot_instance.send_message(chat_id=config.ALLOWED_USER_ID, text=text)
+    message_id = getattr(receipt, "message_id", None)
+    if not isinstance(message_id, int):
+        raise TypeError("Research delivery receipt is unavailable")
+    return message_id
+
+
 async def _log_message(role: str, content: str, channel: str = "text") -> None:
     if role == "user" and _activity_already_logged.get():
         return
@@ -73,7 +98,11 @@ def _allowed(update: Update) -> bool:
         return False
     if update.effective_user:
         if update.effective_user.id == config.ALLOWED_USER_ID:
-            return True
+            # Conversation history/notebook and research receipts are private.
+            # Being the allowed sender in a group does not authorize sharing
+            # that state with every participant in that group.
+            chat_id = getattr(getattr(update, "effective_chat", None), "id", None)
+            return type(chat_id) is int and chat_id == config.ALLOWED_USER_ID
         logger.warning(
             "Access denied for incoming user_id=%s (username=%s). Allowed ID is %s",
             update.effective_user.id,
@@ -127,6 +156,7 @@ def build_application() -> Application:
         cmd_pause,
         cmd_permissions,
         cmd_read,
+        cmd_research,
         cmd_screen,
         cmd_search,
         cmd_sleep,
@@ -171,6 +201,7 @@ def build_application() -> Application:
     app.add_handler(CommandHandler("sprint", _command_callback(cmd_focus)))
     app.add_handler(CommandHandler("search", _command_callback(cmd_search)))
     app.add_handler(CommandHandler("read", _command_callback(cmd_read)))
+    app.add_handler(CommandHandler("research", _command_callback(cmd_research)))
     app.add_handler(CommandHandler("image", _command_callback(cmd_image)))
     app.add_handler(CommandHandler("photo", _command_callback(cmd_image)))
     app.add_handler(CommandHandler("draw", _command_callback(cmd_image)))
@@ -191,6 +222,3 @@ def build_application() -> Application:
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
     app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, handle_voice_or_audio))
     return app
-
-
-

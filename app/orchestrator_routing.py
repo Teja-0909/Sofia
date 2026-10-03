@@ -52,9 +52,9 @@ async def reply(
             page_text = await search_module.fetch_page_content(direct_url, max_chars=4000)
             if page_text:
                 search_block = (
-                    f"[Autonomous Web Browsing — Full Content of URL: {direct_url}]\n"
+                    f"[Public HTTP extraction of URL: {direct_url}; partial text, up to 4,000 characters]\n"
                     f"{page_text}\n\n"
-                    "Browsing context: You have navigated to and read the full webpage above. "
+                    "The text above is a bounded HTTP extraction, not a verified full-page browser visit. "
                     "Synthesize its contents, key takeaways, and answers for Teja conversationally in your own devoted voice!"
                 )
         except Exception as exc:
