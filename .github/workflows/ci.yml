@@ -19,4 +19,6 @@ jobs:
       - name: Run Ruff
         run: ruff check .
       - name: Run Pytest
+        env:
+          PYTHONPATH: ${{ github.workspace }}
         run: pytest tests
