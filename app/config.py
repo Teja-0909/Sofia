@@ -81,3 +81,7 @@ WEB_AUTH_TOKEN = os.environ.get("WEB_AUTH_TOKEN", "")
 
 # Direct generation is the default; opt in to one selective reviewer + synthesis.
 ENABLE_SPECIALISTS = os.environ.get("ENABLE_SPECIALISTS", "false").lower() == "true"
+
+# Staged rollout: state tracking first; one-shot delivery requires both flags.
+ENABLE_OUTCOMES = os.environ.get("ENABLE_OUTCOMES", "false").lower() == "true"
+ENABLE_OUTCOME_CHECKPOINTS = os.environ.get("ENABLE_OUTCOME_CHECKPOINTS", "false").lower() == "true"

@@ -330,7 +330,7 @@ async def _ctx_tasks_and_threads() -> str:
     # relabel it as a real deadline or rank the oldest overdue item as priority.
     try:
         pending_tasks = await db.fetch_all(
-            "SELECT id, description, due_time, is_recurring, status, created_at FROM tasks "
+            "SELECT id, description, due_time, is_recurring, status, created_at, kind FROM tasks "
             "WHERE status IN ('pending', 'missed') AND cancelled_at IS NULL "
             "ORDER BY CASE WHEN julianday(due_time) IS NULL THEN 2 "
             "WHEN julianday(due_time) >= julianday(?) THEN 0 ELSE 1 END, "
@@ -359,7 +359,7 @@ async def _ctx_tasks_and_threads() -> str:
                 task_items.append(
                     f"- #{task['id']}: {task['description']} "
                     f"[stored_status={task.get('status', 'pending')}; created_at={task.get('created_at') or 'unknown'}; "
-                    f"reminder_at={due}; {timing}; recurrence={task.get('is_recurring') or 'none'}]"
+                    f"notification_kind={task.get('kind', 'reminder')}; reminder_at={due}; {timing}; recurrence={task.get('is_recurring') or 'none'}]"
                 )
             blocks.append(
                 "[Stored tasks: up to 100 records, upcoming reminder times then past reminders; not an importance ranking]\n"
@@ -374,7 +374,14 @@ async def _ctx_tasks_and_threads() -> str:
     try:
         active_goal = await db.get_config("active_focus_goal", "")
         focus_started = await db.get_config("active_focus_started_at", "")
-        if active_goal:
+        if active_goal and config.ENABLE_OUTCOMES:
+            sprint_link = await db.get_config("active_focus_outcome_id", "")
+            blocks.append(
+                f"[Temporary sprint; not canonical outcome priority; linked outcome={sprint_link or 'none'}; "
+                f"started_at={focus_started or 'unknown'}]\n{active_goal}\n"
+                "Do not infer continuous work. This sprint cannot override the chosen outcome focus or the latest user choice."
+            )
+        elif active_goal:
             blocks.append(
                 f"[Recorded focus goal from app_config: started_at={focus_started or 'unknown'}]\n"
                 f"{active_goal}\n"
@@ -386,13 +393,14 @@ async def _ctx_tasks_and_threads() -> str:
 
     try:
         recent_done = await db.fetch_all(
-            "SELECT description, completed_at FROM tasks WHERE status = 'done' "
+            "SELECT description, completed_at, kind, last_reminded_at FROM tasks WHERE status = 'done' "
             "AND julianday(completed_at) >= julianday(?) - 7 ORDER BY completed_at DESC LIMIT 5",
             (timeutil.utc_iso(now_utc),),
         )
         if recent_done:
             done_lines = "\n".join(
-                f"- {task['description']} [recorded_done_at={task['completed_at']}]" for task in recent_done
+                f"- {task['description']} [kind={task.get('kind', 'reminder')}; recorded_done_at={task['completed_at']}; "
+                f"meaning={'timer notification ended, work completion unknown' if task.get('kind') == 'timer' else 'user-marked task'}]" for task in recent_done
             )
             blocks.append(f"[Tasks marked done in the past 7 days]\n{done_lines}")
     except Exception as exc:
@@ -453,7 +461,9 @@ async def _build_system_prompt(extra_note: str | None = None, user_text: str = "
     the conversation, not in the privileged instruction string.
     """
     base = pathlib.Path(config.SYSTEM_PROMPT_PATH).read_text(encoding="utf-8")
-    return "\n\n".join(block for block in (base, CONTEXT_POLICY, extra_note, REPLY_STYLE_POLICY) if block)
+    from . import outcome_conversation
+    outcome_policy = outcome_conversation.OUTCOME_POLICY if outcome_conversation.enabled() else ""
+    return "\n\n".join(block for block in (base, CONTEXT_POLICY, outcome_policy, extra_note, REPLY_STYLE_POLICY) if block)
 
 
 def _pack_persistent_evidence(sections: list[tuple[str, str]], system_prompt: str, user_text: str) -> str:
@@ -530,7 +540,10 @@ async def _build_persistent_context(user_text: str = "", system_prompt: str = ""
         _ctx_relationship_stage(), _ctx_active_mood(),
         consciousness.get_consciousness_directive(), _ctx_diary(), subconscious_future,
     )
+    from . import outcome_conversation
+    outcome_block = await outcome_conversation.context_block()
     sections = [
+        ("confirmed outcomes: latest user choice still takes precedence", outcome_block),
         ("tasks + app_config focus + unexpired temp_reminders", task_block),
         ("conversation_summaries: recent generated paraphrases", recent_summaries_block),
         ("editable living notebook: entry dates may be unknown", notebook_block),

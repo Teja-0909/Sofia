@@ -156,12 +156,28 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if not _allowed(update) or not update.message or not update.message.text:
         return
     user_text = update.message.text
+    from . import config, outcome_conversation, timer_requests
+    logged_new = True
     try:
-        await _log_message("user", user_text)
+        source = outcome_conversation.source_identity(update)
+        if config.ENABLE_OUTCOMES and source:
+            from . import outcome_store
+            logged_new = await outcome_store.log_user_message_once(update.effective_chat.id, source, user_text)
+        else:
+            await _log_message("user", user_text)
     except Exception as e:
-        logger.warning("Log message note: %s", e)
+        logger.warning("Log message note: %s", type(e).__name__)
+        if config.ENABLE_OUTCOMES:
+            await _send_verified_response(update, outcome_conversation.FAILURE)
+            return
 
-    from . import timer_requests
+    if config.ENABLE_OUTCOMES and not logged_new:
+        await _send_verified_response(update, await outcome_conversation.duplicate_response(update))
+        return
+
+    if config.ENABLE_OUTCOMES and logged_new and not (getattr(update.message, "forward_origin", None) or getattr(update.message, "forward_date", None)):
+        from . import consciousness
+        await consciousness.handle_incoming_while_sleeping()
     timer_response = None
     if timer_requests.direct_timer_capability(user_text):
         timer_response = timer_requests.TIMER_CAPABILITY
@@ -172,6 +188,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     elif timer_requests.direct_timer_control(user_text):
         timer_response = "No timer was changed. Use /tasks to find its ID, then /cancel <id> or /snooze <id> <minutes>."
     if timer_response is not None:
+        await outcome_conversation.invalidate_for_other_action(update.effective_chat.id)
         await _send_verified_response(update, timer_response)
         return
 
@@ -179,7 +196,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     # external evidence. Its deterministic response is tied to the saved row.
     reminder_text = parser.direct_reminder_request(user_text)
     if reminder_text is not None:
+        await outcome_conversation.invalidate_for_other_action(update.effective_chat.id)
         await _reply_to_reminder_request(update, reminder_text)
+        return
+
+    # The feature is opt-in and only reads this direct Telegram message. Model
+    # interpretation can propose changes; a separate saved preview confirmation
+    # owns mutation. Existing timer/reminder receipts retain precedence.
+    from . import outcome_conversation
+    outcome_response = await outcome_conversation.handle_text(update, user_text)
+    if outcome_response is not None:
+        await _send_verified_response(update, outcome_response)
         return
 
     # 0. Check for Image Generation Request
@@ -201,7 +228,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         else:
             # A bare 'done' must never stop a timer or claim a failed mutation.
             pending = await tasks.list_pending()
-            if pending and len(pending) == 1 and pending[0].get("kind") != "timer" and user_text.lower().strip() in ("done", "finished", "completed", "did it"):
+            if (not getattr(update.message, "forward_origin", None) and not getattr(update.message, "forward_date", None)
+                    and pending and len(pending) == 1 and pending[0].get("kind") != "timer" and user_text.lower().strip() in ("done", "finished", "completed", "did it")):
                 task = pending[0]
                 if not await tasks.mark_done(int(task["id"])):
                     verified_response = "I couldn't confirm that task was marked done. Check /tasks for its current status."
@@ -247,14 +275,29 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     )
 
 
+async def _record_media_activity(update: Update, content: str) -> bool:
+    """Media replays do not fabricate a reply to an unanswered checkpoint."""
+    from . import outcome_conversation, outcome_store
+    source = outcome_conversation.source_identity(update)
+    if outcome_conversation.enabled() and source:
+        if not await outcome_store.log_user_message_once(update.effective_chat.id, source, content):
+            await _send_verified_response(update, await outcome_conversation.duplicate_response(update))
+            return False
+        await outcome_conversation.invalidate_for_other_action(update.effective_chat.id)
+    else:
+        await _log_message("user", content)
+    return True
+
+
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not _allowed(update) or not update.message or not update.message.photo:
+        return
+    user_caption = update.message.caption or "Look at this screenshot / image"
+    if not await _record_media_activity(update, f"[Image] {user_caption}"):
         return
     photo = update.message.photo[-1]
     file = await context.bot.get_file(photo.file_id)
     image_bytes = await file.download_as_bytearray()
-    user_caption = update.message.caption or "Look at this screenshot / image"
-    await _log_message("user", f"[Image] {user_caption}")
 
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
     try:
@@ -279,13 +322,15 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     file_size = doc.file_size or 0
     mime_type = (doc.mime_type or "").lower()
     user_caption = update.message.caption or ""
-
     if file_size > MAX_TELEGRAM_FILE_SIZE:
         size_mb = file_size / (1024 * 1024)
         await update.message.reply_text(
             f"⚠️ Telegram limits bot file downloads to 20 MB (this file is {size_mb:.1f} MB).\n"
             "Could you send a smaller slice or snippet for me to inspect?"
         )
+        return
+
+    if not await _record_media_activity(update, f"[Document: {file_name} ({file_size/1024:.1f} KB)] {user_caption}"):
         return
 
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
@@ -300,8 +345,6 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if not file_bytes:
         await update.message.reply_text("⚠️ The received file is empty.")
         return
-
-    await _log_message("user", f"[Document: {file_name} ({file_size/1024:.1f} KB)] {user_caption}")
 
     ext = ("." + file_name.rsplit(".", 1)[-1].lower()) if "." in file_name else ""
 
@@ -510,6 +553,9 @@ async def handle_voice_or_audio(update: Update, context: ContextTypes.DEFAULT_TY
         await update.message.reply_text("⚠️ Voice/Audio message is larger than 20 MB Telegram limit.")
         return
 
+    user_caption = update.message.caption or ("Voice note from Teja" if voice else "Audio track from Teja")
+    if not await _record_media_activity(update, f"[{'Voice' if voice else 'Audio'}] {user_caption}"):
+        return
     action = ChatAction.RECORD_VOICE if voice else ChatAction.TYPING
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=action)
 
@@ -522,8 +568,6 @@ async def handle_voice_or_audio(update: Update, context: ContextTypes.DEFAULT_TY
         return
 
     mime_type = getattr(item, "mime_type", None) or ("audio/ogg" if voice else "audio/mp3")
-    user_caption = update.message.caption or ("Voice note from Teja" if voice else "Audio track from Teja")
-    await _log_message("user", f"[{'Voice' if voice else 'Audio'}] {user_caption}")
 
     system_note = (
         "[Internal event: Teja just sent you a voice note/message. Listen to what he says, understand his tone, and reply naturally with warmth. Do not infer more about his mood than the audio supports.]"

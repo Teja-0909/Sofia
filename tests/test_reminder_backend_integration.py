@@ -78,19 +78,48 @@ class _SqliteWireFixture:
         finally:
             cursor.close()
 
+    def batch(self, batch):
+        results, errors = [], []
+
+        def allowed(condition):
+            if condition["type"] == "ok":
+                return results[condition["step"]] is not None
+            if condition["type"] == "not":
+                return not allowed(condition["cond"])
+            raise AssertionError("Unsupported fixture condition")
+
+        for step in batch["steps"]:
+            if "condition" in step and not allowed(step["condition"]):
+                results.append(None)
+                errors.append(None)
+                continue
+            try:
+                results.append(self.execute(step["stmt"]))
+                errors.append(None)
+            except sqlite3.Error as exc:
+                results.append(None)
+                errors.append({"message": str(exc), "code": "SQLITE_ERROR"})
+        return {"step_results": results, "step_errors": errors}
+
     async def official_send(self, method, path, request):
-        assert method == "POST" and path == "v1/execute"
+        assert method == "POST"
+        if path == "v1/batch":
+            return {"result": self.batch(request["batch"])}
+        assert path == "v1/execute"
         assert request["stmt"]["want_rows"] is True
         return {"result": self.execute(request["stmt"])}
 
     async def fallback_post(self, url, *, headers, json):
         assert url == "https://offline.invalid/v2/pipeline"
         assert headers == {"Authorization": "Bearer offline-test-token"}
-        assert [request["type"] for request in json["requests"]] == ["execute", "close"]
-        result = self.execute(json["requests"][0]["stmt"])
+        first = json["requests"][0]
+        assert first["type"] in ("execute", "batch")
+        assert json["requests"][1] == {"type": "close"}
+        result = (self.batch(first["batch"]) if first["type"] == "batch"
+                  else self.execute(first["stmt"]))
         response = {
             "results": [
-                {"type": "ok", "response": {"type": "execute", "result": result}},
+                {"type": "ok", "response": {"type": first["type"], "result": result}},
                 {"type": "ok", "response": {"type": "close"}},
             ],
         }
