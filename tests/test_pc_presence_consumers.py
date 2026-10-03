@@ -47,12 +47,13 @@ class TestConsciousnessPresence(unittest.IsolatedAsyncioTestCase):
             with self.subTest(state=state), \
                  patch.object(consciousness, "get_state", AsyncMock(return_value={"state": "AWAKE"})), \
                  patch.object(consciousness.db, "fetch_one", AsyncMock(return_value=None)), \
-                 patch.object(consciousness.db, "fetch_all", AsyncMock(return_value=[])), \
-                 patch.object(consciousness.db, "get_config", AsyncMock(return_value="STALE_LEGACY_APP")) as config, \
+                 patch.object(consciousness.db, "fetch_all", AsyncMock(return_value=[{"content": "Review draft", "role": "user", "timestamp": "2026-10-03T18:00:00Z"}])), \
+                 patch("app.memory.filter_suppressed_text", AsyncMock(side_effect=lambda text: text)), \
+                 patch.object(consciousness.db, "get_config", AsyncMock(side_effect=lambda key, default="": default)) as config, \
                  patch.object(pc_presence, "read_snapshot", AsyncMock(return_value=snapshot(state))), \
                  patch.object(consciousness.llm, "chat", AsyncMock(return_value=("PASS", []))) as chat:
                 await consciousness.inner_thought_cycle()
-                config.assert_not_awaited()
+                config.assert_awaited_once_with("proactivity_paused", "false")
                 system = chat.call_args.kwargs["system"]
                 messages = chat.call_args.kwargs["messages"]
                 self.assertNotIn("UNTRUSTED_TITLE", system)
@@ -77,8 +78,9 @@ class TestTriggerPresence(unittest.IsolatedAsyncioTestCase):
 
     async def test_periodic_check_preserves_unknown_idle_and_timestamps(self):
         with patch.object(consciousness, "is_sleeping_async", AsyncMock(return_value=False)), \
-             patch.object(triggers.db, "fetch_one", AsyncMock(return_value=None)), \
+             patch.object(triggers.db, "fetch_one", AsyncMock(return_value={"id": 1})), \
              patch.object(pc_presence, "read_snapshot", AsyncMock(return_value=snapshot(idle=None))), \
+             patch.object(triggers, "background_message_allowed", AsyncMock(return_value=True)), \
              patch.object(triggers.tasks_module, "deliver_once", AsyncMock(return_value=False)) as deliver:
             await triggers.check_pc_presence_5min()
         context = json.loads(deliver.call_args.kwargs["untrusted_context"])
@@ -89,23 +91,13 @@ class TestTriggerPresence(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("UNTRUSTED_TITLE", deliver.call_args.args[2])
         self.assertIn("not a screenshot", deliver.call_args.args[2])
 
-    async def test_just_because_requires_fresh_known_recent_input(self):
-        for state, idle, should_send in (("fresh", 0, True), ("fresh", None, False), ("fresh", 15, False),
-                                         ("stale", 0, False), ("paused", 0, False), ("unavailable", 0, False)):
-            with self.subTest(state=state, idle=idle), \
-                 patch.object(consciousness, "is_sleeping_async", AsyncMock(return_value=False)), \
-                 patch.object(triggers, "_is_global_cooldown_active", AsyncMock(return_value=False)), \
-                 patch.object(triggers, "_proactive_count_today", AsyncMock(return_value=0)), \
-                 patch.object(triggers.db, "get_config", AsyncMock(return_value="4")), \
-                 patch.object(pc_presence, "read_snapshot", AsyncMock(return_value=snapshot(state, idle))), \
-                 patch.object(triggers.random, "random", return_value=0), \
-                 patch.object(triggers.tasks_module, "deliver_once", AsyncMock(return_value=False)) as deliver:
+    async def test_just_because_never_sends_for_presence_alone(self):
+        for state in ("fresh", "stale", "paused", "unavailable"):
+            with self.subTest(state=state), \
+                 patch.object(pc_presence, "read_snapshot", AsyncMock(return_value=snapshot(state))), \
+                 patch.object(triggers.tasks_module, "deliver_once", AsyncMock()) as deliver:
                 await triggers.maybe_just_because()
-                self.assertEqual(deliver.await_count, int(should_send))
-                if should_send:
-                    context = json.loads(deliver.call_args.kwargs["untrusted_context"])
-                    self.assertEqual(context["age_seconds"], 5)
-                    self.assertEqual(context["app_name"], "Chrome")
+                deliver.assert_not_awaited()
 
     async def test_real_reader_rejects_61_second_old_periodic_context(self):
         values = {"last_presence_app": "Chrome", "last_presence_title": "STALE_TITLE",
@@ -122,8 +114,10 @@ class TestTriggerPresence(unittest.IsolatedAsyncioTestCase):
 
     async def test_presence_reaction_does_not_claim_to_watch_screen_or_know_absence(self):
         with patch.object(consciousness, "is_sleeping_async", AsyncMock(return_value=False)), \
-             patch.object(triggers.db, "fetch_one", AsyncMock(return_value=None)), \
-             patch.object(triggers.db, "get_config", AsyncMock(return_value="")), \
+             patch.object(triggers.db, "fetch_one", AsyncMock(return_value={"id": 1})), \
+             patch.object(triggers.db, "get_config", AsyncMock(side_effect=lambda key, default="": default)), \
+             patch.object(triggers, "background_message_allowed", AsyncMock(return_value=True)), \
+             patch.object(pc_presence, "read_snapshot", AsyncMock(return_value=snapshot())), \
              patch.object(triggers.tasks_module, "deliver_once", AsyncMock(return_value=False)) as deliver:
             await triggers.app_presence_reaction("Chrome", "TITLE", 0, "Editor", "OLD")
             self.assertIn("not a screenshot", deliver.call_args.args[2])

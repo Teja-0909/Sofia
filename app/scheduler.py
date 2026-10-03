@@ -85,7 +85,6 @@ async def create_scheduler() -> AsyncIOScheduler:
     scheduler.add_job(memory.summarize_old_messages, "interval", hours=1)
     scheduler.add_job(triggers.check_pc_presence_5min, "interval", minutes=5)
     scheduler.add_job(triggers.hourly_checkin, "interval", minutes=60)
-    scheduler.add_job(triggers.maybe_just_because, "interval", minutes=45)
 
     # 4. End-of-day summary and nightly diary
     summary_hour = int(await db.get_config("daily_summary_hour", "22"))

@@ -496,7 +496,7 @@ async def handle_voice_or_audio(update: Update, context: ContextTypes.DEFAULT_TY
     await _log_message("user", f"[{'Voice' if voice else 'Audio'}] {user_caption}")
 
     system_note = (
-        "[Internal event: Teja just sent you a voice note/message. Listen to what he says, understand his tone, and reply to him naturally in your devoted voice.]"
+        "[Internal event: Teja just sent you a voice note/message. Listen to what he says, understand his tone, and reply naturally with warmth. Do not infer more about his mood than the audio supports.]"
         if voice
         else "[Internal event: Teja sent an audio track. Listen to it and talk to him about it.]"
     )

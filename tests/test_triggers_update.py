@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 from app import triggers
 
@@ -64,51 +64,24 @@ class TestTriggersUpdate(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("chore(release): old commit", summary)
         self.assertIn("Modified modules: app/bot.py, app/llm.py", summary)
 
-    @patch("app.db.execute", new_callable=AsyncMock)
-    @patch("app.db.get_config", new_callable=AsyncMock)
-    @patch("app.triggers._get_git_update_summary")
-    @patch("app.orchestrator_routing.proactive", new_callable=AsyncMock)
-    @patch("app.bot_core.get_bot")
-    @patch("app.bot_core.send_text", new_callable=AsyncMock)
-    @patch("app.bot_core._log_message", new_callable=AsyncMock)
-    async def test_check_for_updates_sends_concrete_proactive(
-        self,
-        mock_log_msg,
-        mock_send_text,
-        mock_get_bot,
-        mock_proactive,
-        mock_summary,
-        mock_get_config,
-        mock_db_execute,
-    ):
-        """Test that check_for_updates triggers a proactive message with exact features."""
-        mock_get_config.return_value = "old_commit_hash_123"
-        mock_summary.return_value = (
-            "Commits shipped:\n"
-            "- feat(multimodal): add support for PDFs (975082b)\n"
-            "Modified modules: app/bot.py, app/llm.py"
-        )
-        mock_proactive.return_value = "Teja! Look at you shipping document powers! I can now read your PDFs."
-        fake_bot = MagicMock()
-        mock_get_bot.return_value = fake_bot
-
-        with patch("subprocess.check_output", return_value="new_commit_hash_456"):
+    async def test_code_update_uses_shared_policy_and_untrusted_commit_evidence(self):
+        summary = "Commits shipped: feat(multimodal): add PDFs\nModified modules: app/bot.py"
+        def get_config(key, default=""):
+            return "old_commit_hash_123" if key == "last_seen_commit" else default
+        with patch.object(triggers.db, "get_config", AsyncMock(side_effect=get_config)), \
+             patch.object(triggers.db, "execute", AsyncMock()) as execute, \
+             patch.object(triggers, "_get_git_update_summary", return_value=summary), \
+             patch.object(triggers, "deliver_background", AsyncMock(return_value=False)) as deliver, \
+             patch("subprocess.check_output", return_value="new_commit_hash_456"), \
+             patch.dict("os.environ", {"RENDER_GIT_COMMIT": ""}):
             await triggers.check_for_updates()
-
-        # Proactive event prompt must be called with the exact commit log and anti-cliché directives
-        mock_proactive.assert_awaited_once()
-        proactive_call_arg = mock_proactive.call_args[0][0]
-        self.assertIn("feat(multimodal): add support for PDFs", proactive_call_arg)
-        self.assertIn("Modified modules: app/bot.py, app/llm.py", proactive_call_arg)
-        self.assertIn("Please avoid generic sci-fi clichés", proactive_call_arg)
-        self.assertIn("memory pointers", proactive_call_arg)
-
-        # Message sent to Teja
-        mock_send_text.assert_awaited_once_with(fake_bot, "Teja! Look at you shipping document powers! I can now read your PDFs.")
-
-        # last_seen_commit updated
-        mock_db_execute.assert_awaited_once()
-        self.assertIn("new_commit_hash_456", mock_db_execute.call_args[0][1])
+        deliver.assert_awaited_once()
+        self.assertEqual(deliver.call_args.args[0], "code_update")
+        self.assertNotIn(summary, deliver.call_args.args[1])
+        self.assertEqual(deliver.call_args.kwargs["untrusted_context"], summary)
+        self.assertIn("not proof a feature works", deliver.call_args.args[1])
+        execute.assert_awaited_once()
+        self.assertIn("new_commit_hash_456", execute.call_args.args[1])
 
 
 if __name__ == "__main__":

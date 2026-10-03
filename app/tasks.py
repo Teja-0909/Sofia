@@ -1,6 +1,7 @@
 import asyncio
 import datetime as dt
 import logging
+import re
 import uuid
 from collections.abc import Awaitable, Callable
 
@@ -131,9 +132,9 @@ def _voice_tier(reminder_sent_count: int) -> int:
 
 TIER_NOTES = {
     1: "The reminder is simply due now. Mention it naturally and warmly.",
-    2: "This is the first nudge — he hasn't responded to the original reminder. Caring, maybe light teasing, not preachy.",
-    3: "He has avoided this repeatedly today. Direct, encouraging, offer to help him start (body-doubling). You believe in him.",
-    4: "Sustained avoidance. Be softer, not harsher — genuinely worried about him, invite him to talk. Never angry, never guilt-tripping.",
+    2: "Another scheduled delivery attempt. Completion and reply status are unknown; be brief and warm.",
+    3: "Repeated delivery attempts do not establish avoidance or failure. Offer one optional next step without pressure.",
+    4: "This is a later scheduled attempt. Keep it concise; respect rest and changed plans, with no guilt or emotional inference.",
 }
 
 
@@ -151,6 +152,25 @@ async def get_or_create_mood_today() -> dict:
     return dict(row)
 
 
+def clean_generated_text(raw_text: str) -> str:
+    """Strip inert model action tags, preserving literal fenced code examples."""
+    from . import images, memory_file, moods, parser
+    pieces = re.split(r"(```[\s\S]*?```)", raw_text)
+    extractors = (images.extract_embedded_image_tag, memory_file.extract_remember_tag,
+                  moods.extract_mood_tag, parser.extract_done_tag, parser.extract_task_tag,
+                  parser.extract_sleep_tag, parser.extract_focus_tag, parser.extract_clear_focus_tag)
+    for index in range(0, len(pieces), 2):
+        source = pieces[index]
+        if not source.strip():
+            continue
+        leading = re.match(r"\s*", source).group()
+        trailing = re.search(r"\s*$", source).group()
+        for extractor in extractors:
+            pieces[index], _ = extractor(pieces[index])
+        pieces[index] = leading + pieces[index].strip() + trailing
+    return "".join(pieces)
+
+
 async def _send_proactive(
     system_note: str, fallback_text: str | None = None, untrusted_context: str | None = None,
     delivery_guard: Callable[[], Awaitable[bool]] | None = None,
@@ -162,7 +182,6 @@ async def _send_proactive(
     text message, avoiding split-message partial-success duplicates.
     """
     from . import bot_core as bot_module
-    from . import images, memory_file, moods
 
     if await db.get_config("proactivity_paused", "false") == "true":
         return False
@@ -181,9 +200,7 @@ async def _send_proactive(
         raw_text = await asyncio.wait_for(
             orchestrator_routing.proactive(system_note, **kwargs), timeout=180,
         )
-        clean_text, _ = images.extract_embedded_image_tag(raw_text or "")
-        clean_text, _ = memory_file.extract_remember_tag(clean_text)
-        clean_text, _ = moods.extract_mood_tag(clean_text)
+        clean_text = clean_generated_text(raw_text or "")
     if not clean_text or clean_text.strip().upper() == "PASS":
         clean_text = fallback_text or ""
     clean_text = clean_text.replace("<split>", "\n").strip()[:4000]
@@ -230,6 +247,7 @@ async def _claim_delivery(job_key: str, kind: str) -> str | None:
 async def deliver_once(
     job_key: str, kind: str, note: str, fallback_text: str | None = None,
     untrusted_context: str | None = None, task_snapshot: dict | None = None,
+    delivery_guard: Callable[[], Awaitable[bool]] | None = None,
 ) -> bool:
     """Lease, send, then receipt. Failed delivery remains retryable after backoff.
 
@@ -254,6 +272,8 @@ async def deliver_once(
             (job_key, token, timeutil.utc_iso()),
         )
         if not claim:
+            return False
+        if delivery_guard is not None and not await delivery_guard():
             return False
         if task_snapshot is None:
             return True

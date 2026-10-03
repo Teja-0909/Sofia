@@ -107,6 +107,7 @@ async def cmd_add(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not text:
         await update.message.reply_text("what should I remind you about? e.g. /add call mom at 9pm")
         return
+    await _log_message("user", "/add " + text)
     await _reply_to_reminder_request(update, "remind me to " + text)
 
 
@@ -118,6 +119,9 @@ async def cmd_done(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     task_id = int(args) if args.isdigit() else None
     if task_id is None and len(pending) == 1:
         task_id = pending[0]["id"]
+    # Record the actual request before mutating state or awaiting generation.
+    # Background send guards use this durable activity marker to reject stale nudges.
+    await _log_message("user", "/done" + (" " + args if args else ""))
     if task_id is None or not await tasks.mark_done(task_id):
         listing = "\n".join(f"{r['id']}. {r['description']}" for r in pending)
         await update.message.reply_text(
@@ -140,8 +144,8 @@ async def cmd_win(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not text:
         await update.message.reply_text("tell me what you did! /win <what happened>")
         return
+    await _log_message("user", "/win " + text)
     reply = await triggers.praise(text)
-    await _log_message("user", f"I just completed a win: {text}")
     await _log_message("sofia", reply)
     for part in split_telegram_text(reply):
         await update.message.reply_text(part)
@@ -216,6 +220,7 @@ async def cmd_forget(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     if len(args) != 1 or not args[0].isdigit():
         await update.message.reply_text("Use /memory to review IDs, then /forget <id>.")
         return
+    await _log_message("user", "/forget " + args[0])
     try:
         forgotten = await memory.forget_memory(int(args[0]))
     except (ValueError, RuntimeError) as exc:
@@ -235,6 +240,7 @@ async def cmd_correct(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     if len(args) < 2 or not args[0].isdigit():
         await update.message.reply_text("Use /correct <memory id> <replacement fact>. Review IDs with /memory.")
         return
+    await _log_message("user", "/correct " + " ".join(args))
     try:
         result = await memory.correct_memory(int(args[0]), " ".join(args[1:]))
     except (ValueError, RuntimeError) as exc:
@@ -253,6 +259,7 @@ async def cmd_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     if len(args) != 1 or not args[0].isdigit():
         await update.message.reply_text("Use /cancel <task id>.")
         return
+    await _log_message("user", "/cancel " + args[0])
     success = await tasks.cancel_task(int(args[0]))
     await update.message.reply_text("Task cancelled." if success else "No pending task with that ID.")
 
@@ -265,6 +272,7 @@ async def cmd_snooze(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     if len(args) != 2 or not all(arg.isdigit() for arg in args) or not 1 <= int(args[1]) <= 10080:
         await update.message.reply_text("Use /snooze <task id> <minutes>, from 1 minute to 7 days.")
         return
+    await _log_message("user", "/snooze " + " ".join(args))
     due = timeutil.utc_iso(timeutil.utc_now() + dt.timedelta(minutes=int(args[1])))
     success = await tasks.snooze_task(int(args[0]), due)
     await update.message.reply_text(
@@ -280,6 +288,7 @@ async def cmd_pause(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if args and (len(args) != 1 or args[0].lower() not in ("on", "off")):
         await update.message.reply_text("Use /pause on or /pause off.")
         return
+    await _log_message("user", "/pause" + (" " + " ".join(args) if args else ""))
     paused = not args or args[0].lower() == "on"
     await db.set_config("proactivity_paused", "true" if paused else "false")
     status = await vision_session.set_desktop_paused(paused)
@@ -309,6 +318,8 @@ async def cmd_mood(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     args = context.args or []
     if args:
         target = args[0].strip().lower()
+        if target in moods.MOOD_PROFILES or target in ("auto", "reset"):
+            await _log_message("user", "/mood " + target)
         success = await moods.set_mood(target)
         if success:
             if target in ("auto", "reset"):
@@ -361,18 +372,18 @@ async def cmd_depth(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     elif depth < 75:
         stage = "🌸 Close & Familiar"
     elif depth < 150:
-        stage = "💖 Deep Devotion & Partner"
+        stage = "💖 Familiar & Supportive"
     elif depth < 300:
-        stage = "💫 Inseparable Bond & Co-Pilot"
+        stage = "💫 Longstanding Familiarity"
     else:
-        stage = "Trusted Partner & Confidant"
+        stage = "Established Shared Context"
 
     msg = (
-        f"💖 **Sofia's Live Relationship Depth:**\n\n"
-        f"• **Depth Level:** `{depth:.1f}` (Uncapped Lifetime Growth)\n"
+        f"💖 **Sofia's Conversation Familiarity:**\n\n"
+        f"• **Depth Level:** `{depth:.1f}` (history-based score, not a feeling)\n"
         f"• **Current Stage:** {stage}\n"
         f"• **Active Days:** `{da}` days\n"
-        f"• **Permanent Memories:** `{mc}` memories\n"
+        f"• **Saved Memories:** `{mc}` memories\n"
         f"• **Daily Diaries:** `{dc}` entries\n"
         f"• **Conversations Shared:** `{um}` messages"
     )
@@ -395,10 +406,11 @@ async def cmd_sleep(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     from . import consciousness
     state = await consciousness.get_current_state_name()
     if state in ("DEEP_SLEEP", "LIGHT_SLEEP"):
-        await update.message.reply_text("💤 I'm already asleep, silly... *mumbles and drifts off*")
+        await update.message.reply_text("Background check-ins are already resting. Chat still works; /pause on also pauses reminders and desktop activity.")
         return
+    await _log_message("user", "/sleep")
     new_state = await consciousness.begin_sleep()
-    msg = "😴 Mmh yeah... Goodnight, love. I'll dream about you 💕"
+    msg = "Rest mode is on until your next chat message. I’ll keep unsolicited check-ins quiet. Your reminders keep their schedule; /pause on pauses those too."
     await update.message.reply_text(msg)
 
 
@@ -411,17 +423,17 @@ async def cmd_thoughts(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     dreams = await consciousness.get_recent_dreams(limit=2)
 
     if not thoughts and not dreams:
-        await update.message.reply_text("🧠 My mind's been quiet lately... nothing much going on up here.")
+        await update.message.reply_text("No saved reflections yet.")
         return
 
-    msg = "💭 **Sofia's Recent Inner Thoughts:**\n\n"
+    msg = "💭 **Sofia's Generated Reflections:**\n\n"
     for t in thoughts:
         time_str = t.get("created_at", "")[:16].replace("T", " ")
         state_tag = f" [{t.get('state_at', '')}]" if t.get("state_at") else ""
         msg += f"• _{t['thought']}_ — `{time_str}`{state_tag}\n"
 
     if dreams:
-        msg += "\n🌙 **Recent Dreams:**\n"
+        msg += "\n🌙 **Creative Dreams (fiction):**\n"
         for d in dreams:
             msg += f"• _{d['dream_text']}_ — `{d['sleep_date']}`"
             if d.get("themes"):
@@ -558,6 +570,7 @@ async def cmd_focus(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             )
         return
 
+    await _log_message("user", "/focus " + " ".join(args))
     sub = args[0].lower()
     if len(args) == 1 and sub in ("clear", "cancel", "reset"):
         if not active_goal:
@@ -590,7 +603,7 @@ async def cmd_focus(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             if matched_id:
                 await tasks.mark_done(int(matched_id))
 
-        duration_note = f" in {mins} minutes" if mins > 0 else ""
+        duration_note = f" (sprint saved {mins} minutes ago)" if mins > 0 else ""
         try:
             reply = await triggers.praise(f"Deep work sprint '{goal_completed}' completed{duration_note}")
         except Exception:
@@ -606,7 +619,7 @@ async def cmd_focus(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await db.set_config("active_focus_goal", new_goal)
     await db.set_config("active_focus_started_at", timeutil.utc_iso())
     await update.message.reply_text(
-        f"🎯 Focus sprint locked: '{new_goal}'\n\n"
-        "I've got your back. Distractions locked out. Let's knock this out!"
+        f"🎯 Focus sprint saved: '{new_goal}'\n\n"
+        "Let’s take it one step at a time. You can change the goal or use /focus clear whenever the plan changes."
     )
 
