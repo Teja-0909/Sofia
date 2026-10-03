@@ -124,6 +124,8 @@ def _absolute_parts(match: re.Match) -> tuple[int, int, str | None]:
 
 
 def _invalid_time_expression(text: str) -> bool:
+    if re.search(rf"\b(?:in|after)\s+{NUMBER_PATTERN}[\s-]*{UNIT_PATTERN}\s*(?:,|\+|and)?\s*{NUMBER_PATTERN}[\s-]*{UNIT_PATTERN}\b", text, re.IGNORECASE):
+        return True
     if re.search(r"\b(?:in|after)\s+(?:[+-]\s*\d|(?:negative|minus)\b)", text, re.IGNORECASE):
         return True
     for match in ABSOLUTE_RE.finditer(text):

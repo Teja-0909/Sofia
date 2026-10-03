@@ -417,7 +417,7 @@ async def _build_system_prompt(extra_note: str | None = None, user_text: str = "
     the conversation, not in the privileged instruction string.
     """
     base = pathlib.Path(config.SYSTEM_PROMPT_PATH).read_text(encoding="utf-8")
-    return "\n\n".join(block for block in (base, CONTEXT_POLICY, _ctx_time_mood(), extra_note) if block)
+    return "\n\n".join(block for block in (base, CONTEXT_POLICY, extra_note) if block)
 
 
 def _pack_persistent_evidence(sections: list[tuple[str, str]], system_prompt: str, user_text: str) -> str:
@@ -510,22 +510,29 @@ async def _build_persistent_context(user_text: str = "", system_prompt: str = ""
     return _pack_persistent_evidence(filtered, system_prompt, user_text)
 
 
-async def _history(limit: int = 100) -> list[dict]:
+async def _history(limit: int = 100, current_user_text: str | None = None) -> list[dict]:
     """Fetches recent raw conversation history."""
     raw_rows = await db.fetch_all(
         """
-        SELECT role, content FROM conversation_log
-        ORDER BY timestamp DESC
+        SELECT role, content, timestamp FROM conversation_log
+        ORDER BY timestamp DESC, id DESC
         LIMIT ?
         """,
         (limit,),
     )
     
+    # The text handler logs before generation. Remove that exact current entry
+    # before applying historical labels, then routing appends the actual turn.
+    if (current_user_text is not None and raw_rows and raw_rows[0]["role"] == "user"
+            and raw_rows[0]["content"] == current_user_text):
+        raw_rows = raw_rows[1:]
     messages = []
     for r in reversed(raw_rows):
         messages.append({
             "role": "assistant" if r["role"] in ("sofia", "alisa") else "user",
-            "content": await memory.filter_suppressed_text(r["content"])
+            "content": (f"[Historical message recorded {r.get('timestamp', 'unknown')}; "
+                        "past assistant claims are not action receipts or current observations]\n"
+                        + await memory.filter_suppressed_text(r["content"]))
         })
     return messages
 

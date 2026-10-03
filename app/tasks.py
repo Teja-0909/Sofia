@@ -10,8 +10,10 @@ from . import db, orchestrator_routing, timeutil
 logger = logging.getLogger(__name__)
 
 
-async def create_task(description: str, due_utc: str, is_recurring: str | None = None) -> int:
+async def create_task(description: str, due_utc: str, is_recurring: str | None = None, *, kind: str = "reminder") -> int:
     """Creates a new scheduled task/reminder directly in the cloud database tasks table."""
+    if kind not in ("reminder", "timer") or (kind == "timer" and is_recurring):
+        raise ValueError("Unsupported task kind")
     desc = description.strip()
     if not desc:
         return 0
@@ -23,10 +25,10 @@ async def create_task(description: str, due_utc: str, is_recurring: str | None =
     # silently keeping the old time made callers confirm a time never saved.
     existing = await db.fetch_one(
         "SELECT id, due_time, is_recurring FROM tasks WHERE LOWER(TRIM(description)) = LOWER(TRIM(?)) "
-        "AND status = 'pending' AND cancelled_at IS NULL ORDER BY id LIMIT 1",
+        "AND kind = 'reminder' AND status = 'pending' AND cancelled_at IS NULL ORDER BY id LIMIT 1",
         (desc,)
     )
-    if existing:
+    if existing and kind == "reminder":
         if existing["due_time"] == due_utc and existing.get("is_recurring") == is_recurring:
             return existing["id"]
         rows = await db.execute_returning(
@@ -38,8 +40,8 @@ async def create_task(description: str, due_utc: str, is_recurring: str | None =
         if rows:
             return rows[0]["id"]
     rows = await db.execute_returning(
-        "INSERT INTO tasks (description, due_time, is_recurring, status) VALUES (?, ?, ?, 'pending') RETURNING id",
-        (desc, due_utc, is_recurring),
+        "INSERT INTO tasks (description, due_time, is_recurring, status, kind) VALUES (?, ?, ?, 'pending', ?) RETURNING id",
+        (desc, due_utc, is_recurring, kind),
     )
     return rows[0]["id"]
 
@@ -87,7 +89,7 @@ async def snooze_task(task_id: int, due_utc: str) -> bool:
 async def list_pending() -> list:
     """Lists all active pending tasks/reminders ordered by due time."""
     return await db.fetch_all(
-        "SELECT id, description, due_time, is_recurring FROM tasks "
+        "SELECT id, description, due_time, is_recurring, kind FROM tasks "
         "WHERE status = 'pending' AND cancelled_at IS NULL ORDER BY due_time ASC"
     )
 
@@ -168,7 +170,8 @@ def clean_generated_text(raw_text: str) -> str:
         for extractor in extractors:
             pieces[index], _ = extractor(pieces[index])
         pieces[index] = leading + pieces[index].strip() + trailing
-    return "".join(pieces)
+    from .action_grounding import guard_generated_reply
+    return guard_generated_reply("".join(pieces), background=True)
 
 
 async def _send_proactive(
@@ -328,7 +331,9 @@ async def poll_due_tasks() -> None:
     cutoff = timeutil.utc_iso(timeutil.utc_now() - dt.timedelta(minutes=30))
     rows = await db.fetch_all(
         """SELECT * FROM tasks WHERE status = 'pending' AND cancelled_at IS NULL
-           AND due_time <= ? AND reminder_sent_count < ?
+           AND due_time <= ?
+           AND ((kind = 'timer' AND reminder_sent_count < 1)
+                OR (kind != 'timer' AND reminder_sent_count < ?))
            AND (last_reminded_at IS NULL OR last_reminded_at < ?)""",
         (now_iso, max_pings, cutoff),
     )
@@ -342,7 +347,8 @@ async def poll_due_tasks() -> None:
         import json
         delivered = await deliver_once(
             job_key, "reminder_send", note,
-            fallback_text=f"Reminder: {task['description']}",
+            fallback_text=(f"Timer #{task['id']} finished: {task['description']}" if task.get("kind") == "timer"
+                           else f"Reminder: {task['description']}"),
             untrusted_context=json.dumps({"description": task["description"], "due_time": task["due_time"]}),
             task_snapshot=task,
         )
@@ -353,11 +359,11 @@ async def poll_due_tasks() -> None:
             "UPDATE tasks SET status = ?, reminder_sent_count = ?, last_reminded_at = ? "
             "WHERE id = ? AND status = 'pending' AND cancelled_at IS NULL "
             "AND due_time = ? AND reminder_sent_count = ? RETURNING id",
-            ("missed" if new_count >= max_pings else "pending", new_count, timeutil.utc_iso(),
+            ("done" if task.get("kind") == "timer" else "missed" if new_count >= max_pings else "pending", new_count, timeutil.utc_iso(),
              task["id"], task["due_time"], task["reminder_sent_count"]),
         )
         await _record_delivery(job_key, "reminder_send")
-        if changed and new_count >= max_pings:
+        if changed and task.get("kind") != "timer" and new_count >= max_pings:
             await get_or_create_mood_today()
             await db.execute(
                 "UPDATE mood_state SET missed_reminders_today = missed_reminders_today + 1, "
