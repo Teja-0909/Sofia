@@ -95,6 +95,7 @@ class TestExplicitControls(unittest.IsolatedAsyncioTestCase):
 
     def make_update(self):
         update = MagicMock()
+        update.effective_chat.id = 42
         update.effective_user.id = 42
         update.message.reply_text = AsyncMock()
         return update

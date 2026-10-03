@@ -155,6 +155,7 @@ class ReplyStyleContracts(unittest.IsolatedAsyncioTestCase):
         await db.set_config("active_focus_started_at", timeutil.utc_iso())
         update = MagicMock()
         update.effective_user.id = 42
+        update.effective_chat.id = 42
         update.message.reply_text = AsyncMock()
         with patch.object(config, "ALLOWED_USER_ID", 42):
             await bot_commands.cmd_focus(update, SimpleNamespace(args=["clear"]))
@@ -165,6 +166,7 @@ class ReplyStyleContracts(unittest.IsolatedAsyncioTestCase):
         await db.set_config("active_focus_goal", "Write the introduction")
         update = MagicMock()
         update.effective_user.id = 42
+        update.effective_chat.id = 42
         update.message.reply_text = AsyncMock()
         with patch.object(config, "ALLOWED_USER_ID", 42), \
              patch.object(bot_commands.triggers, "praise", AsyncMock(side_effect=RuntimeError("mock failure"))):

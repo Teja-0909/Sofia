@@ -95,6 +95,7 @@ class TestExecutiveTimeAndFocus(unittest.IsolatedAsyncioTestCase):
         """Test /focus command lifecycle: set, view, done, clear."""
         update = MagicMock()
         update.effective_user.id = config.ALLOWED_USER_ID
+        update.effective_chat.id = config.ALLOWED_USER_ID
         update.message.reply_text = AsyncMock()
         context = MagicMock()
 

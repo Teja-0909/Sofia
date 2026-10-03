@@ -346,6 +346,7 @@ class BackgroundDatabase(unittest.IsolatedAsyncioTestCase):
         await db.set_config("active_focus_started_at", timeutil.utc_iso())
         update = MagicMock()
         update.effective_user.id = 123
+        update.effective_chat.id = 123
         update.message.text = "/focus clear"
         update.message.reply_text = AsyncMock()
         context = MagicMock()
