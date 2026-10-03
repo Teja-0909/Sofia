@@ -35,7 +35,7 @@ class TestSchemaReadiness(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = pathlib.Path(directory) / "legacy.db"
             schema_path = pathlib.Path(__file__).parents[1] / "alisa-schema.sql"
-            legacy_schema = schema_path.read_text().replace("    cancelled_at        TEXT,\n", "")
+            legacy_schema = schema_path.read_text().replace("    cancelled_at        TEXT,\n", "").replace("    kind                TEXT NOT NULL DEFAULT 'reminder',\n", "")
             with sqlite3.connect(path) as connection:
                 connection.executescript(legacy_schema)
                 connection.execute("INSERT INTO tasks (description, due_time) VALUES ('keep this task', '2026-10-03T12:00:00Z')")
@@ -46,8 +46,8 @@ class TestSchemaReadiness(unittest.IsolatedAsyncioTestCase):
                 try:
                     await db.init()
                     await db.init()
-                    row = await db.fetch_one("SELECT description, cancelled_at FROM tasks")
-                    self.assertEqual(row, {"description": "keep this task", "cancelled_at": None})
+                    row = await db.fetch_one("SELECT description, cancelled_at, kind FROM tasks")
+                    self.assertEqual(row, {"description": "keep this task", "cancelled_at": None, "kind": "reminder"})
                 finally:
                     await db.close_local_conn()
 

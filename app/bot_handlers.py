@@ -63,6 +63,16 @@ async def _save_requested_reminder(text: str) -> str:
     return f"Saved reminder #{saved['id']}: {saved['description']} — {when} {timeutil.tz()}{repeats}.{pause_note}"
 
 
+async def _send_verified_response(update: Update, response: str) -> None:
+    """Deliver caller-owned receipt/status text, never model-authored prose."""
+    try:
+        await _log_message("sofia", response)
+    except Exception as exc:
+        logger.warning("Receipt log failed: %s", exc)
+    for part in split_telegram_text(response):
+        await update.message.reply_text(part)
+
+
 async def _reply_to_reminder_request(update: Update, text: str) -> None:
     try:
         response = await _save_requested_reminder(text)
@@ -89,7 +99,8 @@ async def _handle_image_generation(update: Update, context: ContextTypes.DEFAULT
             if img_bytes.startswith(b"DEBUG_ERROR:"):
                 await update.message.reply_text(f"[DEBUG: Image API failed: {img_bytes.decode()}]")
                 raise ImageGenerationError("DEBUG API FAILURE")
-            caption = await images.craft_image_caption(user_text, visual_prompt)
+            from .action_grounding import guard_generated_reply
+            caption = guard_generated_reply(await images.craft_image_caption(user_text, visual_prompt))
             await _log_message("sofia", f"[Generated Image: '{visual_prompt}'] {caption}")
             await update.message.reply_photo(photo=img_bytes, caption=caption)
             return
@@ -121,7 +132,7 @@ async def _process_and_send_reply(
     """
     import re
 
-    from . import images, memory_file, moods
+    from . import action_grounding, images, memory_file, moods
     # Preserve fenced code literally, even when it contains an example tag.
     pieces = re.split(r"(```[\s\S]*?```)", raw_reply)
     extractors = (images.extract_embedded_image_tag, memory_file.extract_remember_tag,
@@ -130,7 +141,7 @@ async def _process_and_send_reply(
     for index in range(0, len(pieces), 2):
         for extractor in extractors:
             pieces[index], _ = extractor(pieces[index])
-    clean_reply = "".join(pieces)
+    clean_reply = action_grounding.guard_generated_reply("".join(pieces))
     try:
         await _log_message("sofia", clean_reply)
     except Exception as exc:
@@ -150,6 +161,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     except Exception as e:
         logger.warning("Log message note: %s", e)
 
+    from . import timer_requests
+    timer_response = None
+    if timer_requests.direct_timer_request(user_text):
+        timer_response = await timer_requests.save_timer(user_text)
+    elif timer_requests.direct_timer_status(user_text):
+        timer_response = await timer_requests.timer_status(user_text)
+    elif timer_requests.direct_timer_control(user_text):
+        timer_response = "No timer was changed. Use /tasks to find its ID, then /cancel <id> or /snooze <id> <minutes>."
+    if timer_response is not None:
+        await _send_verified_response(update, timer_response)
+        return
+
     # This grammar reads only the user's direct request, before fetching any
     # external evidence. Its deterministic response is tied to the saved row.
     reminder_text = parser.direct_reminder_request(user_text)
@@ -167,34 +190,39 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     done_id = None
     turn_task_created_id = None
 
+    verified_response = None
     try:
-        # 1. Check for conversational memory correction ("forget that") (Spec §9)
+        # Conversational memory correction owns its verified mutation result.
         corr = await memory.try_handle_correction(user_text)
         if corr:
-            system_note = (
-                f"[Internal event: Teja instructed you to forget/correct memory #{corr['id']}: "
-                f"'{corr['content']}'. The active fact was removed and matching future memory context suppressed; historical logs are retained. "
-                "Acknowledge this limited removal accurately without repeating the forgotten content.]"
-            )
+            verified_response = f"Memory #{corr['id']} was removed from active memory. Historical logs remain."
         else:
-            # 2. Lightweight safety net for task completion (single task case)
+            # A bare 'done' must never stop a timer or claim a failed mutation.
             pending = await tasks.list_pending()
-            if pending and len(pending) == 1 and user_text.lower().strip() in ("done", "finished", "completed", "did it"):
-                done_id = pending[0]["id"]
-                await tasks.mark_done(int(done_id))
-                desc = pending[0]["description"]
-                logger.info("Task #%s ('%s') marked done by bare user message: '%s'", done_id, desc, user_text)
-                active_goal = await db.get_config("active_focus_goal", "")
-                if active_goal and (desc.lower() in active_goal.lower() or active_goal.lower() in desc.lower()):
-                    await db.delete_config("active_focus_goal")
-                    await db.delete_config("active_focus_started_at")
-                    logger.info("Cleared active focus goal '%s' on user task completion", active_goal)
-                system_note = (
-                    f"[Internal event: Teja just marked his task #{done_id} ('{desc}') as DONE/completed. "
-                    "Acknowledge with genuine pride, warmth, and affection in your own voice. DO NOT recreate or reschedule this task!]"
-                )
+            if pending and len(pending) == 1 and pending[0].get("kind") != "timer" and user_text.lower().strip() in ("done", "finished", "completed", "did it"):
+                task = pending[0]
+                if not await tasks.mark_done(int(task["id"])):
+                    verified_response = "I couldn't confirm that task was marked done. Check /tasks for its current status."
+                else:
+                    desc = task["description"]
+                    focus_note = ""
+                    try:
+                        active_goal = await db.get_config("active_focus_goal", "")
+                        if active_goal and (desc.lower() in active_goal.lower() or active_goal.lower() in desc.lower()):
+                            await db.delete_config("active_focus_goal")
+                            await db.delete_config("active_focus_started_at")
+                    except Exception:
+                        focus_note = " I couldn't verify the related focus-goal cleanup."
+                    verified_response = (f"Marked task #{task['id']} done. Nice one!" +
+                        (" Its next daily occurrence remains scheduled." if task.get("is_recurring") == "daily" else "") + focus_note)
     except Exception as exc:
         logger.error("Intent / memory parsing error in handle_message: %s", exc)
+
+    if verified_response is not None:
+        # A Telegram timeout may mean the receipt arrived. Never turn that
+        # uncertainty into a second generated send or repeat the mutation.
+        await _send_verified_response(update, verified_response)
+        return
 
     try:
         await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)

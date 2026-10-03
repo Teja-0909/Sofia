@@ -17,6 +17,11 @@ async def reply(
     mime_type: str = "image/jpeg",
     media_bytes: bytes | None = None,
 ) -> str:
+    if timeutil.direct_clock_question(user_text):
+        return timeutil.clock_answer()
+    from . import timer_requests
+    if timer_requests.direct_timer_status(user_text):
+        return await timer_requests.timer_status(user_text)
     # ── Consciousness: handle sleep-wake ──
     sleep_note = await consciousness.handle_incoming_while_sleeping()
     current_state = await consciousness.get_current_state_name()
@@ -77,7 +82,7 @@ async def reply(
     system = await _build_system_prompt(combined_extra, user_text)
     # Reconcile manual notebook edits before reading suppressed history.
     persistent_context = await _build_persistent_context(user_text, system_prompt=system)
-    history = await _history(window)
+    history = await _history(window, user_text)
     raw_media = media_bytes or image_bytes
     user_msg = {"role": "user", "content": user_text}
     if raw_media:

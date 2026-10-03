@@ -444,6 +444,8 @@ async def init() -> None:
     task_columns = {r["name"] for r in await fetch_all("PRAGMA table_info(tasks)")}
     if "cancelled_at" not in task_columns:
         await execute("ALTER TABLE tasks ADD COLUMN cancelled_at TEXT")
+    if "kind" not in task_columns:
+        await execute("ALTER TABLE tasks ADD COLUMN kind TEXT NOT NULL DEFAULT 'reminder'")
     await validate_required_schema()
 
 
