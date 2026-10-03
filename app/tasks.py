@@ -3,7 +3,6 @@ import datetime as dt
 import logging
 
 from . import config, db, llm, orchestrator, timeutil
-from . import consciousness
 
 logger = logging.getLogger(__name__)
 
@@ -126,7 +125,8 @@ async def get_or_create_mood_today() -> dict:
 
 
 async def _send_proactive(system_note: str) -> None:
-    from . import bot as bot_module, images, memory_file, moods
+    from . import bot as bot_module
+    from . import images, memory_file, moods
 
     bot_instance = bot_module.get_bot()
     if bot_instance is None:

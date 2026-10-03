@@ -1,8 +1,7 @@
-import asyncio
 import logging
 import re
 
-from . import config, db, timeutil
+from . import db, timeutil
 
 logger = logging.getLogger(__name__)
 
@@ -107,11 +106,9 @@ async def get_current_mood() -> tuple[str, dict]:
 
     # Consciousness state modulates mood
     try:
-        from . import consciousness
-        c_state = await db.fetch_one("SELECT state, energy FROM consciousness_state WHERE id = 1")
+        c_state = await db.fetch_one("SELECT state FROM consciousness_state WHERE id = 1")
         if c_state:
             state = c_state["state"]
-            energy = float(c_state.get("energy", 100))
             if state == "DROWSY":
                 key = "soft_devoted" if hour >= 20 or hour < 8 else "cozy_chill"
             elif state == "FOCUSED":

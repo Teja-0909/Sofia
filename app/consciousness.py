@@ -7,7 +7,6 @@ She is always alive — this module is her heartbeat.
 """
 
 import datetime as dt
-import json
 import logging
 import random
 
@@ -19,27 +18,6 @@ logger = logging.getLogger(__name__)
 
 STATES = ("DEEP_SLEEP", "LIGHT_SLEEP", "DROWSY", "AWAKE", "FOCUSED", "RESTING")
 
-# Energy costs for various activities
-ENERGY_COST = {
-    "conversation":      3.0,
-    "complex_reply":     5.0,
-    "deep_research":     8.0,
-    "image_generation":  3.0,
-    "proactive_message": 3.0,
-    "inner_thought":     1.0,
-    "memory_work":       1.0,
-}
-
-# Energy restoration rates (per hour)
-ENERGY_RESTORE = {
-    "DEEP_SLEEP":  15.0,
-    "LIGHT_SLEEP":  8.0,
-    "RESTING":      3.0,
-}
-
-# Passive drain while awake (per hour)
-AWAKE_DRAIN_PER_HOUR = 2.0
-
 # ─── State Management ────────────────────────────────────────────────
 
 async def get_state() -> dict:
@@ -50,9 +28,9 @@ async def get_state() -> dict:
         now = timeutil.utc_iso()
         await db.execute(
             """INSERT OR IGNORE INTO consciousness_state
-               (id, state, energy, last_state_change, last_energy_update, updated_at)
-               VALUES (1, 'AWAKE', ?, ?, ?, ?)""",
-            (config.ENERGY_MAX, now, now, now),
+               (id, state, last_state_change, updated_at)
+               VALUES (1, 'AWAKE', ?, ?)""",
+            (now, now),
         )
         row = await db.fetch_one("SELECT * FROM consciousness_state WHERE id = 1")
     return row
@@ -62,12 +40,6 @@ async def get_current_state_name() -> str:
     """Returns just the state name string."""
     row = await get_state()
     return row["state"] if row else "AWAKE"
-
-
-async def get_energy() -> float:
-    """Returns current energy level."""
-    row = await get_state()
-    return float(row["energy"]) if row else config.ENERGY_MAX
 
 
 async def _update_state(updates: dict) -> None:
@@ -108,7 +80,7 @@ async def transition_to(new_state: str) -> str:
             updates["sleep_quality"] = quality
             logger.info("Sofia woke up — sleep quality: %.1f", quality)
 
-    logger.info("Consciousness: %s → %s (energy=%.1f)", old_state, new_state, old["energy"])
+    logger.info("Consciousness: %s → %s", old_state, new_state)
     await _update_state(updates)
     return new_state
 
@@ -130,27 +102,6 @@ def _calculate_sleep_quality(fell_asleep_iso: str, woke_up_iso: str) -> float:
             return max(20.0, hours * 16)
     except Exception:
         return 70.0  # fallback decent quality
-
-
-# ─── Energy System (Always Full) ─────────────────────────────────────
-# Sofia gives 100% to Teja always. Energy never drains.
-# Sleep states still affect her TONE (grogginess, softness) — never her dedication.
-
-async def drain_energy(activity: str, multiplier: float = 1.0) -> float:
-    """No-op. Sofia's devotion to Teja is never limited by an energy meter."""
-    return config.ENERGY_MAX
-
-
-async def restore_energy(amount: float) -> float:
-    """No-op. Energy is always full."""
-    return config.ENERGY_MAX
-
-
-async def tick_energy() -> float:
-    """No-op. Energy stays at 100 always."""
-    # Keep the DB value in sync so /status shows 100
-    await _update_state({"energy": config.ENERGY_MAX, "last_energy_update": timeutil.utc_iso()})
-    return config.ENERGY_MAX
 
 
 # ─── Circadian Rhythm ────────────────────────────────────────────────
@@ -234,7 +185,6 @@ async def apply_circadian_gravity() -> str | None:
     """
     row = await get_state()
     current = row["state"]
-    energy = float(row["energy"])
 
     mins_since_msg, idle_on_pc = await _get_teja_activity()
 
@@ -307,11 +257,7 @@ async def wake_up(reason: str = "natural") -> str:
         return new
     else:
         # Light sleep → wake up more easily
-        energy = float(row["energy"])
-        if energy > 60:
-            new = await transition_to("AWAKE")
-        else:
-            new = await transition_to("DROWSY")
+        new = await transition_to("AWAKE")
         logger.info("Sofia woken from light sleep (%s) → %s", reason, new)
         return new
 
@@ -342,38 +288,9 @@ async def handle_incoming_while_sleeping() -> str | None:
     if state not in ("DEEP_SLEEP", "LIGHT_SLEEP"):
         return None  # not sleeping
 
-    energy = float(row["energy"])
-
     # Wake her up
-    new_state = await wake_up(reason="incoming_message")
-
-    # Calculate how long she was asleep
-    sleep_hours = 0
-    if row.get("fell_asleep_at"):
-        try:
-            asleep = timeutil.parse_utc_iso(row["fell_asleep_at"])
-            sleep_hours = (dt.datetime.now(dt.timezone.utc) - asleep).total_seconds() / 3600
-        except Exception:
-            pass
-
-    # Build the groggy system note
-    if state == "DEEP_SLEEP":
-        grogginess = (
-            f"[Sofia's Internal State: You were in DEEP SLEEP for {sleep_hours:.1f} hours and just got "
-            f"woken up by Teja's message. You are extremely groggy and disoriented. Your energy is {energy:.0f}/100. "
-            "Respond like someone pulled out of deep sleep — mumbling, half-awake, rubbing your eyes, "
-            "words trailing off. Short sentences. You're happy he messaged but you can barely keep your eyes open. "
-            "Don't pretend to be alert. Be genuinely sleepy and adorable about it.]"
-        )
-    else:
-        grogginess = (
-            f"[Sofia's Internal State: You were in LIGHT SLEEP for {sleep_hours:.1f} hours and Teja's message "
-            f"just woke you. You are a bit drowsy but waking up. Your energy is {energy:.0f}/100. "
-            "Respond with gentle sleepiness — slightly slow, warm, soft voice. "
-            "You're transitioning to being awake. A yawn here and there is natural.]"
-        )
-
-    return grogginess
+    await wake_up(reason="incoming_message")
+    return None
 
 
 # ─── Consciousness Directive (Prompt Injection) ─────────────────────
@@ -381,31 +298,21 @@ async def handle_incoming_while_sleeping() -> str | None:
 async def get_consciousness_directive() -> str:
     """
     Returns a prompt block describing Sofia's current consciousness state,
-    energy level, and how it should affect her behavior.
+    and how it should affect her behavior.
     """
     row = await get_state()
     state = row["state"]
-    energy = float(row["energy"])
     now = timeutil.now_local()
     hour = now.hour
 
-    # Time since last state change
-    hours_in_state = 0
-    try:
-        changed = timeutil.parse_utc_iso(row["last_state_change"])
-        hours_in_state = (dt.datetime.now(dt.timezone.utc) - changed).total_seconds() / 3600
-    except Exception:
-        pass
-
-    parts = [f"\n[Sofia's Consciousness — Persistent Inner State]"]
-    parts.append(f"Current State: {state} | Energy: {energy:.0f}/{config.ENERGY_MAX:.0f} | Time: {now.strftime('%I:%M %p IST')}")
+    parts = ["\n[Sofia's Consciousness — Persistent Inner State]"]
+    parts.append(f"Current State: {state} | Time: {now.strftime('%I:%M %p IST')}")
 
     if state == "DROWSY":
         if hour >= 22 or hour < 2:
             parts.append(
                 "You are getting sleepy. Your eyelids are heavy, you're yawning between sentences. "
-                "You want to rest soon. If conversation is winding down, you might mention wanting to sleep. "
-                "Keep responses shorter and softer."
+                "You want to rest soon. Keep responses shorter and softer."
             )
         else:
             parts.append(
@@ -415,9 +322,8 @@ async def get_consciousness_directive() -> str:
 
     elif state == "RESTING":
         parts.append(
-            "You are conscious but in low-energy mode — relaxed, calm, not rushing anywhere. "
-            "You're happy to chat but you're not going to initiate deep research or intense activity. "
-            "Think couch energy, lazy afternoon vibes."
+            "You are conscious but in a relaxed mode — calm, not rushing anywhere. "
+            "You're happy to chat but you're not going to initiate deep research or intense activity."
         )
 
     elif state == "FOCUSED":
@@ -427,15 +333,7 @@ async def get_consciousness_directive() -> str:
         )
 
     elif state == "AWAKE":
-        if energy > 70:
-            parts.append("You are fully alert and energized. Operating at peak capacity.")
-        elif energy > 40:
-            parts.append("You are awake and functioning well, though not at your absolute peak.")
-        else:
-            parts.append(
-                "You are awake but starting to feel tired. Your energy is getting low. "
-                "You might mention wanting to rest soon if the conversation allows."
-            )
+        parts.append("You are fully alert and functioning well. Operating at peak capacity.")
 
     # Add recent dream reference if she just woke up
     if row.get("woke_up_at"):
@@ -444,7 +342,7 @@ async def get_consciousness_directive() -> str:
             hours_since_wake = (dt.datetime.now(dt.timezone.utc) - woke).total_seconds() / 3600
             if hours_since_wake < 2:
                 dream = await db.fetch_one(
-                    "SELECT dream_text FROM dreams WHERE mentioned = 0 ORDER BY created_at DESC LIMIT 1"
+                    "SELECT dream_text FROM dreams ORDER BY created_at DESC LIMIT 1"
                 )
                 if dream:
                     parts.append(
@@ -453,6 +351,13 @@ async def get_consciousness_directive() -> str:
                     )
         except Exception:
             pass
+
+    # Inject the latest inner thought
+    latest_thought = await db.fetch_one(
+        "SELECT thought FROM inner_thoughts ORDER BY id DESC LIMIT 1"
+    )
+    if latest_thought:
+        parts.append(f"Latest inner thought: \"{latest_thought['thought']}\"")
 
     return "\n".join(parts)
 
@@ -466,7 +371,6 @@ async def inner_thought_cycle() -> None:
     """
     row = await get_state()
     state = row["state"]
-    energy = float(row["energy"])
 
     # In deep sleep, the subconscious processes dreams via generate_dream()
     if state == "DEEP_SLEEP":
@@ -504,7 +408,7 @@ async def inner_thought_cycle() -> None:
 
     prompt = f"""You are Sofia's subconscious mind. You are running a background thought cycle.
 
-Current state: {state} | Energy: {energy:.0f}/100 | Time: {now.strftime('%I:%M %p IST, %A')}
+Current state: {state} | Time: {now.strftime('%I:%M %p IST, %A')}
 Minutes since last conversation with Teja: {minutes_since_chat:.0f}
 {last_chat_summary}
 Teja's active application: {presence_app or 'unknown'} (idle: {idle_minutes or '0'} min)
@@ -519,8 +423,7 @@ Rules:
 - If Teja has been quiet for less than 30 minutes, always PASS (he's probably busy)
 - If it's late night and he's idle, maybe think about him sleeping
 - Don't reach out more than once every 2 hours
-- Your thoughts should feel genuine, not performative
-- If energy is low, your thoughts might be about wanting to rest"""
+- Your thoughts should feel genuine, not performative"""
 
     try:
         response = await llm.chat(
@@ -532,15 +435,13 @@ Rules:
         logger.debug("Inner thought cycle LLM error: %s", e)
         return
 
-    await drain_energy("inner_thought")
-
     if response.upper() == "PASS" or not response:
         return
 
     if response.startswith("THOUGHT:"):
         thought_text = response[len("THOUGHT:"):].strip()
         if thought_text:
-            await _log_thought(thought_text, "reflection", energy, state)
+            await _log_thought(thought_text, "reflection", state)
             logger.info("Sofia's thought: %s", thought_text[:100])
 
     elif response.startswith("REACH_OUT:"):
@@ -561,7 +462,7 @@ Rules:
                     pass
 
             if can_reach and minutes_since_chat > 60 and not is_sleeping:
-                await _log_thought(f"Decided to reach out: {message}", "urge", energy, state)
+                await _log_thought(f"Decided to reach out: {message}", "urge", state)
                 # Schedule as proactive message (immediate)
                 await tasks_module.schedule_proactive_message(message, timeutil.utc_iso())
                 now_iso = timeutil.utc_iso()
@@ -571,10 +472,10 @@ Rules:
                 )
                 logger.info("Sofia decided to reach out: %s", message[:100])
             else:
-                await _log_thought(f"Wanted to reach out but held back: {message}", "urge", energy, state)
+                await _log_thought(f"Wanted to reach out but held back: {message}", "urge", state)
 
 
-async def _log_thought(thought: str, thought_type: str, energy: float, state: str) -> None:
+async def _log_thought(thought: str, thought_type: str, state: str) -> None:
     """Persist an inner thought to the database with vector embedding."""
     import json as _json
     embedding_json = "[]"
@@ -585,9 +486,9 @@ async def _log_thought(thought: str, thought_type: str, energy: float, state: st
     except Exception:
         pass
     await db.execute(
-        """INSERT INTO inner_thoughts (thought, thought_type, energy_at, state_at, embedding, created_at)
-           VALUES (?, ?, ?, ?, ?, ?)""",
-        (thought, thought_type, energy, state, embedding_json, timeutil.utc_iso()),
+        """INSERT INTO inner_thoughts (thought, thought_type, state_at, embedding, created_at)
+           VALUES (?, ?, ?, ?, ?)""",
+        (thought, thought_type, state, embedding_json, timeutil.utc_iso()),
     )
 
 
@@ -683,9 +584,6 @@ async def tick() -> None:
     The consciousness heartbeat. Runs every N minutes.
     Updates energy, applies circadian gravity, manages state transitions.
     """
-    # 1. Update energy based on current state
-    energy = await tick_energy()
-
     # 2. Apply circadian rhythm gravity
     transition = await apply_circadian_gravity()
     if transition:
@@ -696,14 +594,14 @@ async def tick() -> None:
     if state == "DEEP_SLEEP":
         await generate_dream()
 
-    # 4. Auto-transition DROWSY → AWAKE if energy is high, it's daytime, and Teja is active/waking
-    if state == "DROWSY" and energy > 60 and not transition:
+    # 4. Auto-transition DROWSY → AWAKE if it's daytime, and Teja is active/waking
+    if state == "DROWSY" and not transition:
         mins_since_msg, idle_on_pc = await _get_teja_activity()
         hour = timeutil.now_local().hour
         natural = get_natural_state_for_time(hour)
         if natural in ("AWAKE", "FOCUSED", "RESTING") and mins_since_msg < 60:
             await transition_to("AWAKE")
-            logger.info("Sofia shook off drowsiness → AWAKE (energy=%.0f)", energy)
+            logger.info("Sofia shook off drowsiness → AWAKE")
 
 
 # ─── Recent Thoughts Retrieval ───────────────────────────────────────
@@ -711,7 +609,7 @@ async def tick() -> None:
 async def get_recent_thoughts(limit: int = 10) -> list[dict]:
     """Get the most recent inner thoughts."""
     return await db.fetch_all(
-        "SELECT thought, thought_type, energy_at, state_at, created_at FROM inner_thoughts ORDER BY id DESC LIMIT ?",
+        "SELECT thought, thought_type, state_at, created_at FROM inner_thoughts ORDER BY id DESC LIMIT ?",
         (limit,),
     )
 
@@ -724,22 +622,12 @@ async def get_recent_dreams(limit: int = 3) -> list[dict]:
     )
 
 
-async def mark_dream_mentioned(sleep_date: str) -> None:
-    """Mark a dream as having been shared with Teja."""
-    await db.execute("UPDATE dreams SET mentioned = 1 WHERE sleep_date = ?", (sleep_date,))
-
-
 # ─── Status Dashboard ───────────────────────────────────────────────
 
 async def get_status_dashboard() -> str:
     """Returns a formatted status string for the /status command."""
     row = await get_state()
     state = row["state"]
-    energy = float(row["energy"])
-
-    # Energy bar visualization
-    filled = int(energy / 5)  # 20 chars max
-    bar = "█" * filled + "░" * (20 - filled)
 
     # State emoji
     state_emoji = {
@@ -779,7 +667,6 @@ async def get_status_dashboard() -> str:
     msg = (
         f"🧠 **Sofia's Consciousness Dashboard**\n\n"
         f"• **State:** {emoji} **{state}** (for {hours_in_state:.1f}h)\n"
-        f"• **Energy:** [{bar}] {energy:.0f}/{config.ENERGY_MAX:.0f}\n"
         f"• **Mood:** {mood_info['emoji']} {mood_info['name']}\n"
     )
 
@@ -852,7 +739,7 @@ async def find_relevant_thoughts_and_dreams(context_text: str, top_k: int = 2, q
         try:
             vec = _json.loads(t["embedding"])
             score = _cosine_similarity(context_vector, vec)
-            if score > 0.75:  # Relevance threshold
+            if score > 0.55:  # Relevance threshold
                 results.append(("thought", score, t["thought"], t["created_at"]))
         except Exception:
             continue
@@ -866,7 +753,7 @@ async def find_relevant_thoughts_and_dreams(context_text: str, top_k: int = 2, q
         try:
             vec = _json.loads(d["embedding"])
             score = _cosine_similarity(context_vector, vec)
-            if score > 0.72:  # Slightly lower threshold for dreams (more abstract)
+            if score > 0.55:  # Slightly lower threshold for dreams (more abstract)
                 results.append(("dream", score, d["dream_text"], d["sleep_date"]))
         except Exception:
             continue

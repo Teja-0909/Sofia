@@ -2,7 +2,7 @@ import datetime as dt
 import os
 import tempfile
 import unittest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 from app import config, db, parser, tasks, timeutil
 

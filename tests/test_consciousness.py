@@ -1,10 +1,9 @@
-import asyncio
-import datetime as dt
 import os
 import tempfile
 import unittest
 
-from app import consciousness, db, timeutil, config
+from app import config, consciousness, db
+
 
 class TestConsciousness(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
@@ -20,24 +19,11 @@ class TestConsciousness(unittest.IsolatedAsyncioTestCase):
     async def test_consciousness_initial_state(self):
         state = await consciousness.get_current_state_name()
         self.assertEqual(state, 'AWAKE')
-        energy = await consciousness.get_energy()
-        self.assertEqual(energy, config.ENERGY_MAX)
 
     async def test_state_transitions(self):
         new = await consciousness.transition_to('FOCUSED')
         self.assertEqual(new, 'FOCUSED')
         self.assertEqual(await consciousness.get_current_state_name(), 'FOCUSED')
-
-    async def test_energy_always_full(self):
-        """Energy is always 100 — Sofia's devotion to Teja is never limited."""
-        await consciousness.drain_energy('complex_reply')
-        energy = await consciousness.get_energy()
-        self.assertEqual(energy, config.ENERGY_MAX)
-
-        await consciousness.drain_energy('deep_research')
-        await consciousness.drain_energy('image_generation')
-        energy = await consciousness.get_energy()
-        self.assertEqual(energy, config.ENERGY_MAX, "Energy must stay at 100 regardless of activity")
 
     async def test_sleep_cycle(self):
         new = await consciousness.begin_sleep()

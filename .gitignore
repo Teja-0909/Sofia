@@ -32,3 +32,5 @@ memory.md
 test_tools_out*.txt
 scripts/test_*.py
 scripts/patch_*.py
+
+ruff_errors.json

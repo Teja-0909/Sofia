@@ -14,7 +14,7 @@ async def run_bot() -> None:
     # 2. Initialize database (Turso Cloud SQLite or local)
     await db.init()
     try:
-        from app import diary, memory_file, memory
+        from app import diary, memory, memory_file
         await diary.backfill_missing_diaries()
         await memory.backfill_empty_embeddings()
         await diary.recalculate_relationship_depth()

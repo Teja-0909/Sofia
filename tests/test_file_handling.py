@@ -1,6 +1,7 @@
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
-from app import bot, config, orchestrator, llm
+
+from app import bot, config
 
 
 class TestFileHandling(unittest.IsolatedAsyncioTestCase):
@@ -21,9 +22,9 @@ class TestFileHandling(unittest.IsolatedAsyncioTestCase):
         update.message.reply_photo = AsyncMock()
         return update
 
-    @patch("app.bot._process_and_send_reply", new_callable=AsyncMock)
+    @patch("app.bot_handlers._process_and_send_reply", new_callable=AsyncMock)
     @patch("app.orchestrator.reply", new_callable=AsyncMock)
-    @patch("app.bot._log_message", new_callable=AsyncMock)
+    @patch("app.bot_handlers._log_message", new_callable=AsyncMock)
     async def test_document_pdf_routing(self, mock_log, mock_reply, mock_process):
         update = self._create_mock_update()
         doc = MagicMock()
@@ -51,9 +52,9 @@ class TestFileHandling(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(kwargs.get("mime_type"), "application/pdf")
         mock_process.assert_awaited_once()
 
-    @patch("app.bot._process_and_send_reply", new_callable=AsyncMock)
+    @patch("app.bot_handlers._process_and_send_reply", new_callable=AsyncMock)
     @patch("app.orchestrator.reply", new_callable=AsyncMock)
-    @patch("app.bot._log_message", new_callable=AsyncMock)
+    @patch("app.bot_handlers._log_message", new_callable=AsyncMock)
     async def test_document_code_file_routing(self, mock_log, mock_reply, mock_process):
         update = self._create_mock_update()
         doc = MagicMock()
@@ -85,9 +86,9 @@ class TestFileHandling(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(kwargs.get("media_bytes"))
         mock_process.assert_awaited_once()
 
-    @patch("app.bot._process_and_send_reply", new_callable=AsyncMock)
+    @patch("app.bot_handlers._process_and_send_reply", new_callable=AsyncMock)
     @patch("app.orchestrator.reply", new_callable=AsyncMock)
-    @patch("app.bot._log_message", new_callable=AsyncMock)
+    @patch("app.bot_handlers._log_message", new_callable=AsyncMock)
     async def test_document_uncompressed_image_routing(self, mock_log, mock_reply, mock_process):
         update = self._create_mock_update()
         doc = MagicMock()
@@ -114,9 +115,9 @@ class TestFileHandling(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(kwargs.get("mime_type"), "image/png")
         mock_process.assert_awaited_once()
 
-    @patch("app.bot._process_and_send_reply", new_callable=AsyncMock)
+    @patch("app.bot_handlers._process_and_send_reply", new_callable=AsyncMock)
     @patch("app.orchestrator.reply", new_callable=AsyncMock)
-    @patch("app.bot._log_message", new_callable=AsyncMock)
+    @patch("app.bot_handlers._log_message", new_callable=AsyncMock)
     async def test_voice_note_routing(self, mock_log, mock_reply, mock_process):
         update = self._create_mock_update()
         voice = MagicMock()

@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from app import bot, config, db, orchestrator, timeutil, vision_session, web
+from app import bot, config, db, orchestrator, vision_session, web
 
 
 class TestVisionDesktopTools(unittest.IsolatedAsyncioTestCase):

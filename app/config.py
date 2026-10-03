@@ -9,7 +9,7 @@ BASE_DIR = pathlib.Path(__file__).resolve().parent.parent
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
 ALLOWED_USER_ID = int(os.environ.get("ALLOWED_TELEGRAM_USER_ID", "0") or 0)
-DB_PATH = os.environ.get("DB_PATH") or str(BASE_DIR / "alisa.db")
+DB_PATH = os.environ.get("DB_PATH") or str(BASE_DIR / "data" / "alisa.db")
 
 
 def _normalize_tz(tz_name: str) -> str:
@@ -62,8 +62,8 @@ GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
 
 DEFAULT_CONFIG = {
     "memory_top_k": "30",
-    "diary_context_days": "7",
-    "history_window": "200",
+    "diary_context_days": "30",
+    "history_window": "40",
     "justbecause_max_per_day": "4",
     "daily_summary_hour": "22",
     "max_reminder_pings": "4",
@@ -75,3 +75,5 @@ SLEEP_START_HOUR = int(os.environ.get("SLEEP_START_HOUR", "3"))   # 3 AM IST
 SLEEP_END_HOUR = int(os.environ.get("SLEEP_END_HOUR", "6"))       # 6 AM IST
 THOUGHT_INTERVAL_MINUTES = int(os.environ.get("THOUGHT_INTERVAL_MINUTES", "12"))
 CONSCIOUSNESS_TICK_MINUTES = int(os.environ.get("CONSCIOUSNESS_TICK_MINUTES", "5"))
+
+WEB_AUTH_TOKEN = os.environ.get("WEB_AUTH_TOKEN", "")

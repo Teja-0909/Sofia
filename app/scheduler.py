@@ -1,10 +1,9 @@
 import logging
+
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-from . import config, db, diary, memory, timeutil
-from . import consciousness
+from . import config, consciousness, db, diary, memory, timeutil, triggers
 from . import tasks as tasks_module
-from . import triggers
 
 logger = logging.getLogger(__name__)
 

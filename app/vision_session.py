@@ -5,12 +5,11 @@ and frame buffers between Sofia's Brain and the Windows Sidecar.
 """
 
 import asyncio
-import datetime as dt
 import logging
 import time
 from typing import Any
 
-from . import config, db, llm, timeutil
+from . import timeutil
 
 logger = logging.getLogger(__name__)
 
@@ -300,7 +299,8 @@ async def stop_watch_session() -> str:
 
 async def _watch_loop() -> None:
     """Periodic loop during active watch session to capture frames and co-pilot."""
-    from . import bot as bot_module, orchestrator
+    from . import bot as bot_module
+    from . import orchestrator
 
     logger.info("Vision watch loop active")
     while is_watching():

@@ -214,12 +214,10 @@ async def init() -> None:
             CREATE TABLE IF NOT EXISTS consciousness_state (
                 id                INTEGER PRIMARY KEY CHECK (id = 1),
                 state             TEXT    NOT NULL DEFAULT 'AWAKE',
-                energy            REAL    NOT NULL DEFAULT 100.0,
                 sleep_quality     REAL    DEFAULT NULL,
                 fell_asleep_at    TEXT    DEFAULT NULL,
                 woke_up_at        TEXT    DEFAULT NULL,
                 last_state_change TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
-                last_energy_update TEXT   NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
                 updated_at        TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
             )
             """)
@@ -232,7 +230,6 @@ async def init() -> None:
                 id           INTEGER PRIMARY KEY AUTOINCREMENT,
                 thought      TEXT    NOT NULL,
                 thought_type TEXT    NOT NULL DEFAULT 'reflection',
-                energy_at    REAL,
                 state_at     TEXT,
                 acted_on     INTEGER NOT NULL DEFAULT 0,
                 embedding    TEXT,
@@ -319,12 +316,10 @@ async def init() -> None:
                 CREATE TABLE IF NOT EXISTS consciousness_state (
                     id                INTEGER PRIMARY KEY CHECK (id = 1),
                     state             TEXT    NOT NULL DEFAULT 'AWAKE',
-                    energy            REAL    NOT NULL DEFAULT 100.0,
                     sleep_quality     REAL    DEFAULT NULL,
                     fell_asleep_at    TEXT    DEFAULT NULL,
                     woke_up_at        TEXT    DEFAULT NULL,
                     last_state_change TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
-                    last_energy_update TEXT   NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
                     updated_at        TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
                 )
                 """)
@@ -337,7 +332,6 @@ async def init() -> None:
                     id           INTEGER PRIMARY KEY AUTOINCREMENT,
                     thought      TEXT    NOT NULL,
                     thought_type TEXT    NOT NULL DEFAULT 'reflection',
-                    energy_at    REAL,
                     state_at     TEXT,
                     acted_on     INTEGER NOT NULL DEFAULT 0,
                     embedding    TEXT,

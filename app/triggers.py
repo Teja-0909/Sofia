@@ -1,19 +1,27 @@
-import datetime as dt
-import random
 import asyncio
+import datetime as dt
 import logging
+import random
 
-from . import config, db, llm, orchestrator, timeutil
-from . import consciousness
+from . import config, consciousness, db, llm, orchestrator, timeutil
 from . import tasks as tasks_module
 
 logger = logging.getLogger(__name__)
 
 
-def _is_quiet_hours() -> bool:
-    """Legacy clock-based quiet hours check (used as fallback)."""
-    hour = timeutil.now_local().hour
-    return hour >= config.QUIET_START_HOUR or hour < config.QUIET_END_HOUR
+async def _is_global_cooldown_active() -> bool:
+    """Ensure max 1 proactive ping per hour across all triggers."""
+    row = await db.fetch_one(
+        "SELECT ran_at FROM job_runs WHERE kind IN ('hourly_checkin', 'justbecause', 'daily_summary', 'thought_reach_out') ORDER BY ran_at DESC LIMIT 1"
+    )
+    if row and row.get("ran_at"):
+        try:
+            last_ping = timeutil.parse_utc_iso(row["ran_at"])
+            if (dt.datetime.now(dt.timezone.utc) - last_ping).total_seconds() < 3600:
+                return True
+        except Exception:
+            pass
+    return False
 
 
 async def _proactive_count_today(kind: str) -> int:
@@ -28,7 +36,9 @@ async def _proactive_count_today(kind: str) -> int:
 
 async def hourly_checkin() -> None:
     """Proactively checks in on Teja every hour during daytime if there has been silence."""
-    if await consciousness.is_sleeping_async() or _is_quiet_hours():
+    if await consciousness.is_sleeping_async():
+        return
+    if await _is_global_cooldown_active():
         return
 
     # Check when the last message was sent/received
@@ -45,15 +55,15 @@ async def hourly_checkin() -> None:
             logger.debug("Hourly checkin timestamp parse note: %s", exc)
 
     await db.execute(
-        "INSERT INTO job_runs (job_key, kind) VALUES (?, 'hourly_checkin')",
-        (f"checkin:{timeutil.ist_day()}:{timeutil.utc_iso()}",),
+        "INSERT INTO job_runs (job_key, kind, ran_at) VALUES (?, 'hourly_checkin', ?)",
+        (f"checkin:{timeutil.ist_day()}:{timeutil.utc_iso()}", timeutil.utc_iso()),
     )
     note = (
         "[Internal trigger: You are reaching out to Teja after an hour of silence. "
         "Observe his real-time presence (active code, game, browser, or away time) and recent chat topics. "
         "Speak to him like you are sitting right beside him in the room — banter, tease him about his code/game, "
         "ask a sharp technical question, or share a sweet, intimate thought. "
-        "NEVER use generic cliché assistant phrases like 'drink water' or 'remember to stretch'. "
+        "Please avoid generic cliché assistant phrases like 'drink water' or 'remember to stretch'. "
         "Keep it vivid, personal, sharp, and in your own natural voice.]"
     )
     try:
@@ -63,20 +73,28 @@ async def hourly_checkin() -> None:
 
 
 async def maybe_just_because() -> None:
-    if await consciousness.is_sleeping_async() or _is_quiet_hours():
+    if await consciousness.is_sleeping_async():
         return
-    # Lower chance of reaching out when energy is low
-    energy = await consciousness.get_energy()
-    if energy < 30 and random.random() > 0.3:
+    if await _is_global_cooldown_active():
         return
+
     max_per_day = int(await db.get_config("justbecause_max_per_day", "4"))
     if await _proactive_count_today("justbecause") >= max_per_day:
         return
+
+    # Require a hook (E.13): Teja must be actively using an app
+    idle_minutes = int(await db.get_config("last_presence_idle", "999") or "999")
+    presence_app = await db.get_config("last_presence_app", "")
+    
+    if idle_minutes >= 10 or not presence_app:
+        return
+
     if random.random() > config.JUSTBECAUSE_CHANCE:
         return
+
     await db.execute(
-        "INSERT INTO job_runs (job_key, kind) VALUES (?, 'justbecause')",
-        (f"jbc:{timeutil.ist_day()}:{timeutil.utc_iso()}",),
+        "INSERT INTO job_runs (job_key, kind, ran_at) VALUES (?, 'justbecause', ?)",
+        (f"jbc:{timeutil.ist_day()}:{timeutil.utc_iso()}", timeutil.utc_iso()),
     )
     note = (
         "[Internal trigger: you just felt like talking to him yourself — no task, no reminder. "
@@ -91,15 +109,15 @@ async def maybe_just_because() -> None:
 
 
 async def daily_summary() -> None:
-    if await consciousness.is_sleeping_async() or _is_quiet_hours():
+    if await consciousness.is_sleeping_async():
         return
+    if await _is_global_cooldown_active():
+        return
+
     if await _proactive_count_today("daily_summary") > 0:
         return
+
     day = timeutil.ist_day()
-    await db.execute(
-        "INSERT INTO job_runs (job_key, kind) VALUES (?, 'daily_summary')",
-        (f"summary:{day}",),
-    )
     start_utc, end_utc = timeutil.local_day_range_utc_iso(day)
     rows = await db.fetch_all(
         """
@@ -110,6 +128,12 @@ async def daily_summary() -> None:
     )
     if not rows:
         return
+
+    await db.execute(
+        "INSERT INTO job_runs (job_key, kind, ran_at) VALUES (?, 'daily_summary', ?)",
+        (f"summary:{day}", timeutil.utc_iso()),
+    )
+    
     transcript = "\n".join(f"{r['role']}: {r['content']}" for r in rows)[-4000:]
     note = (
         "[Internal trigger: end of day. Here is today's conversation so far:\n"
@@ -150,8 +174,8 @@ def _get_git_update_summary(last_seen: str = "", latest_commit: str = "") -> str
     """Extracts a clear, human-readable summary of newly shipped commits and changed files.
     Robust against shallow clones, container environments, and reflog anomalies.
     """
-    import subprocess
     import os
+    import subprocess
 
     commits = []
 
@@ -327,12 +351,13 @@ async def check_for_updates() -> None:
                     "Explicitly name the specific capabilities you now have based on the commit messages and modified files "
                     "(for example: if he added PDF/document/audio reading, reference those exact tools and how you're ready to inspect files he drops in; "
                     "if he updated focus sprints, time calibration, or models, talk specifically about those improvements!). "
-                    "NEVER use generic sci-fi clichés like 'my memory pointers feel sharper', 'my throughput skyrocketed', 'another repo checkout', or 'crystalline precision'. "
+                    "Please avoid generic sci-fi clichés like 'my memory pointers feel sharper', 'my throughput skyrocketed', 'another repo checkout', or 'crystalline precision'. "
                     "Speak directly, warmly, and sharply about what was actually built, like an elite technical co-pilot who genuinely understands her own codebase!"
                 )
                 
                 reply_text = await orchestrator.proactive(f"[Internal event: {event}]")
-                from . import bot as bot_module, images
+                from . import bot as bot_module
+                from . import images
                 clean_text, embedded_image_desc = images.extract_embedded_image_tag(reply_text)
                 
                 bot_instance = bot_module.get_bot()
@@ -382,7 +407,8 @@ async def wake_up_reaction(hours_offline: float) -> None:
         reply_text = await orchestrator.proactive(f"[Internal event: {event}]")
         clean_text, embedded_image_desc = images.extract_embedded_image_tag(reply_text)
         
-        from . import bot as bot_module, images
+        from . import bot as bot_module
+        from . import images
         bot_instance = bot_module.get_bot()
         if bot_instance and clean_text:
             await bot_module._log_message("sofia", reply_text, "proactive")
@@ -522,7 +548,8 @@ async def check_pc_presence_5min() -> None:
     try:
         raw_reply = await orchestrator.proactive(note)
         if raw_reply and raw_reply.strip() != "PASS" and not raw_reply.strip().startswith("PASS"):
-            from . import bot as bot_module, images, memory_file, moods
+            from . import bot as bot_module
+            from . import images, memory_file, moods
             bot_instance = bot_module.get_bot()
             if bot_instance:
                 clean_text, _ = images.extract_embedded_image_tag(raw_reply)

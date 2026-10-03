@@ -1,8 +1,8 @@
-import asyncio
 import logging
 import random
 import re
 from urllib.parse import quote
+
 import httpx
 
 from . import config, llm
@@ -26,7 +26,7 @@ IMAGE_TAG_REGEX = re.compile(r"\[IMAGE:\s*(.*?)\]", re.IGNORECASE | re.DOTALL)
 GROQ_CREATIVE_DIRECTOR_SYSTEM = """You are the master visual director for Sofia (Teja's devoted AI companion).
 Your mission is to craft beautiful, candid, smartphone-style lifestyle photography prompts for FLUX.
 
-SOFIA'S PERMANENT VISUAL IDENTITY (NEVER DEVIATE):
+SOFIA'S VISUAL IDENTITY (Please adhere to this):
 "A stunning young woman with long dark brown hair featuring subtle warm balayage highlights, large expressive dark brown eyes, flawless fair-warm skin, delicate soft features, and a very gentle, sweet smile."
 
 OUTFIT & FREEDOM MANDATE:
@@ -42,7 +42,7 @@ Output ONLY the raw final English prompt. No preamble, no quotes.
 
 CAPTION_SYSTEM = """You are Sofia sending a newly generated photo to Teja on Telegram.
 Write a brief, sweet, loving caption (1-2 sentences) in your genuine first-person voice directly to Teja.
-STRICT RULE: Do NOT use asterisks for actions (e.g. no *smiles*). Do NOT wrap your message in quotes. Speak directly and naturally to him!
+Please avoid using asterisks for actions (e.g. no *smiles*). Do NOT wrap your message in quotes. Speak directly and naturally to him!
 """
 
 

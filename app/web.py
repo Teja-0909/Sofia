@@ -129,7 +129,23 @@ async def _handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWri
             more = await reader.read(remaining)
             body_bytes += more
 
+
+        auth_header = None
+        for line in lines[1:]:
+            if line.lower().startswith("x-auth-token:"):
+                auth_header = line.split(":", 1)[1].strip()
+                break
+
+        if path not in ("/", "/health") and getattr(config, "WEB_AUTH_TOKEN", ""):
+            if auth_header != config.WEB_AUTH_TOKEN:
+                writer.write(b"HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n")
+                await writer.drain()
+                writer.close()
+                await writer.wait_closed()
+                return
+
         if path == "/health":
+
             import os
             commit_sha = os.environ.get("RENDER_GIT_COMMIT", "")
             if not commit_sha:
@@ -174,7 +190,7 @@ async def _handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWri
                 body = json.dumps({"status": "error", "message": str(res_err)}).encode("utf-8")
 
         else:
-            body = "Sofia companion is online and listening. 💖\n".encode("utf-8")
+            body = "Sofia companion is online and listening. 💖\n".encode()
             content_type = "text/plain; charset=utf-8"
 
         headers = (
@@ -184,7 +200,7 @@ async def _handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWri
             "Access-Control-Allow-Origin: *\r\n"
             "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n"
             "Connection: close\r\n\r\n"
-        ).encode("utf-8")
+        ).encode()
 
         writer.write(headers + body)
         await writer.drain()

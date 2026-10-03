@@ -100,7 +100,7 @@ class TestTriggersUpdate(unittest.IsolatedAsyncioTestCase):
         proactive_call_arg = mock_proactive.call_args[0][0]
         self.assertIn("feat(multimodal): add support for PDFs", proactive_call_arg)
         self.assertIn("Modified modules: app/bot.py, app/llm.py", proactive_call_arg)
-        self.assertIn("NEVER use generic sci-fi clichés", proactive_call_arg)
+        self.assertIn("Please avoid generic sci-fi clichés", proactive_call_arg)
         self.assertIn("memory pointers", proactive_call_arg)
 
         # Message sent to Teja

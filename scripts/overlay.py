@@ -7,12 +7,11 @@ Renders real-time glowing arrows, doodles, and floating notes directly on Teja's
 import json
 import logging
 import math
-import sys
+import queue
 import threading
 import time
-import queue
-from http.server import BaseHTTPRequestHandler, HTTPServer
 import tkinter as tk
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 try:
     import win32con

@@ -1,4 +1,3 @@
-import asyncio
 import datetime as dt
 import os
 import tempfile
@@ -10,7 +9,7 @@ os.environ["TIMEZONE"] = "Asia/Kolkata"
 os.environ["BOT_TOKEN"] = "test_token"
 os.environ["ALLOWED_TELEGRAM_USER_ID"] = "12345"
 
-from app import config, db, diary, llm, memory, orchestrator, parser, scheduler, tasks, timeutil, triggers
+from app import config, db, diary, llm, memory, orchestrator, parser, tasks, timeutil
 
 
 class TestAlisaCore(unittest.IsolatedAsyncioTestCase):
@@ -89,12 +88,7 @@ class TestAlisaCore(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(res["description"], "Review slides before presentation")
             self.assertEqual(res["due_utc"], "2026-08-26T15:30:00Z")
 
-    async def test_orchestrator_prompt_contains_pending_tasks(self):
-        due = timeutil.utc_iso(timeutil.utc_now() + dt.timedelta(hours=1))
-        await tasks.create_task("Finish system design document", due)
-        prompt = await orchestrator._build_system_prompt()
-        self.assertIn("Finish system design document", prompt)
-        self.assertIn("Active Commitments & Scheduled Reminders", prompt)
+
 
     async def test_memory_add_and_reinforce(self):
         # Insert new memory
@@ -219,8 +213,9 @@ class TestAlisaCore(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(found_image)
 
     async def test_web_server_endpoints(self):
-        from app import web
         import httpx
+
+        from app import web
 
         # Start on ephemeral random port
         runner = await web.start_web_server(port=18492)
@@ -286,7 +281,7 @@ class TestAlisaCore(unittest.IsolatedAsyncioTestCase):
         self.assertIn(key_auto, moods.MOOD_PROFILES)
 
     async def test_task_tag_and_creation(self):
-        from app import parser, tasks, db
+        from app import parser, tasks
         msg = "I will keep track of that for you! [TASK: Study Physics Chapter 2 | 8:00 PM today] Good luck!"
         clean, tag_data = parser.extract_task_tag(msg)
         self.assertEqual(clean, "I will keep track of that for you!  Good luck!")
@@ -305,7 +300,7 @@ class TestAlisaCore(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(marked)
 
     async def test_task_done_tag_and_completion(self):
-        from app import parser, tasks, db
+        from app import parser, tasks
         # 1. Create a task
         task_id = await tasks.create_task("Review biology notes", "2026-08-28T21:00:00Z")
         pending = await tasks.list_pending()

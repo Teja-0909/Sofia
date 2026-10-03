@@ -182,7 +182,6 @@ async def consolidate_monthly_diary() -> int:
 
 async def backfill_missing_diaries() -> int:
     """Detects days with conversation logs but no diary entry in the last 14 days, and generates them."""
-    import datetime as dt
     from . import timeutil
     
     today = dt.datetime.now(timeutil.tz())

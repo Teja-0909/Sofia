@@ -3,7 +3,7 @@ import json
 import logging
 import re
 
-from . import db, llm, timeutil
+from . import llm, timeutil
 
 logger = logging.getLogger(__name__)
 
@@ -133,9 +133,7 @@ def _resolve_absolute(base_day_offset: int | None, hour: int, minute: int, merid
     elif base_day_offset is None or base_day_offset == 0:
         # Meridiem omitted! (e.g. "at 5", "at 6", "by 3")
         # If daytime (9 AM - 7 PM) and hour is 1..7, user almost certainly means PM today!
-        if 1 <= hour <= 7 and 9 <= local_now.hour <= 19:
-            hour += 12
-        elif hour < local_now.hour and hour <= 11 and (hour + 12) > local_now.hour:
+        if 1 <= hour <= 7 and 9 <= local_now.hour <= 19 or hour < local_now.hour and hour <= 11 and (hour + 12) > local_now.hour:
             hour += 12
 
     due = dt.datetime.combine(day, dt.time(hour % 24, minute), tzinfo=timeutil.tz())
@@ -250,7 +248,7 @@ async def parse(text: str) -> dict:
 Current Local Time: {curr_time_str} (Asia/Kolkata timezone). Current UTC: {curr_iso}.
 
 Analyze the user's message.
-CRITICAL RULES:
+Rules:
 - If the user is describing a PAST or COMPLETED event (e.g. "I completed my dinner at 8 PM"), output: {{"is_reminder": false}}.
 - ONLY extract FUTURE requests where the user explicitly asks to be reminded, texted, nudged, or checked on at a future time.
 - Set iso_time to null if it's not a future reminder or if no time is specified.

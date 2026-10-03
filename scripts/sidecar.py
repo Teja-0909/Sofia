@@ -5,7 +5,6 @@ Syncs window presence, executes overlay drawings, and streams screen perceptions
 """
 
 import ctypes
-from ctypes import wintypes
 import io
 import json
 import logging
@@ -15,8 +14,10 @@ import sys
 import threading
 import time
 import urllib.request
+from ctypes import wintypes
 
 from dotenv import load_dotenv
+
 load_dotenv()
 
 LOG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "sidecar.log")
@@ -35,6 +36,7 @@ SOFIA_PRESENCE_URL = f"{SOFIA_BASE_URL}/api/presence"
 SOFIA_UPLOAD_URL = f"{SOFIA_BASE_URL}/api/desktop/upload"
 SOFIA_POLL_URL = f"{SOFIA_BASE_URL}/api/desktop/poll"
 SOFIA_RESULT_URL = f"{SOFIA_BASE_URL}/api/desktop/result"
+WEB_AUTH_TOKEN = os.environ.get("WEB_AUTH_TOKEN", "")
 OVERLAY_IPC_URL = "http://127.0.0.1:18493"
 
 FAST_POLL_INTERVAL_SECONDS = 1.5  # High-speed 1.5s command polling
@@ -243,7 +245,7 @@ def forward_to_overlay(endpoint: str, payload: dict) -> bool:
         req = urllib.request.Request(
             url,
             data=data,
-            headers={"Content-Type": "application/json"},
+            headers={"X-Auth-Token": WEB_AUTH_TOKEN, "Content-Type": "application/json"},
             method="POST"
         )
         with urllib.request.urlopen(req, timeout=3) as resp:
@@ -259,7 +261,7 @@ def upload_screen_frame(frame_bytes: bytes) -> bool:
         req = urllib.request.Request(
             SOFIA_UPLOAD_URL,
             data=frame_bytes,
-            headers={"Content-Type": "image/jpeg", "User-Agent": "SofiaSidecar/1.0"},
+            headers={"X-Auth-Token": WEB_AUTH_TOKEN, "Content-Type": "image/jpeg", "User-Agent": "SofiaSidecar/1.0"},
             method="POST"
         )
         with urllib.request.urlopen(req, timeout=10) as resp:
@@ -280,7 +282,7 @@ def send_command_result(command_id: int, result: dict) -> bool:
         req = urllib.request.Request(
             SOFIA_RESULT_URL,
             data=data_bytes,
-            headers={"Content-Type": "application/json", "User-Agent": "SofiaSidecar/1.0"},
+            headers={"X-Auth-Token": WEB_AUTH_TOKEN, "Content-Type": "application/json", "User-Agent": "SofiaSidecar/1.0"},
             method="POST"
         )
         with urllib.request.urlopen(req, timeout=10) as resp:
@@ -481,7 +483,7 @@ def _fast_command_poll_loop():
         try:
             req = urllib.request.Request(
                 SOFIA_POLL_URL,
-                headers={"User-Agent": "SofiaSidecar/1.0"},
+                headers={"X-Auth-Token": WEB_AUTH_TOKEN, "User-Agent": "SofiaSidecar/1.0"},
                 method="GET"
             )
             with urllib.request.urlopen(req, timeout=5) as resp:
@@ -509,7 +511,7 @@ def send_presence(app_name: str, window_title: str, idle_min: int) -> bool:
     req = urllib.request.Request(
         SOFIA_PRESENCE_URL,
         data=data_bytes,
-        headers={"Content-Type": "application/json", "User-Agent": "SofiaSidecar/1.0"},
+        headers={"X-Auth-Token": WEB_AUTH_TOKEN, "Content-Type": "application/json", "User-Agent": "SofiaSidecar/1.0"},
         method="POST"
     )
     try:

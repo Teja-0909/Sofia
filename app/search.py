@@ -2,6 +2,7 @@ import asyncio
 import logging
 import re
 from urllib.parse import quote_plus
+
 import httpx
 
 logger = logging.getLogger(__name__)
@@ -202,8 +203,9 @@ async def search_web(query: str, max_results: int = 5) -> list[dict]:
 
 async def react_research_loop(query: str, context: str = "") -> str:
     """Multi-turn ReAct research agent: plans, searches, evaluates, loops, and scrapes top results."""
-    from . import llm
     import json
+
+    from . import llm
     
     plan_schema = {
         "type": "json_schema",
