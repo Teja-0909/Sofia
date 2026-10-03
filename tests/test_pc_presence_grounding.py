@@ -207,6 +207,7 @@ class TestPresenceGeneration(unittest.IsolatedAsyncioTestCase):
              patch.object(orchestrator_routing.consciousness, "get_current_state_name", AsyncMock(return_value="FOCUSED")), \
              patch.object(orchestrator_routing.db, "get_config", AsyncMock(return_value="5")), \
              patch.object(orchestrator_routing, "_build_system_prompt", AsyncMock(return_value="system")), \
+             patch.object(orchestrator_routing, "_build_persistent_context", AsyncMock(return_value="")), \
              patch.object(orchestrator_routing, "_history", AsyncMock(return_value=[])), \
              patch.object(orchestrator_routing.search_module, "extract_url", return_value=None), \
              patch.object(orchestrator_routing.search_module, "extract_search_query", return_value=None), \

@@ -86,6 +86,13 @@ class TestRuntimeLifecycle(unittest.IsolatedAsyncioTestCase):
 
 
 class TestExplicitControls(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        # Command activity is now durably recorded before state changes. These
+        # isolated handler tests mock that I/O; persistence has its own tests.
+        logger = patch.object(bot_commands, "_log_message", AsyncMock())
+        self.command_log = logger.start()
+        self.addCleanup(logger.stop)
+
     def make_update(self):
         update = MagicMock()
         update.effective_user.id = 42

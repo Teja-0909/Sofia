@@ -31,35 +31,20 @@ class TestExecutiveTimeAndFocus(unittest.IsolatedAsyncioTestCase):
         await db.close_local_conn()
         self.tmp_dir.cleanup()
 
-    def test_ctx_time_mood_phases(self):
-        """Test that _ctx_time_mood returns correct phases and priority directives across 24h."""
+    def test_ctx_time_mood_does_not_prescribe_schedule(self):
+        """Local time supplies context without assigning work or rest."""
         with patch("app.timeutil.now_local") as mock_now:
-            local_tz = timeutil.tz()
-            # 1. Deep night (02:00)
-            mock_now.return_value = dt.datetime(2026, 9, 7, 2, 30, tzinfo=local_tz)
-            ctx = orchestrator_context._ctx_time_mood()
-            self.assertIn("Deep Night / Sleep Recovery", ctx)
-            self.assertIn("SLEEP & PHYSICAL RECOVERY", ctx)
+            for hour in (2, 10, 16, 22):
+                mock_now.return_value = dt.datetime(2026, 9, 7, hour, 30, tzinfo=timeutil.tz())
+                ctx = orchestrator_context._ctx_time_mood()
+                self.assertIn(mock_now.return_value.isoformat(), ctx)
+                self.assertIn("Do not assume working hours", ctx)
+                self.assertIn("chosen rest", ctx)
+                self.assertNotIn("COGNITIVE PEAK", ctx)
+                self.assertNotIn("Active task execution", ctx)
 
-            # 2. Peak Deep Work (10:30)
-            mock_now.return_value = dt.datetime(2026, 9, 7, 10, 30, tzinfo=local_tz)
-            ctx = orchestrator_context._ctx_time_mood()
-            self.assertIn("Peak Morning Deep Work", ctx)
-            self.assertIn("PRIME COGNITIVE PEAK", ctx)
-
-            # 3. Afternoon Execution (16:00)
-            mock_now.return_value = dt.datetime(2026, 9, 7, 16, 0, tzinfo=local_tz)
-            ctx = orchestrator_context._ctx_time_mood()
-            self.assertIn("Afternoon Execution & Momentum", ctx)
-            self.assertIn("Active task execution", ctx)
-
-            # 4. Late evening (22:30)
-            mock_now.return_value = dt.datetime(2026, 9, 7, 22, 30, tzinfo=local_tz)
-            ctx = orchestrator_context._ctx_time_mood()
-            self.assertIn("Late Evening Calm & Decompression", ctx)
-
-    async def test_ctx_tasks_and_threads_urgency_tags(self):
-        """Test relative urgency tags ([OVERDUE], [IMMINENT], [TODAY]) in orchestrator context."""
+    async def test_ctx_tasks_and_threads_preserves_times_without_ranking(self):
+        """Stored reminder times remain evidence rather than an imposed priority."""
         now = timeutil.utc_now()
         
         # 1. Overdue task (30 mins ago)
@@ -75,9 +60,10 @@ class TestExecutiveTimeAndFocus(unittest.IsolatedAsyncioTestCase):
         await tasks.create_task("Sync with design team", today_due)
 
         ctx = await orchestrator_context._ctx_tasks_and_threads()
-        self.assertIn("[🚨 OVERDUE by 30m]", ctx)
-        self.assertIn("[⚡ IMMINENT — Due in", ctx)
-        self.assertIn("Top Priority Task:", ctx)
+        self.assertIn("scheduled 30m ago; completion/relevance unverified", ctx)
+        self.assertIn("scheduled in", ctx)
+        self.assertIn("Reminder time alone is not a real deadline", ctx)
+        self.assertNotIn("Top Priority Task:", ctx)
         self.assertIn("Fix broken database migration", ctx)
 
     async def test_active_focus_sprint_context(self):
@@ -88,8 +74,10 @@ class TestExecutiveTimeAndFocus(unittest.IsolatedAsyncioTestCase):
         await db.set_config("active_focus_started_at", started_iso)
 
         ctx = await orchestrator_context._ctx_tasks_and_threads()
-        self.assertIn("Current Active Focus Sprint: 'Refactor vision pipeline' (started 45m ago)", ctx)
-        self.assertIn("Focus Directive: Keep Teja locked in", ctx)
+        self.assertIn("Refactor vision pipeline", ctx)
+        self.assertIn("started_at=" + started_iso, ctx)
+        self.assertIn("may be a stale sprint", ctx)
+        self.assertNotIn("Keep Teja locked in", ctx)
 
     def test_parser_focus_tags(self):
         """Test extracting [FOCUS: ...] and [FOCUS_DONE] tags."""
@@ -119,7 +107,8 @@ class TestExecutiveTimeAndFocus(unittest.IsolatedAsyncioTestCase):
         # 2. Set new focus sprint
         context.args = ["finish", "auth", "middleware"]
         await bot_commands.cmd_focus(update, context)
-        self.assertIn("Focus sprint locked: 'finish auth middleware'", update.message.reply_text.call_args[0][0])
+        self.assertIn("Focus sprint ", update.message.reply_text.call_args[0][0])
+        self.assertIn("'finish auth middleware'", update.message.reply_text.call_args[0][0])
         self.assertEqual(await db.get_config("active_focus_goal", ""), "finish auth middleware")
 
         # 3. View running sprint

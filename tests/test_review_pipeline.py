@@ -123,6 +123,7 @@ class TestGeneration(unittest.IsolatedAsyncioTestCase):
              patch.object(routing.db, 'get_config', AsyncMock(return_value='5')), \
              patch.object(routing, '_history', AsyncMock(return_value=[])), \
              patch.object(routing, '_build_system_prompt', AsyncMock(return_value='trusted')) as build, \
+             patch.object(routing, '_build_persistent_context', AsyncMock(return_value='saved evidence')), \
              patch.object(search, 'fetch_page_content', AsyncMock(return_value='EVIL_PAGE_CONTENT')), \
              patch.object(routing, '_generate', AsyncMock(return_value='summary')) as generate:
             await routing.reply('Read https://example.com', system_note='UNTRUSTED_FILENAME')
@@ -151,12 +152,14 @@ class TestGeneration(unittest.IsolatedAsyncioTestCase):
                  patch.object(context.consciousness, 'get_consciousness_directive', AsyncMock(return_value='')), \
                  patch.object(context.memory, 'filter_suppressed_text', AsyncMock(side_effect=lambda text: text)):
                 result = await context._build_system_prompt()
-        self.assertIn('TASK_CONTEXT_MARKER', result)
+                persistent = await context._build_persistent_context(system_prompt=result)
+        self.assertNotIn('TASK_CONTEXT_MARKER', result)
+        self.assertIn('TASK_CONTEXT_MARKER', persistent)
 
     async def test_history_is_filtered_after_notebook_reconciliation(self):
         events = []
 
-        async def build(*args):
+        async def build(*args, **kwargs):
             events.append('notebook')
             return 'current notebook'
 
@@ -168,7 +171,8 @@ class TestGeneration(unittest.IsolatedAsyncioTestCase):
              patch.object(routing.consciousness, 'get_current_state_name', AsyncMock(return_value='FOCUSED')), \
              patch.object(routing.db, 'get_config', AsyncMock(return_value='5')), \
              patch.object(routing, '_history', AsyncMock(side_effect=history)), \
-             patch.object(routing, '_build_system_prompt', AsyncMock(side_effect=build)), \
+             patch.object(routing, '_build_system_prompt', AsyncMock(return_value='trusted')), \
+             patch.object(routing, '_build_persistent_context', AsyncMock(side_effect=build)), \
              patch.object(search, 'extract_url', return_value=None), \
              patch.object(search, 'extract_search_query', return_value=None), \
              patch.object(routing, '_generate', AsyncMock(return_value='response')):
