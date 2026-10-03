@@ -27,7 +27,7 @@ BACKGROUND_POLICY = (
 
 BACKGROUND_KINDS = (
     "hourly_checkin", "justbecause", "daily_summary", "thought_reach_out",
-    "presence", "presence_check", "wake_up", "code_update",
+    "presence", "presence_check", "wake_up", "code_update", "outcome_checkpoint",
 )
 _background_lock: asyncio.Lock | None = None
 _background_loop = None
@@ -79,6 +79,14 @@ async def background_message_allowed() -> bool:
     """Persistent, shared gates for unsolicited messages only."""
     if await db.get_config("proactivity_paused", "false") == "true":
         return False
+    if config.ENABLE_OUTCOMES:
+        quiet = await db.fetch_one("SELECT work_quiet_until FROM outcome_control WHERE chat_id = ?", (str(config.ALLOWED_USER_ID),))
+        if quiet and quiet.get("work_quiet_until"):
+            try:
+                if _parse_stored_timestamp(quiet["work_quiet_until"]) > timeutil.utc_now():
+                    return False
+            except (ValueError, TypeError, AttributeError):
+                return False
     if await consciousness.is_sleeping_async() or await _is_global_cooldown_active():
         return False
     last_user = await db.fetch_one(

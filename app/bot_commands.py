@@ -38,6 +38,8 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "• `/focus <goal>` or `/sprint <goal>` — Lock in a deep work sprint\n"
         "• `/focus done` — Complete active sprint & celebrate\n"
         "• `/focus clear` — Cancel active sprint\n\n"
+        "• `/outcomes` — View enabled current priorities\n"
+        "• `/outcome help` — Outcome controls (when enabled)\n\n"
         "📋 *Tasks & Schedule*\n"
         "• `/tasks` or `/reminders` — View pending tasks with urgency\n"
         "• `/add <desc> at <time>` — Schedule a reminder/task\n"
@@ -598,7 +600,8 @@ async def cmd_focus(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
         # Check if there was a pending task matching this sprint and mark it done
         pending = await tasks.list_pending()
-        if pending:
+        from . import config
+        if pending and not config.ENABLE_OUTCOMES:
             matched_id = await parser.detect_completion(goal_completed, pending)
             if matched_id:
                 await tasks.mark_done(int(matched_id))
@@ -616,6 +619,12 @@ async def cmd_focus(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     # Otherwise, user provided a new goal
     new_goal = " ".join(args).strip()
+    from . import config
+    if config.ENABLE_OUTCOMES:
+        from . import outcome_store
+        snapshot = await outcome_store.snapshot(update.effective_chat.id)
+        focus = snapshot.get("focus")
+        await db.set_config("active_focus_outcome_id", str(focus["id"]) if focus else "")
     await db.set_config("active_focus_goal", new_goal)
     await db.set_config("active_focus_started_at", timeutil.utc_iso())
     await update.message.reply_text(
@@ -623,3 +632,36 @@ async def cmd_focus(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "Let’s take it one step at a time. You can change the goal or use /focus clear whenever the plan changes."
     )
 
+
+
+async def cmd_outcome(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Explicit outcome controls are distinct from /done task IDs."""
+    if not _allowed(update) or not update.message:
+        return
+    from . import outcome_conversation
+    from .bot_handlers import _send_verified_response
+    source = outcome_conversation.source_identity(update)
+    if outcome_conversation.enabled() and source:
+        from . import outcome_store
+        if not await outcome_store.log_user_message_once(update.effective_chat.id, source, update.message.text or "/outcome"):
+            await _send_verified_response(update, await outcome_conversation.duplicate_response(update))
+            return
+    else:
+        await _log_message("user", update.message.text or "/outcome")
+    response = await outcome_conversation.command(update, context.args or [])
+    await _send_verified_response(update, response)
+
+
+async def cmd_outcomes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not _allowed(update) or not update.message:
+        return
+    from . import outcome_conversation
+    from .bot_handlers import _send_verified_response
+    if not outcome_conversation.enabled():
+        await _send_verified_response(update, outcome_conversation.DISABLED)
+        return
+    try:
+        response = await outcome_conversation.board(update.effective_chat.id, all_items=(context.args == ["all"]))
+    except Exception:
+        response = "I couldn't read the saved outcomes right now. No changes were made."
+    await _send_verified_response(update, response)

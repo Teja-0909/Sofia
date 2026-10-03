@@ -1,4 +1,5 @@
 import asyncio
+from contextvars import ContextVar
 
 from telegram import Update
 from telegram.constants import ChatAction
@@ -11,6 +12,8 @@ from telegram.ext import (
 
 from . import bot_globals, config, db
 from .bot_globals import logger
+
+_activity_already_logged = ContextVar("activity_already_logged", default=False)
 
 
 def get_bot():
@@ -56,6 +59,8 @@ async def send_text(bot_instance, text: str) -> None:
 
 
 async def _log_message(role: str, content: str, channel: str = "text") -> None:
+    if role == "user" and _activity_already_logged.get():
+        return
     await db.execute(
         "INSERT INTO conversation_log (role, content, channel) VALUES (?, ?, ?)",
         (role, content, channel),
@@ -78,6 +83,31 @@ def _allowed(update: Update) -> bool:
     return False
 
 
+def _command_callback(callback):
+    """Invalidate conversational proposals before unrelated slash commands."""
+    if callback.__name__ in {"cmd_outcome", "cmd_outcomes"}:
+        return callback
+
+    async def wrapped(update, context):
+        if _allowed(update) and update.message:
+            from . import outcome_conversation
+            source = outcome_conversation.source_identity(update)
+            if config.ENABLE_OUTCOMES and source:
+                from . import outcome_store
+                if not await outcome_store.log_user_message_once(update.effective_chat.id, source, update.message.text or ""):
+                    await update.message.reply_text(await outcome_conversation.duplicate_response(update))
+                    return
+                await outcome_conversation.invalidate_for_other_action(update.effective_chat.id)
+                token = _activity_already_logged.set(True)
+                try:
+                    return await callback(update, context)
+                finally:
+                    _activity_already_logged.reset(token)
+        return await callback(update, context)
+
+    return wrapped
+
+
 def build_application() -> Application:
     from .bot_commands import (
         cmd_add,
@@ -91,6 +121,8 @@ def build_application() -> Application:
         cmd_image,
         cmd_memory,
         cmd_mood,
+        cmd_outcome,
+        cmd_outcomes,
         cmd_overlay,
         cmd_pause,
         cmd_permissions,
@@ -118,39 +150,42 @@ def build_application() -> Application:
         .token(config.BOT_TOKEN)
         .build()
     )
-    app.add_handler(CommandHandler("pause", cmd_pause))
-    app.add_handler(CommandHandler("permissions", cmd_permissions))
-    app.add_handler(CommandHandler("cancel", cmd_cancel))
-    app.add_handler(CommandHandler("snooze", cmd_snooze))
-    app.add_handler(CommandHandler("forget", cmd_forget))
-    app.add_handler(CommandHandler("correct", cmd_correct))
-    app.add_handler(CommandHandler("start", cmd_start))
-    app.add_handler(CommandHandler("help", cmd_help))
-    app.add_handler(CommandHandler("commands", cmd_help))
-    app.add_handler(CommandHandler("tasks", cmd_tasks))
-    app.add_handler(CommandHandler("reminders", cmd_tasks))
-    app.add_handler(CommandHandler("add", cmd_add))
-    app.add_handler(CommandHandler("done", cmd_done))
-    app.add_handler(CommandHandler("win", cmd_win))
-    app.add_handler(CommandHandler("focus", cmd_focus))
-    app.add_handler(CommandHandler("sprint", cmd_focus))
-    app.add_handler(CommandHandler("search", cmd_search))
-    app.add_handler(CommandHandler("read", cmd_read))
-    app.add_handler(CommandHandler("image", cmd_image))
-    app.add_handler(CommandHandler("photo", cmd_image))
-    app.add_handler(CommandHandler("draw", cmd_image))
-    app.add_handler(CommandHandler("selfie", cmd_image))
-    app.add_handler(CommandHandler("memory", cmd_memory))
-    app.add_handler(CommandHandler("depth", cmd_depth))
-    app.add_handler(CommandHandler("relationship", cmd_depth))
-    app.add_handler(CommandHandler("mood", cmd_mood))
-    app.add_handler(CommandHandler("status", cmd_status))
-    app.add_handler(CommandHandler("sleep", cmd_sleep))
-    app.add_handler(CommandHandler("thoughts", cmd_thoughts))
-    app.add_handler(CommandHandler("traces", cmd_traces))
-    app.add_handler(CommandHandler("screen", cmd_screen))
-    app.add_handler(CommandHandler("watch", cmd_watch))
-    app.add_handler(CommandHandler("overlay", cmd_overlay))
+    app.add_handler(CommandHandler("pause", _command_callback(cmd_pause)))
+    app.add_handler(CommandHandler("permissions", _command_callback(cmd_permissions)))
+    app.add_handler(CommandHandler("cancel", _command_callback(cmd_cancel)))
+    app.add_handler(CommandHandler("snooze", _command_callback(cmd_snooze)))
+    app.add_handler(CommandHandler("forget", _command_callback(cmd_forget)))
+    app.add_handler(CommandHandler("correct", _command_callback(cmd_correct)))
+    app.add_handler(CommandHandler("start", _command_callback(cmd_start)))
+    app.add_handler(CommandHandler("help", _command_callback(cmd_help)))
+    app.add_handler(CommandHandler("commands", _command_callback(cmd_help)))
+    app.add_handler(CommandHandler("tasks", _command_callback(cmd_tasks)))
+    app.add_handler(CommandHandler("reminders", _command_callback(cmd_tasks)))
+    app.add_handler(CommandHandler("add", _command_callback(cmd_add)))
+    app.add_handler(CommandHandler("done", _command_callback(cmd_done)))
+    app.add_handler(CommandHandler("win", _command_callback(cmd_win)))
+    app.add_handler(CommandHandler("outcome", _command_callback(cmd_outcome)))
+    app.add_handler(CommandHandler("outcomes", _command_callback(cmd_outcomes)))
+    app.add_handler(CommandHandler("priorities", _command_callback(cmd_outcomes)))
+    app.add_handler(CommandHandler("focus", _command_callback(cmd_focus)))
+    app.add_handler(CommandHandler("sprint", _command_callback(cmd_focus)))
+    app.add_handler(CommandHandler("search", _command_callback(cmd_search)))
+    app.add_handler(CommandHandler("read", _command_callback(cmd_read)))
+    app.add_handler(CommandHandler("image", _command_callback(cmd_image)))
+    app.add_handler(CommandHandler("photo", _command_callback(cmd_image)))
+    app.add_handler(CommandHandler("draw", _command_callback(cmd_image)))
+    app.add_handler(CommandHandler("selfie", _command_callback(cmd_image)))
+    app.add_handler(CommandHandler("memory", _command_callback(cmd_memory)))
+    app.add_handler(CommandHandler("depth", _command_callback(cmd_depth)))
+    app.add_handler(CommandHandler("relationship", _command_callback(cmd_depth)))
+    app.add_handler(CommandHandler("mood", _command_callback(cmd_mood)))
+    app.add_handler(CommandHandler("status", _command_callback(cmd_status)))
+    app.add_handler(CommandHandler("sleep", _command_callback(cmd_sleep)))
+    app.add_handler(CommandHandler("thoughts", _command_callback(cmd_thoughts)))
+    app.add_handler(CommandHandler("traces", _command_callback(cmd_traces)))
+    app.add_handler(CommandHandler("screen", _command_callback(cmd_screen)))
+    app.add_handler(CommandHandler("watch", _command_callback(cmd_watch)))
+    app.add_handler(CommandHandler("overlay", _command_callback(cmd_overlay)))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))

@@ -76,7 +76,10 @@ async def create_scheduler() -> AsyncIOScheduler:
     scheduler.add_job(db.backup_database, "cron", hour=4, minute=45)
     scheduler.add_job(diary.consolidate_monthly_diary, "cron", day=1, hour=5, minute=0)
 
-    # 2. Tasks and reminder polling
+    # 2. Tasks, reminders and opt-in one-shot work checkpoints
+    from . import outcome_checkpoints
+    await outcome_checkpoints.sync_delivery_state(boot=True)
+    scheduler.add_job(outcome_checkpoints.poll_due_checkpoints, "interval", seconds=30, id="outcome_checkpoints")
     scheduler.add_job(tasks_module.poll_due_tasks, "interval", seconds=30)
     scheduler.add_job(tasks_module.poll_proactive_messages, "interval", seconds=30)
 
