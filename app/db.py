@@ -446,6 +446,8 @@ async def init() -> None:
         await execute("ALTER TABLE tasks ADD COLUMN cancelled_at TEXT")
     if "kind" not in task_columns:
         await execute("ALTER TABLE tasks ADD COLUMN kind TEXT NOT NULL DEFAULT 'reminder'")
+    from . import outcome_migrations
+    await outcome_migrations.migrate()
     await validate_required_schema()
 
 

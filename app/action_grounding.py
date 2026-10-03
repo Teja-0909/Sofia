@@ -11,18 +11,18 @@ _LITERAL = re.compile(r"```[\s\S]*?```|``[\s\S]*?``|`[^`\n]*`|\"[^\"\n]*\"|“[^
 _ACTION = re.compile(
     r"\bi(?:'ve| have)?\s+(?:(?:already|just|successfully)\s+)?"
     r"(?:saved|scheduled|created|started|set|cancelled|canceled|snoozed|sent|deleted|removed|updated|marked|completed)\b"
-    r"(?:\s+(?:it|that|this)\b|[^.!?\n]{0,100}\b(?:timer|reminder|task|message|email|memory|file|note|goal|sprint|focus)\b)"
+    r"(?:\s+(?:it|that|this)\b|[^.!?\n]{0,100}\b(?:timer|reminder|task|message|email|memory|file|note|goal|sprint|focus|outcome|priority|checkpoint|check-in)\b)"
     r"|\bi(?:'ll| will| am going to|'m going to)\s+(?:(?:be sure to|make sure to)\s+)?"
     r"(?:remind|ping|nudge|text|message|alert|notify|check (?:in|on))\b"
     r"|\bi(?:'ll| will| am going to|'m going to)\s+(?:set|save|start|schedule|send|delete|update|cancel|mark)\b"
-    r"[^.!?\n]{0,80}\b(?:timer|reminder|task|message|email|memory|file|note|goal|sprint)\b"
-    r"|\b(?:your|the|this|that|a|my)\s+(?:[\w-]+\s+){0,3}(?:timer|reminder|task|message|email|memory|file|note|goal|sprint)"
+    r"[^.!?\n]{0,80}\b(?:timer|reminder|task|message|email|memory|file|note|goal|sprint|outcome|priority|checkpoint|check-in)\b"
+    r"|\b(?:your|the|this|that|a|my)\s+(?:[\w-]+\s+){0,3}(?:timer|reminder|task|message|email|memory|file|note|goal|sprint|outcome|priority|checkpoint|check-in)"
     r"(?:\s+(?:is|was|has been|have been)\s+|'s\s+)(?:(?:already|now|successfully|still)\s+)?"
     r"(?:saved|scheduled|created|set|running|ticking|started|cancelled|canceled|sent|deleted|removed|updated|done|completed|active)\b"
     r"|\b(?:timer|reminder)\s+(?:is\s+)?(?:set|running|ticking|started)\b"
     r"|^\s*(?:saved|created|started|scheduled|cancelled|canceled|snoozed|sent|deleted|updated|completed)\s+(?:(?:your|the|a|that|this)\s+)?"
-    r"(?:[\w-]+\s+){0,3}(?:timer|reminder|task|message|email|memory|file|note|goal|sprint)\b"
-    r"|^\s*(?:timer|reminder|task|message|email|memory|file|note|goal|sprint)(?:\s*#?\d+)?\s+"
+    r"(?:[\w-]+\s+){0,3}(?:timer|reminder|task|message|email|memory|file|note|goal|sprint|outcome|priority|checkpoint|check-in)\b"
+    r"|^\s*(?:timer|reminder|task|message|email|memory|file|note|goal|sprint|outcome|priority|checkpoint|check-in)(?:\s*#?\d+)?\s+"
     r"(?:saved|scheduled|running|active|completed|done|sent|cancelled|canceled|deleted)\b",
     re.IGNORECASE,
 )
