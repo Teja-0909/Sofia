@@ -14,22 +14,28 @@ async def create_task(description: str, due_utc: str, is_recurring: str | None =
     desc = description.strip()
     if not desc:
         return 0
-
-    # Deduplication Guard: if an identical task is already pending, reuse existing ID
-    existing = await db.fetch_one(
-        "SELECT id, due_time FROM tasks WHERE LOWER(TRIM(description)) = LOWER(TRIM(?)) AND status = 'pending' AND cancelled_at IS NULL",
-        (desc,)
-    )
-    if existing:
-        logger.info(
-            "Task deduplication: task '%s' already pending as #%s (due %s), avoiding duplicate insert",
-            desc, existing["id"], existing["due_time"]
-        )
-        return existing["id"]
-
     due_utc = _validated_due(due_utc)
     if is_recurring not in (None, "daily"):
         raise ValueError("Unsupported recurrence")
+
+    # An explicit new time reschedules the pending item. Reusing its ID while
+    # silently keeping the old time made callers confirm a time never saved.
+    existing = await db.fetch_one(
+        "SELECT id, due_time, is_recurring FROM tasks WHERE LOWER(TRIM(description)) = LOWER(TRIM(?)) "
+        "AND status = 'pending' AND cancelled_at IS NULL ORDER BY id LIMIT 1",
+        (desc,)
+    )
+    if existing:
+        if existing["due_time"] == due_utc and existing.get("is_recurring") == is_recurring:
+            return existing["id"]
+        rows = await db.execute_returning(
+            "UPDATE tasks SET due_time = ?, is_recurring = ?, reminder_sent_count = 0, "
+            "last_reminded_at = NULL, completed_at = NULL WHERE id = ? "
+            "AND status = 'pending' AND cancelled_at IS NULL RETURNING id",
+            (due_utc, is_recurring, existing["id"]),
+        )
+        if rows:
+            return rows[0]["id"]
     rows = await db.execute_returning(
         "INSERT INTO tasks (description, due_time, is_recurring, status) VALUES (?, ?, ?, 'pending') RETURNING id",
         (desc, due_utc, is_recurring),
@@ -163,18 +169,21 @@ async def _send_proactive(
     bot_instance = bot_module.get_bot()
     if bot_instance is None:
         return False
-    try:
+    if fallback_text is not None:
+        # Scheduled reminders already have the text needed for delivery. Never
+        # put model/network generation in front of their due-time notification:
+        # a slow provider used to hold this poller (and later tasks) for 180s.
+        # Saved text is literal data; don't strip user-authored control-tag or
+        # code examples from it as if it were model-generated instructions.
+        clean_text = fallback_text
+    else:
         kwargs = {"untrusted_context": untrusted_context} if untrusted_context is not None else {}
         raw_text = await asyncio.wait_for(
             orchestrator_routing.proactive(system_note, **kwargs), timeout=180,
         )
-    except Exception:
-        if not fallback_text:
-            raise
-        raw_text = fallback_text
-    clean_text, _ = images.extract_embedded_image_tag(raw_text or "")
-    clean_text, remember_info = memory_file.extract_remember_tag(clean_text)
-    clean_text, mood_tag = moods.extract_mood_tag(clean_text)
+        clean_text, _ = images.extract_embedded_image_tag(raw_text or "")
+        clean_text, _ = memory_file.extract_remember_tag(clean_text)
+        clean_text, _ = moods.extract_mood_tag(clean_text)
     if not clean_text or clean_text.strip().upper() == "PASS":
         clean_text = fallback_text or ""
     clean_text = clean_text.replace("<split>", "\n").strip()[:4000]
@@ -367,4 +376,3 @@ async def add_temp_mention(content: str) -> None:
         "INSERT INTO temp_reminders (content, mentioned_at, expires_at, status) VALUES (?, ?, ?, 'active')",
         (content, timeutil.utc_iso(), expires),
     )
-

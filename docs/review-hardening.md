@@ -61,6 +61,16 @@ The Hrana fallback decodes integers, floats, nulls, text and blobs to the same P
 - `/permissions`: read current permission/paused status; model text cannot change it
 - `/screen`, `/watch`, `/overlay`: explicit desktop controls with local permission checks
 
+### Reminder creation and delivery follow-up
+
+Reminders support both `/add 22:13 drink water` and conversational requests such as `Sofia, can you remind me at 22:10 to drink water?`. A successful request is confirmed from the saved task row, with its ID and dated local time. A bare clock time that has already passed means its next occurrence; check the displayed date. Invalid or missing times are rejected rather than silently stored as an undated note or moved four hours ahead.
+
+Supported deterministic forms are local clock times, today/tomorrow, dayparts, minute/hour durations and explicit daily recurrence. Other explicit dates, time zones or recurrence patterns are conservatively rejected instead of silently interpreted as today's local time. If saving cannot be confirmed, check `/tasks` before retrying because the database may have accepted the write.
+
+Repeating a pending reminder description with a different time reschedules that task and resets its reminder count; submitting the same saved time is idempotent. Timed reminders and saved proactive messages use their stored text directly: they never wait for model wording. The scheduler checks for due work every 30 seconds, so normal polling can add up to about 30 seconds, plus database/Telegram latency. Paused messaging, service suspension, network failure or Telegram rejection can still prevent timely delivery; successful chat alone does not validate the scheduler.
+
+This follow-up changes server scheduling only, with no new schema, environment variables or sidecar protocol changes. The earlier paired server/sidecar upgrade instructions still apply when first enabling the desktop features.
+
 No web dashboard, new OS sandbox, arbitrary-command approval UI, production secrets, permission grants, merge or deployment is included. Full semantic memory-erasure workflows, real Windows desktop validation, live Telegram/Turso/model-provider integration and production performance/quality evaluations remain future validation work.
 
 ## Offline validation

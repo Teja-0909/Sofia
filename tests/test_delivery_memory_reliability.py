@@ -86,6 +86,50 @@ class TestDeliveryReliability(TemporaryDatabase):
         self.assertEqual(send.await_args.args[1], "Reminder: Review the draft")
         self.assertEqual((await db.fetch_one("SELECT * FROM conversation_log"))["channel"], "text")
 
+    async def test_due_reminders_never_wait_for_model_wording(self):
+        await self.due_task()
+        await tasks.create_task("Drink water", "2026-01-01T12:00:00Z")
+        with patch("app.bot_core.get_bot", return_value=object()), \
+             patch("app.bot_core.send_text", AsyncMock()) as send, \
+             patch.object(tasks.orchestrator_routing, "proactive", AsyncMock(side_effect=AssertionError("No model on timed delivery"))) as generate:
+            await asyncio.wait_for(tasks.poll_due_tasks(), timeout=3)
+        generate.assert_not_awaited()
+        self.assertEqual(send.await_count, 2)
+        self.assertEqual({call.args[1] for call in send.await_args_list},
+                         {"Reminder: Review the draft", "Reminder: Drink water"})
+        self.assertEqual([row["reminder_sent_count"] for row in await db.fetch_all("SELECT * FROM tasks")], [1, 1])
+
+    async def test_saved_proactive_message_is_not_rewritten_or_stripped(self):
+        text = "Review example [REMEMBER: test-only data]"
+        await tasks.schedule_proactive_message(text, "2026-01-01T12:00:00Z")
+        with patch("app.bot_core.get_bot", return_value=object()), \
+             patch("app.bot_core.send_text", AsyncMock()) as send, \
+             patch.object(tasks.orchestrator_routing, "proactive", AsyncMock()) as generate:
+            await tasks.poll_proactive_messages()
+        generate.assert_not_awaited()
+        self.assertEqual(send.call_args.args[1], text)
+
+    async def test_new_due_time_reschedules_same_pending_task(self):
+        old_due, new_due = "2030-01-01T14:00:00Z", "2030-01-01T10:02:00Z"
+        task_id = await tasks.create_task("Drink water", old_due)
+        await db.execute("UPDATE tasks SET reminder_sent_count = 2, last_reminded_at = ? WHERE id = ?", (old_due, task_id))
+        saved_id = await tasks.create_task("Drink water", new_due)
+        row = await db.fetch_one("SELECT * FROM tasks WHERE id = ?", (saved_id,))
+        self.assertEqual(task_id, saved_id)
+        self.assertEqual(row["due_time"], new_due)
+        self.assertEqual(row["reminder_sent_count"], 0)
+        self.assertIsNone(row["last_reminded_at"])
+        self.assertEqual(len(await db.fetch_all("SELECT * FROM tasks")), 1)
+
+    async def test_same_due_time_is_idempotent_and_invalid_time_never_reuses_old_task(self):
+        due = "2030-01-01T10:02:00Z"
+        task_id = await tasks.create_task("Drink water", due)
+        await db.execute("UPDATE tasks SET reminder_sent_count = 1 WHERE id = ?", (task_id,))
+        self.assertEqual(await tasks.create_task("Drink water", due), task_id)
+        self.assertEqual((await db.fetch_one("SELECT reminder_sent_count FROM tasks WHERE id = ?", (task_id,)))["reminder_sent_count"], 1)
+        with self.assertRaises(ValueError):
+            await tasks.create_task("Drink water", "invalid")
+
     async def test_proactive_failure_then_retry_and_no_duplicate(self):
         await tasks.schedule_proactive_message("Check the oven", "2026-01-01T12:00:00Z")
         with patch.object(tasks, "_send_via_alisa", AsyncMock(side_effect=[False, True])) as send:
@@ -334,25 +378,27 @@ class TestExplicitCorrection(TemporaryDatabase):
 
 
 class TestInFlightReminderGuard(TemporaryDatabase):
-    async def test_cancel_during_generation_prevents_send(self):
+    async def test_cancel_during_delivery_check_prevents_send(self):
         await self._assert_change_prevents_send("cancel")
 
-    async def test_snooze_during_generation_prevents_stale_send(self):
+    async def test_snooze_during_delivery_check_prevents_stale_send(self):
         await self._assert_change_prevents_send("snooze")
 
-    async def test_complete_during_generation_prevents_send(self):
+    async def test_complete_during_delivery_check_prevents_send(self):
         await self._assert_change_prevents_send("done")
 
     async def _assert_change_prevents_send(self, operation):
         task_id = await self.due_task()
         started, release = asyncio.Event(), asyncio.Event()
 
-        async def generate(*args, **kwargs):
-            started.set()
-            await release.wait()
-            return "Reminder: Review the draft"
+        real_fetch_one = db.fetch_one
+        async def guarded_read(query, *args, **kwargs):
+            if query.startswith("SELECT job_key FROM delivery_claims"):
+                started.set()
+                await release.wait()
+            return await real_fetch_one(query, *args, **kwargs)
 
-        with patch.object(tasks.orchestrator_routing, "proactive", AsyncMock(side_effect=generate)), \
+        with patch.object(db, "fetch_one", AsyncMock(side_effect=guarded_read)), \
              patch("app.bot_core.get_bot", return_value=object()), \
              patch("app.bot_core.send_text", AsyncMock()) as send:
             polling = asyncio.create_task(tasks.poll_due_tasks())
