@@ -132,6 +132,7 @@ class MemoryEvidenceContract(unittest.IsolatedAsyncioTestCase):
     async def test_focus_change_and_clear_are_logged_before_mutation(self):
         update = MagicMock()
         update.effective_user.id = 42
+        update.effective_chat.id = 42
         update.message.reply_text = AsyncMock()
         real_set, real_delete = db.set_config, db.delete_config
 
@@ -157,6 +158,7 @@ class MemoryEvidenceContract(unittest.IsolatedAsyncioTestCase):
     async def test_cancel_and_snooze_log_request_before_mutation(self):
         update = MagicMock()
         update.effective_user.id = 42
+        update.effective_chat.id = 42
         update.message.reply_text = AsyncMock()
         for name, args, operation in (("cancel", ["9"], "cancel_task"), ("snooze", ["9", "10"], "snooze_task")):
             async def mutate(*unused, command=name, values=args):

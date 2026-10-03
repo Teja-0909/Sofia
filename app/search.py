@@ -1,13 +1,16 @@
 import asyncio
-import ipaddress
 import logging
 import re
 import socket
+import threading
 from urllib.parse import quote_plus, urljoin, urlsplit
 
 import httpx
 
+from browser_worker.policy import public_ip
+
 logger = logging.getLogger(__name__)
+_SEARCH_SLOTS = asyncio.Semaphore(2)
 
 SEARCH_TRIGGER_PHRASES = (
     "search the web for", "search the web about", "search the web",
@@ -129,12 +132,12 @@ async def _resolve_public_url(url: str) -> tuple[httpx.URL, str]:
         ), timeout=3.0,
     )
     addresses = [record[4][0] for record in records]
-    if not addresses or any(not ipaddress.ip_address(address).is_global for address in addresses):
+    if not addresses or any(not public_ip(address) for address in addresses):
         raise ValueError("Private, loopback, link-local and reserved destinations are blocked")
     return httpx.URL(url).copy_with(host=addresses[0]), hostname
 
 
-async def _fetch_public_page(url: str, max_chars: int) -> str:
+async def _fetch_public_page_receipt(url: str, max_chars: int) -> dict:
     # trust_env=False prevents a proxy from undoing IP pinning. Preserve Host/SNI
     # for virtual hosts and certificate validation, but never resolve host twice.
     async with httpx.AsyncClient(timeout=8.0, follow_redirects=False, trust_env=False) as client:
@@ -150,14 +153,14 @@ async def _fetch_public_page(url: str, max_chars: int) -> str:
                 if response.status_code in (301, 302, 303, 307, 308):
                     location = response.headers.get("location")
                     if not location:
-                        return ""
+                        return {"url": url, "text": "", "status": "unavailable", "truncated": False}
                     url = urljoin(url, location)
                     continue
                 if response.status_code != 200:
-                    return ""
+                    return {"url": url, "text": "", "status": "unavailable", "truncated": False}
                 kind = response.headers.get("content-type", "").split(";", 1)[0].lower()
                 if kind not in ("text/html", "text/plain", "application/xhtml+xml"):
-                    return ""
+                    return {"url": url, "text": "", "status": "unsupported", "truncated": False}
                 chunks = []
                 total = 0
                 async for chunk in response.aiter_bytes():
@@ -166,10 +169,31 @@ async def _fetch_public_page(url: str, max_chars: int) -> str:
                         raise ValueError("Page exceeds the response size limit")
                     chunks.append(chunk)
                 content = b"".join(chunks).decode("utf-8", errors="replace")
-                if kind == "text/plain":
-                    return content[:max_chars]
-                return extract_clean_article_text(content, max_chars=max_chars)
+                text = content if kind == "text/plain" else extract_clean_article_text(content, max_chars=max_chars + 1)
+                title_match = re.search(r"<title[^>]*>(.*?)</title>", content, flags=re.DOTALL | re.IGNORECASE) if kind != "text/plain" else None
+                title = re.sub(r"<[^>]+>", "", title_match.group(1)).strip()[:300] if title_match else ""
+                return {"url": url, "title": title, "text": text[:max_chars],
+                        "status": "retrieved" if text.strip() else "empty", "truncated": len(text) > max_chars}
     raise ValueError("Too many redirects")
+
+
+async def _fetch_public_page(url: str, max_chars: int) -> str:
+    """Compatibility wrapper around the structured, DNS-pinned fetch."""
+    return (await _fetch_public_page_receipt(url, max_chars))["text"]
+
+
+async def fetch_page_receipt(url: str, max_chars: int = 12000) -> dict:
+    """Return final URL, extracted passage and exact character truncation state.
+
+    Extraction is a passage, not a promise that the entire webpage was read.
+    All safety checks are shared with fetch_page_content.
+    """
+    try:
+        return await asyncio.wait_for(
+            _fetch_public_page_receipt(url, max(0, min(max_chars, 20000))), 20.0)
+    except (ValueError, OSError, httpx.HTTPError, asyncio.TimeoutError) as exc:
+        logger.debug("Public research fetch rejected or unavailable: %s", type(exc).__name__)
+        return {"url": url, "text": "", "status": "unavailable", "truncated": False}
 
 
 async def fetch_page_content(url: str, max_chars: int = 4000) -> str:
@@ -187,7 +211,7 @@ def _sync_ddgs_search(query: str, max_results: int = 5) -> list[dict]:
             from ddgs import DDGS
         except ImportError:
             from duckduckgo_search import DDGS
-        raw = list(DDGS().text(query, max_results=max_results))
+        raw = list(DDGS(timeout=8).text(query, max_results=max_results))
         results = []
         for r in raw:
             title = r.get("title", "").strip()
@@ -203,12 +227,43 @@ def _sync_ddgs_search(query: str, max_results: int = 5) -> list[dict]:
 
 
 async def search_web(query: str, max_results: int = 5) -> list[dict]:
-    """Performs a web search and returns snippets and URLs."""
+    """Bound search concurrency, including synchronous DDGS work after cancellation.
+
+    Python cannot terminate a running worker thread. Its slot stays occupied until
+    it actually finishes, and cancelled queued work never starts a new search.
+    """
+    await _SEARCH_SLOTS.acquire()
+    owns_slot = [True]
+    try:
+        return await _search_web_held(query, max_results, owns_slot)
+    finally:
+        if owns_slot[0]:
+            _SEARCH_SLOTS.release()
+
+
+async def _search_web_held(query: str, max_results: int, owns_slot: list[bool]) -> list[dict]:
     if not query or not query.strip():
         return []
 
     clean_query = refine_query(query)
-    results = await asyncio.to_thread(_sync_ddgs_search, clean_query, max_results)
+    cancelled = threading.Event()
+
+    def run_if_active():
+        return [] if cancelled.is_set() else _sync_ddgs_search(clean_query, max_results)
+
+    worker = asyncio.create_task(asyncio.to_thread(run_if_active))
+    try:
+        results = await asyncio.shield(worker)
+    except asyncio.CancelledError:
+        cancelled.set()
+        if not worker.done():
+            owns_slot[0] = False
+            def release_slot(finished):
+                if not finished.cancelled():
+                    finished.exception()  # Retrieve a possible thread failure.
+                _SEARCH_SLOTS.release()
+            worker.add_done_callback(release_slot)
+        raise
     if results:
         return results
 

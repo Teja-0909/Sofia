@@ -195,6 +195,7 @@ class TestVisionDesktopTools(unittest.IsolatedAsyncioTestCase):
         config.ALLOWED_USER_ID = 12345
         update = MagicMock()
         update.effective_user.id = 12345
+        update.effective_chat.id = 12345
         update.message.reply_text = AsyncMock()
         context = MagicMock()
 
@@ -229,4 +230,3 @@ class TestVisionDesktopTools(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

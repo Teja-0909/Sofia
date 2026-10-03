@@ -56,7 +56,9 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "• `/overlay test` — Run a visual test on PC monitor\n\n"
         "🔍 *Web & Research*\n"
         "• `/search <query>` — Live web search\n"
-        "• `/read <url>` — Clean markdown scrape of any webpage\n\n"
+        "• `/read <url>` — Read public webpage text\n"
+        "• `/research <question>` — Background research (when enabled)\n"
+        "• `/research help` — Status, steering and cancellation\n\n"
         "📸 *Visuals & Photos*\n"
         "• `/image <prompt>` — Custom image generation\n"
         "• `/selfie` — Spontaneous portrait of Sofia\n\n"
@@ -160,6 +162,11 @@ async def cmd_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     if not query:
         await update.message.reply_text("what would you like me to look up? e.g. /search latest F1 news")
         return
+    from . import config, research_conversation
+    if config.ENABLE_RESEARCH_JOBS:
+        from .bot_handlers import _send_verified_response
+        await _send_verified_response(update, await research_conversation.submit(update, query))
+        return
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
     try:
         reply = await orchestrator_routing.reply(f"Please look up on the web: {query}")
@@ -177,6 +184,11 @@ async def cmd_read(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     url = " ".join(context.args or []).strip()
     if not url:
         await update.message.reply_text("send me the link to read! e.g. /read https://example.com")
+        return
+    from . import config, research_conversation
+    if config.ENABLE_RESEARCH_JOBS:
+        from .bot_handlers import _send_verified_response
+        await _send_verified_response(update, await research_conversation.submit(update, "Read " + url))
         return
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
     try:
@@ -197,6 +209,16 @@ async def cmd_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text("what image would you like me to create? e.g. /image a sunset over the mountains")
         return
     await _handle_image_generation(update, context, desc)
+
+
+async def cmd_research(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not _allowed(update) or not update.message:
+        return
+    from . import research_conversation
+    from .bot_handlers import _send_verified_response
+    await _log_message("user", update.message.text or "/research")
+    response = await research_conversation.command(update, " ".join(context.args or []))
+    await _send_verified_response(update, response)
 
 
 async def cmd_memory(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -310,6 +332,10 @@ async def cmd_permissions(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     lines += [f"{name}: {'allowed' if value else 'blocked'}" for name, value in status.get("operations", {}).items()]
     lines.append("Raw shell execution is disabled. Permissions are configured locally, never by model text.")
     lines.append("Background messages paused: " + await db.get_config("proactivity_paused", "false"))
+    from . import config
+    lines.append("Background research: " + ("enabled" if config.ENABLE_RESEARCH_JOBS else "disabled"))
+    lines.append("Signed-out research browser: " + ("configured" if config.ENABLE_RESEARCH_BROWSER and config.BROWSER_WORKER_URL and config.BROWSER_WORKER_TOKEN else "disabled or unconfigured"))
+    lines.append("Research workers cannot change accounts, priorities, timers or desktop state.")
     await update.message.reply_text("\n".join(lines))
 
 

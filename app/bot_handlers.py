@@ -200,6 +200,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await _reply_to_reminder_request(update, reminder_text)
         return
 
+    # Long research is saved and enqueued before the optional outcome model or
+    # general response loop. Its workers never block the Telegram update queue.
+    from . import research_conversation
+    research_response = await research_conversation.handle_text(update, user_text)
+    if research_response is not None:
+        await _send_verified_response(update, research_response)
+        return
+
     # The feature is opt-in and only reads this direct Telegram message. Model
     # interpretation can propose changes; a separate saved preview confirmation
     # owns mutation. Existing timer/reminder receipts retain precedence.
@@ -260,7 +268,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         logger.debug("Chat action note: %s", e)
 
     try:
-        raw_reply = await orchestrator_routing.reply(user_text, system_note=system_note)
+        with research_conversation.private_chat_context(update):
+            raw_reply = await orchestrator_routing.reply(user_text, system_note=system_note)
     except Exception as exc:
         logger.error("Orchestrator error in handle_message: %s", exc)
         raw_reply = orchestrator_globals.FALLBACK_MESSAGE
@@ -587,5 +596,3 @@ async def handle_voice_or_audio(update: Update, context: ContextTypes.DEFAULT_TY
         raw_reply = orchestrator_globals.FALLBACK_MESSAGE
 
     await _process_and_send_reply(update, context, raw_reply, user_text=user_caption)
-
-

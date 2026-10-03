@@ -12,6 +12,7 @@ async def run_bot() -> None:
     sched = None
     app = None
     update_check = None
+    research_runner = None
     web.set_readiness(False, "Starting services")
     try:
         await db.init()
@@ -43,10 +44,15 @@ async def run_bot() -> None:
                 )
                 sched = await scheduler.create_scheduler()
                 sched.start()
+                if config.ENABLE_RESEARCH_JOBS:
+                    from app.research_jobs import ResearchRunner
+                    research_runner = ResearchRunner(bot=app.bot)
+                    await research_runner.start()
 
                 async def readiness_probe():
                     row = await db.fetch_one("SELECT 1 AS ok")
-                    return bool(row and row.get("ok") == 1 and app.running and app.updater.running and sched.running)
+                    return bool(row and row.get("ok") == 1 and app.running and app.updater.running and sched.running
+                                and (research_runner is None or research_runner.running))
 
                 web.set_readiness_probe(readiness_probe)
                 web.set_readiness(True)
@@ -57,11 +63,15 @@ async def run_bot() -> None:
             finally:
                 web.set_readiness(False, "Stopping services")
                 try:
-                    if app.updater and app.updater.running:
-                        await app.updater.stop()
+                    if research_runner is not None:
+                        await research_runner.stop()
                 finally:
-                    if app.running:
-                        await app.stop()
+                    try:
+                        if app.updater and app.updater.running:
+                            await app.updater.stop()
+                    finally:
+                        if app.running:
+                            await app.stop()
     finally:
         web.set_readiness(False, "Stopped")
         web.set_readiness_probe(None)

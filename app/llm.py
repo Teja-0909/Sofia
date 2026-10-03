@@ -85,7 +85,8 @@ async def _call_gemini(
     messages: list[dict], 
     model: str, 
     response_format: dict | None = None,
-    tools: list[dict] | None = None
+    tools: list[dict] | None = None,
+    *, max_output_tokens: int = 4096,
 ) -> tuple[str, dict, list[dict]]:
     contents = []
     for m in messages:
@@ -155,7 +156,7 @@ async def _call_gemini(
         "systemInstruction": {"parts": [{"text": system}]},
         "contents": contents,
         "generationConfig": {
-            "maxOutputTokens": 4096,
+            "maxOutputTokens": max(1, min(4096, int(max_output_tokens))),
             "temperature": 0.7,
             "topP": 0.95,
         },
@@ -237,7 +238,8 @@ async def _call_gemini(
     usage_raw = data.get("usageMetadata", {})
     usage = {
         "prompt_tokens": usage_raw.get("promptTokenCount", 0),
-        "completion_tokens": usage_raw.get("candidatesTokenCount", 0),
+        "completion_tokens": (usage_raw.get("candidatesTokenCount", 0)
+                              + usage_raw.get("thoughtsTokenCount", 0)),
     }
     return text, usage, tool_calls
 
@@ -250,7 +252,8 @@ async def _call_openai_compatible(
     messages: list[dict], 
     model: str,
     response_format: dict | None = None,
-    tools: list[dict] | None = None
+    tools: list[dict] | None = None,
+    *, max_output_tokens: int = 4096,
 ) -> tuple[str, dict, list[dict]]:
     has_image = any(
         (m.get("media_bytes") or m.get("image_bytes"))
@@ -309,7 +312,7 @@ async def _call_openai_compatible(
     json_payload = {
         "model": target_model,
         "messages": payload_messages,
-        "max_tokens": 4096,
+        "max_tokens": max(1, min(4096, int(max_output_tokens))),
         "temperature": 0.7,
     }
     

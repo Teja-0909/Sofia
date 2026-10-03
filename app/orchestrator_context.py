@@ -461,9 +461,10 @@ async def _build_system_prompt(extra_note: str | None = None, user_text: str = "
     the conversation, not in the privileged instruction string.
     """
     base = pathlib.Path(config.SYSTEM_PROMPT_PATH).read_text(encoding="utf-8")
-    from . import outcome_conversation
+    from . import outcome_conversation, research_conversation
     outcome_policy = outcome_conversation.OUTCOME_POLICY if outcome_conversation.enabled() else ""
-    return "\n\n".join(block for block in (base, CONTEXT_POLICY, outcome_policy, extra_note, REPLY_STYLE_POLICY) if block)
+    research_policy = research_conversation.POLICY if config.ENABLE_RESEARCH_JOBS else ""
+    return "\n\n".join(block for block in (base, CONTEXT_POLICY, outcome_policy, research_policy, extra_note, REPLY_STYLE_POLICY) if block)
 
 
 def _pack_persistent_evidence(sections: list[tuple[str, str]], system_prompt: str, user_text: str) -> str:
@@ -584,6 +585,5 @@ async def _history(limit: int = 100, current_user_text: str | None = None) -> li
                         + await memory.filter_suppressed_text(r["content"]))
         })
     return messages
-
 
 
