@@ -1,0 +1,58 @@
+# Development/deployment scaffold. Requires separate deployment/security approval.
+# Do not merge browser-worker into the bot network or copy the bot environment.
+services:
+  browser-egress:
+    build:
+      context: ./browser_worker
+      dockerfile: Dockerfile.proxy
+    networks:
+      browser-isolated:
+        ipv4_address: 172.30.91.2
+      browser-uplink: {}
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    read_only: true
+    pids_limit: 64
+    mem_limit: 128m
+    cpus: 0.5
+    restart: "no"
+    # No published proxy ports. Only the isolated browser can reach it.
+  browser-worker:
+    build:
+      context: ./browser_worker
+      dockerfile: Dockerfile
+    depends_on: [browser-egress]
+    environment:
+      # Empty placeholders intentionally fail closed; configure only after approval.
+      BROWSER_WORKER_TOKEN: ${BROWSER_WORKER_TOKEN:?Configure a user-approved scoped worker token}
+    networks:
+      browser-isolated:
+        ipv4_address: 172.30.91.3
+    ports: ["127.0.0.1:8088:8080"]
+    # Root exists only for entrypoint firewall/drop-privilege setup; Chromium and
+    # Python run as uid 10001 with empty capability effective and bounding sets.
+    cap_drop: [ALL]
+    cap_add: [NET_ADMIN, SETUID, SETGID, SETPCAP]
+    security_opt:
+      - no-new-privileges:true
+      - seccomp=./browser_worker/seccomp_profile.json
+    sysctls:
+      net.ipv6.conf.all.disable_ipv6: "1"
+      net.ipv6.conf.default.disable_ipv6: "1"
+    read_only: true
+    tmpfs:
+      - /tmp:size=268435456,mode=1777
+      - /run:size=1048576,mode=0755
+    shm_size: 256mb
+    pids_limit: 256
+    mem_limit: 1g
+    cpus: 1.5
+    init: true
+    restart: "no"
+networks:
+  browser-isolated:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.30.91.0/24
+  browser-uplink: {}
