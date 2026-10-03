@@ -444,6 +444,40 @@ async def init() -> None:
     task_columns = {r["name"] for r in await fetch_all("PRAGMA table_info(tasks)")}
     if "cancelled_at" not in task_columns:
         await execute("ALTER TABLE tasks ADD COLUMN cancelled_at TEXT")
+    await validate_required_schema()
+
+
+async def validate_required_schema() -> None:
+    """Do not announce readiness after a partially applied upgrade.
+
+    The legacy Turso bootstrap tolerates unsupported PRAGMAs and pre-existing
+    migrations. Its best-effort DDL must not hide missing tables or columns
+    required by delivery, cancellation, and canonical memory preservation.
+    Compile read-only queries without reading any user's rows.
+    """
+    # Use the application's shipped contract, not a possibly incomplete
+    # SCHEMA_PATH override. Derive the list so newly required tables cannot be
+    # omitted from a hand-maintained readiness checklist.
+    schema = (pathlib.Path(__file__).resolve().parent.parent / "alisa-schema.sql").read_text(encoding="utf-8")
+    reference = sqlite3.connect(":memory:")
+    try:
+        reference.executescript(schema)
+        required = {}
+        for (table,) in reference.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"):
+            quoted_table = '"' + table.replace('"', '""') + '"'
+            columns = [row[1] for row in reference.execute(f"PRAGMA table_info({quoted_table})")]
+            required[table] = ", ".join('"' + column.replace('"', '""') + '"' for column in columns)
+    finally:
+        reference.close()
+    for table, columns in required.items():
+        try:
+            quoted_table = '"' + table.replace('"', '""') + '"'
+            # Qualify names to avoid SQLite's legacy double-quoted-string
+            # behavior interpreting a missing quoted column as a literal.
+            qualified_columns = ", ".join(f"{quoted_table}.{column}" for column in columns.split(", "))
+            await fetch_all(f"SELECT {qualified_columns} FROM {quoted_table} LIMIT 0")
+        except Exception as exc:
+            raise RuntimeError(f"Database migration incomplete: required schema for {table} is unavailable") from exc
 
 
 async def execute_batch(statements: list[tuple[str, tuple]]) -> list[list[dict]]:
@@ -566,4 +600,3 @@ async def backup_database(backup_dir: str | None = None) -> str:
     await asyncio.to_thread(_sync_backup)
     logger.info("Local database backed up to %s", backup_file)
     return str(backup_file)
-

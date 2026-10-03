@@ -130,6 +130,7 @@ async def forget_memory(memory_id: int) -> dict | None:
     not semantic erasure of every possible paraphrase.
     """
     from . import memory_file
+    await memory_file.ensure_legacy_migrated()
     async with get_memory_lock():
         row = await db.fetch_one(
             "SELECT id, category, content FROM relationship_memory WHERE id = ?",
@@ -148,8 +149,8 @@ async def forget_memory(memory_id: int) -> dict | None:
             if suppression_matches(item["content"], normalized):
                 await db.execute("UPDATE relationship_memory SET is_active = 0 WHERE id = ?", (item["id"],))
         memory_file.invalidate_cache()
-        # The notebook is a derived view. Rebuilding removes LLM-paraphrased
-        # copies as well as exact duplicates; canonical unrelated facts survive.
+        # Rebuilding removes matching suppressed facts while preserving
+        # unrelated canonical and manually edited notebook facts.
         await memory_file.save_memory_md(await memory_file.reconstruct_from_db_memories())
         return row
 
@@ -162,6 +163,7 @@ async def correct_memory(memory_id: int, replacement: str) -> dict | None:
     notebook rather than creating another row or falsely claiming success.
     """
     from . import memory_file
+    await memory_file.ensure_legacy_migrated()
     replacement = replacement.strip()
     normalized = normalize_memory(replacement)
     if not normalized:
@@ -209,10 +211,9 @@ async def correct_memory(memory_id: int, replacement: str) -> dict | None:
                  (old["category"], normalized, replacement, f"Explicit correction of memory #{memory_id}", old["weight"], now, now, json.dumps(embedding))),
                 ("INSERT INTO memory_corrections (old_memory_id, new_memory_id, corrected_at) VALUES (?, last_insert_rowid(), ?)",
                  (memory_id, now)),
-                ("DELETE FROM app_config WHERE key = 'memory_md_content'", ()),
             ])
             result = await db.execute_batch(statements)
-            new_id = result[-3][0]["id"]
+            new_id = result[-2][0]["id"]
         memory_file.invalidate_cache()
         try:
             await memory_file.save_memory_md(await memory_file.reconstruct_from_db_memories())
@@ -446,4 +447,3 @@ async def backfill_empty_embeddings() -> int:
     if backfilled > 0:
         logger.info("Successfully backfilled %d empty embeddings in conversation_summaries", backfilled)
     return backfilled
-

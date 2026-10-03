@@ -204,9 +204,13 @@ async def cmd_memory(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     if not _allowed(update) or not update.message:
         return
     from . import memory_file
+    try:
+        content = await memory_file.get_memory_md()
+    except (ValueError, RuntimeError) as exc:
+        await update.message.reply_text(f"Notebook synchronization stopped: {exc}")
+        return
     rows = await db.fetch_all("SELECT id, content FROM relationship_memory WHERE is_active = 1 ORDER BY id DESC LIMIT 100")
     facts = "\n".join(f"#{row['id']}: {row['content']}" for row in rows) or "No active facts."
-    content = await memory_file.get_memory_md()
     for part in split_telegram_text("Active facts (use /forget <id>):\n" + facts + "\n\nNotebook:\n" + content):
         await update.message.reply_text(part)
 
@@ -219,7 +223,11 @@ async def cmd_forget(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     if len(args) != 1 or not args[0].isdigit():
         await update.message.reply_text("Use /memory to review IDs, then /forget <id>.")
         return
-    forgotten = await memory.forget_memory(int(args[0]))
+    try:
+        forgotten = await memory.forget_memory(int(args[0]))
+    except (ValueError, RuntimeError) as exc:
+        await update.message.reply_text(str(exc))
+        return
     await update.message.reply_text(
         "Removed that active fact and suppressed matching text in future memory context. Historical logs are retained."
         if forgotten else "That active memory ID was not found."
@@ -608,6 +616,5 @@ async def cmd_focus(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"🎯 Focus sprint locked: '{new_goal}'\n\n"
         "I've got your back. Distractions locked out. Let's knock this out!"
     )
-
 
 
