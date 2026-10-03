@@ -2,7 +2,7 @@ import asyncio
 import datetime as dt
 import logging
 
-from . import config, db, llm, orchestrator, timeutil
+from . import config, db, llm, orchestrator_routing, timeutil
 
 logger = logging.getLogger(__name__)
 
@@ -125,13 +125,13 @@ async def get_or_create_mood_today() -> dict:
 
 
 async def _send_proactive(system_note: str) -> None:
-    from . import bot as bot_module
+    from . import bot_core as bot_module
     from . import images, memory_file, moods
 
     bot_instance = bot_module.get_bot()
     if bot_instance is None:
         return
-    raw_text = await orchestrator.proactive(system_note)
+    raw_text = await orchestrator_routing.proactive(system_note)
 
     clean_text, embedded_image_desc = images.extract_embedded_image_tag(raw_text)
     clean_text, remember_info = memory_file.extract_remember_tag(clean_text)

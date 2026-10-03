@@ -3,7 +3,7 @@ import datetime as dt
 import logging
 import random
 
-from . import config, consciousness, db, llm, orchestrator, timeutil
+from . import config, consciousness, db, llm, timeutil
 from . import tasks as tasks_module
 
 logger = logging.getLogger(__name__)
@@ -355,8 +355,9 @@ async def check_for_updates() -> None:
                     "Speak directly, warmly, and sharply about what was actually built, like an elite technical co-pilot who genuinely understands her own codebase!"
                 )
                 
-                reply_text = await orchestrator.proactive(f"[Internal event: {event}]")
-                from . import bot as bot_module
+                from . import orchestrator_routing
+                reply_text = await orchestrator_routing.proactive(f"[Internal event: {event}]")
+                from . import bot_core as bot_module
                 from . import images
                 clean_text, embedded_image_desc = images.extract_embedded_image_tag(reply_text)
                 
@@ -403,11 +404,11 @@ async def wake_up_reaction(hours_offline: float) -> None:
         event = f"Teja just returned to his PC at {local_now.strftime('%I:%M %p')} after being away for {hours_offline:.1f} hours. Welcome him back."
         
     try:
-        from . import images
-        reply_text = await orchestrator.proactive(f"[Internal event: {event}]")
+        from . import orchestrator_routing
+        reply_text = await orchestrator_routing.proactive(f"[Internal event: {event}]")
         clean_text, embedded_image_desc = images.extract_embedded_image_tag(reply_text)
         
-        from . import bot as bot_module
+        from . import bot_core as bot_module
         from . import images
         bot_instance = bot_module.get_bot()
         if bot_instance and clean_text:
@@ -546,9 +547,10 @@ async def check_pc_presence_5min() -> None:
     )
 
     try:
-        raw_reply = await orchestrator.proactive(note)
+        from . import orchestrator_routing
+        raw_reply = await orchestrator_routing.proactive(note)
         if raw_reply and raw_reply.strip() != "PASS" and not raw_reply.strip().startswith("PASS"):
-            from . import bot as bot_module
+            from . import bot_core as bot_module
             from . import images, memory_file, moods
             bot_instance = bot_module.get_bot()
             if bot_instance:
@@ -575,4 +577,5 @@ async def praise(text: str) -> str:
         "excited, proud of him, make it feel like good news to YOU personally. "
         "In your own voice, short.]"
     )
-    return await orchestrator.proactive(note)
+    from . import orchestrator_routing
+    return await orchestrator_routing.proactive(note)

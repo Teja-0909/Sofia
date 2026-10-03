@@ -5,7 +5,7 @@ from telegram.ext import (
     ContextTypes,
 )
 
-from . import db, orchestrator, parser, tasks, timeutil, triggers
+from . import db, orchestrator_globals, orchestrator_routing, parser, tasks, timeutil, triggers
 from .bot_core import _allowed, _log_message
 from .bot_globals import (
     logger,
@@ -61,9 +61,9 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def cmd_traces(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not _allowed(update):
         return
-    from app import orchestrator
-    orchestrator.TRACES_MODE = not getattr(orchestrator, "TRACES_MODE", False)
-    status = "ON" if orchestrator.TRACES_MODE else "OFF"
+    from app import orchestrator_globals
+    orchestrator_globals.TRACES_MODE = not getattr(orchestrator_globals, "TRACES_MODE", False)
+    status = "ON" if orchestrator_globals.TRACES_MODE else "OFF"
     await update.message.reply_text(
         f"🔬 *Internal Traces Mode: {status}*\n\n"
         "Sofia will now append her internal MoA reasoning, specialist outputs, and Critic verdicts to her responses.",
@@ -146,10 +146,10 @@ async def cmd_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         return
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
     try:
-        reply = await orchestrator.reply(f"Please look up on the web: {query}")
+        reply = await orchestrator_routing.reply(f"Please look up on the web: {query}")
     except Exception as exc:
         logger.error("Search command error: %s", exc)
-        reply = orchestrator.FALLBACK_MESSAGE
+        reply = orchestrator_globals.FALLBACK_MESSAGE
     await _log_message("sofia", reply)
     await update.message.reply_text(reply)
 
@@ -163,10 +163,10 @@ async def cmd_read(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
     try:
-        reply = await orchestrator.reply(f"Please browse this URL and explain it to me: {url}")
+        reply = await orchestrator_routing.reply(f"Please browse this URL and explain it to me: {url}")
     except Exception as exc:
         logger.error("Read command error: %s", exc)
-        reply = orchestrator.FALLBACK_MESSAGE
+        reply = orchestrator_globals.FALLBACK_MESSAGE
     await _log_message("sofia", reply)
     await update.message.reply_text(reply)
 
@@ -326,7 +326,7 @@ async def cmd_screen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     """Takes a live look at Teja's screen right now and comments on it."""
     if not _allowed(update) or not update.message:
         return
-    from . import orchestrator, vision_session
+    from . import vision_session
     await update.message.reply_text("👀 Looking at your screen right now...")
     frame = await vision_session.request_screen_capture("User requested /screen")
     if not frame:
@@ -340,7 +340,7 @@ async def cmd_screen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         "and react naturally! You can also use desktop_point_at or desktop_doodle to interact on his screen.]"
     )
     try:
-        reply = await orchestrator.reply(
+        reply = await orchestrator_routing.reply(
             "Here is what is currently on my screen.",
             system_note=note,
             image_bytes=frame,

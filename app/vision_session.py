@@ -299,8 +299,8 @@ async def stop_watch_session() -> str:
 
 async def _watch_loop() -> None:
     """Periodic loop during active watch session to capture frames and co-pilot."""
-    from . import bot as bot_module
-    from . import orchestrator
+    from . import bot_core as bot_module
+    from . import orchestrator_routing
 
     logger.info("Vision watch loop active")
     while is_watching():
@@ -317,7 +317,7 @@ async def _watch_loop() -> None:
                     "speak to him naturally! You may also call desktop_point_at or desktop_doodle to interact on his screen.\n"
                     "If nothing notable has changed and you don't want to disturb his concentration, reply with PASS.]"
                 )
-                raw = await orchestrator.reply(
+                raw = await orchestrator_routing.reply(
                     "Here is my active screen frame.",
                     system_note=system_note,
                     image_bytes=frame,

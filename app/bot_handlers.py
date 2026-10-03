@@ -6,7 +6,7 @@ from telegram.ext import (
     ContextTypes,
 )
 
-from . import db, memory, orchestrator, parser, tasks, timeutil
+from . import db, memory, orchestrator_routing, orchestrator_globals, parser, tasks, timeutil
 from .bot_core import _allowed, _log_message
 from .bot_globals import (
     AUDIO_EXTENSIONS,
@@ -45,7 +45,7 @@ async def _handle_image_generation(update: Update, context: ContextTypes.DEFAULT
 
     # If we reached here, the image failed to generate (API down, dimension error, etc)
     error_note = "[Internal System Error: Teja asked for an image, but your FLUX image generation API just crashed or timed out. DO NOT emit an [IMAGE] tag. Apologize to him naturally and let him know your camera/image engine is temporarily unavailable.]"
-    reply = await orchestrator.reply(user_text, system_note=error_note)
+    reply = await orchestrator_routing.reply(user_text, system_note=error_note)
     await _log_message("sofia", reply)
     await update.message.reply_text(reply)
 
@@ -274,10 +274,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         logger.debug("Chat action note: %s", e)
 
     try:
-        raw_reply = await orchestrator.reply(user_text, system_note=system_note)
+        raw_reply = await orchestrator_routing.reply(user_text, system_note=system_note)
     except Exception as exc:
         logger.error("Orchestrator error in handle_message: %s", exc)
-        raw_reply = orchestrator.FALLBACK_MESSAGE
+        raw_reply = orchestrator_globals.FALLBACK_MESSAGE
 
     await _process_and_send_reply(
         update,
@@ -300,7 +300,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
     try:
-        reply = await orchestrator.reply(
+        reply = await orchestrator_routing.reply(
             user_caption,
             system_note="[Internal event: Teja just shared an image/screenshot with you. Analyze what is on the screen and talk to him about it in your own voice.]",
             media_bytes=bytes(image_bytes),
@@ -308,7 +308,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         )
     except Exception as exc:
         logger.error("Photo processing error: %s", exc)
-        reply = orchestrator.FALLBACK_MESSAGE
+        reply = orchestrator_globals.FALLBACK_MESSAGE
     await _process_and_send_reply(update, context, reply, user_text=user_caption)
 
 
@@ -373,13 +373,13 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                     f"```\n\n"
                     + prompt_text
                 )
-                raw_reply = await orchestrator.reply(
+                raw_reply = await orchestrator_routing.reply(
                     combined_prompt,
                     system_note=system_note,
                 )
             except Exception as pdf_exc:
                 logger.warning("PyMuPDF extraction failed, falling back to LLM native vision: %s", pdf_exc)
-                raw_reply = await orchestrator.reply(
+                raw_reply = await orchestrator_routing.reply(
                     prompt_text,
                     system_note=system_note,
                     media_bytes=file_bytes,
@@ -387,7 +387,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 )
         except Exception as exc:
             logger.error("PDF processing error: %s", exc)
-            raw_reply = orchestrator.FALLBACK_MESSAGE
+            raw_reply = orchestrator_globals.FALLBACK_MESSAGE
         await _process_and_send_reply(update, context, raw_reply, user_text=prompt_text)
         return
 
@@ -420,13 +420,13 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                     f"```\n\n"
                     + prompt_text
                 )
-                raw_reply = await orchestrator.reply(
+                raw_reply = await orchestrator_routing.reply(
                     combined_prompt,
                     system_note=system_note,
                 )
             except Exception as docx_exc:
                 logger.warning("DOCX extraction failed, falling back to native handling: %s", docx_exc)
-                raw_reply = await orchestrator.reply(
+                raw_reply = await orchestrator_routing.reply(
                     prompt_text,
                     system_note=system_note,
                     media_bytes=file_bytes,
@@ -434,7 +434,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 )
         except Exception as exc:
             logger.error("DOCX processing error: %s", exc)
-            raw_reply = orchestrator.FALLBACK_MESSAGE
+            raw_reply = orchestrator_globals.FALLBACK_MESSAGE
         await _process_and_send_reply(update, context, raw_reply, user_text=prompt_text)
         return
 
@@ -447,7 +447,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             "Analyze what is visible and speak with him about it naturally.]"
         )
         try:
-            raw_reply = await orchestrator.reply(
+            raw_reply = await orchestrator_routing.reply(
                 prompt_text,
                 system_note=system_note,
                 media_bytes=file_bytes,
@@ -455,7 +455,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             )
         except Exception as exc:
             logger.error("Document image processing error: %s", exc)
-            raw_reply = orchestrator.FALLBACK_MESSAGE
+            raw_reply = orchestrator_globals.FALLBACK_MESSAGE
         await _process_and_send_reply(update, context, raw_reply, user_text=prompt_text)
         return
 
@@ -468,7 +468,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             "Listen to it and talk to him about it.]"
         )
         try:
-            raw_reply = await orchestrator.reply(
+            raw_reply = await orchestrator_routing.reply(
                 prompt_text,
                 system_note=system_note,
                 media_bytes=file_bytes,
@@ -476,7 +476,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             )
         except Exception as exc:
             logger.error("Document audio processing error: %s", exc)
-            raw_reply = orchestrator.FALLBACK_MESSAGE
+            raw_reply = orchestrator_globals.FALLBACK_MESSAGE
         await _process_and_send_reply(update, context, raw_reply, user_text=prompt_text)
         return
 
@@ -511,10 +511,10 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             "Review, debug, or discuss it with elite engineering precision.]"
         )
         try:
-            raw_reply = await orchestrator.reply(combined_prompt, system_note=system_note)
+            raw_reply = await orchestrator_routing.reply(combined_prompt, system_note=system_note)
         except Exception as exc:
             logger.error("Text document processing error: %s", exc)
-            raw_reply = orchestrator.FALLBACK_MESSAGE
+            raw_reply = orchestrator_globals.FALLBACK_MESSAGE
         await _process_and_send_reply(update, context, raw_reply, user_text=combined_prompt)
         return
 
@@ -525,7 +525,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         "Inspect and analyze it for him.]"
     )
     try:
-        raw_reply = await orchestrator.reply(
+        raw_reply = await orchestrator_routing.reply(
             prompt_text,
             system_note=system_note,
             media_bytes=file_bytes,
@@ -533,7 +533,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         )
     except Exception as exc:
         logger.error("Generic document processing error: %s", exc)
-        raw_reply = orchestrator.FALLBACK_MESSAGE
+        raw_reply = orchestrator_globals.FALLBACK_MESSAGE
     await _process_and_send_reply(update, context, raw_reply, user_text=prompt_text)
 
 
@@ -574,7 +574,7 @@ async def handle_voice_or_audio(update: Update, context: ContextTypes.DEFAULT_TY
     )
 
     try:
-        raw_reply = await orchestrator.reply(
+        raw_reply = await orchestrator_routing.reply(
             user_caption,
             system_note=system_note,
             media_bytes=audio_bytes,
@@ -582,7 +582,7 @@ async def handle_voice_or_audio(update: Update, context: ContextTypes.DEFAULT_TY
         )
     except Exception as exc:
         logger.error("Voice/Audio processing error: %s", exc)
-        raw_reply = orchestrator.FALLBACK_MESSAGE
+        raw_reply = orchestrator_globals.FALLBACK_MESSAGE
 
     await _process_and_send_reply(update, context, raw_reply, user_text=user_caption)
 
