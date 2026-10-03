@@ -29,6 +29,33 @@ previous assistant promises cannot serve as action receipts.
   running timer from conversation history. Up to the latest 10 are shown;
   an ID can be appended to a status question.
 
+### Conversational command envelopes
+
+Timer commands accept composable greetings, acknowledgements and polite lead-ins,
+with ordinary whitespace and punctuation: for example, `ok , set a timer for 2
+minutes`, `Hey, Sofia, sure; could you please, set a timer for 2 minutes?`, and
+`All right. Also, set a timer for 2 minutes, thanks!`. Unicode compatibility
+normalization handles full-width punctuation/digits. This is an anchored grammar:
+it consumes only approved lead-in particles and a trailing courtesy. It never
+searches arbitrary prose for a command. Quotes, logs, reported speech, negations,
+conditional permission and hypothetical frames do not authorize a save. Unknown
+wording may still require a clearer direct command.
+
+A standalone timer-capability question gets an accurate deterministic answer:
+chat timers are supported and require a saved-ID confirmation. Generated blanket
+claims that timers cannot be set through chat are corrected separately from
+unsupported action claims. Valid duration/device limitations and hypothetical
+statements are preserved. The model policy now describes the same chat workflow
+as the deterministic handler.
+
+The action guard also covers implicit countdown assertions such as “Two minutes
+starting now”, and timer-context claims of “keeping track” without a verified
+result. Quotations, ordinary discussion and conditional offers remain supported.
+The exact acknowledgement-prefixed two-minute request is tested through the real
+text handler, durable task store, due poller and delivery receipt. Independent
+QA also exercised the registered scheduler callback and Telegram send boundary
+with a mocked Telegram transport, confirming no early send and no later repeat.
+
 ## Clock and history
 
 Standalone current-time/date questions return the host clock directly without
