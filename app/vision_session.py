@@ -11,7 +11,7 @@ import secrets
 import time
 from typing import Any
 
-from . import desktop_policy, timeutil
+from . import consciousness, db, desktop_policy, timeutil
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +34,7 @@ _LATEST_FRAME_COMMAND_ID: int | None = None
 _WATCH_SESSION_ACTIVE: bool = False
 _WATCH_SESSION_EXPIRES_AT: float = 0.0
 _WATCH_TASK: asyncio.Task | None = None
+_WATCH_SESSION_ID: int = 0
 
 
 # ─── Command Queue Management ─────────────────────────────────────────
@@ -391,8 +392,11 @@ def is_watching() -> bool:
 
 async def start_watch_session(duration_minutes: int = 30) -> str:
     """Starts a live continuous screen watching session."""
-    global _WATCH_SESSION_ACTIVE, _WATCH_SESSION_EXPIRES_AT, _WATCH_TASK
+    global _WATCH_SESSION_ACTIVE, _WATCH_SESSION_EXPIRES_AT, _WATCH_TASK, _WATCH_SESSION_ID
     desktop_policy.authorize_operation("capture_screen")
+    # Starting /watch is an explicit user action; subsequent frames are not.
+    await consciousness.handle_incoming_while_sleeping()
+    _WATCH_SESSION_ID += 1
     duration_minutes = max(1, min(180, duration_minutes))
     _WATCH_SESSION_ACTIVE = True
     _WATCH_SESSION_EXPIRES_AT = time.time() + (duration_minutes * 60)
@@ -401,14 +405,15 @@ async def start_watch_session(duration_minutes: int = 30) -> str:
         _WATCH_TASK.cancel()
         await asyncio.gather(_WATCH_TASK, return_exceptions=True)
 
-    _WATCH_TASK = asyncio.create_task(_watch_loop())
+    _WATCH_TASK = asyncio.create_task(_watch_loop(_WATCH_SESSION_ID))
     logger.info("Started screen watch session for %d minutes", duration_minutes)
     return f"👀 Screen watch session started for {duration_minutes} minutes! I'm watching your screen with you."
 
 
 async def stop_watch_session() -> str:
     """Ends the active screen watching session."""
-    global _WATCH_SESSION_ACTIVE, _WATCH_TASK
+    global _WATCH_SESSION_ACTIVE, _WATCH_TASK, _WATCH_SESSION_ID
+    _WATCH_SESSION_ID += 1
     _WATCH_SESSION_ACTIVE = False
     if _WATCH_TASK and not _WATCH_TASK.done():
         _WATCH_TASK.cancel()
@@ -418,41 +423,49 @@ async def stop_watch_session() -> str:
     return "Stopped screen watch session. Rest easy baby 💕"
 
 
-async def _watch_loop() -> None:
-    """Periodic loop during active watch session to capture frames and co-pilot."""
+async def _watch_permitted(session_id: int) -> bool:
+    if session_id != _WATCH_SESSION_ID or not is_watching():
+        return False
+    if await db.get_config("proactivity_paused", "false") == "true" or await consciousness.is_sleeping_async():
+        return False
+    try:
+        desktop_policy.authorize_operation("capture_screen")
+    except desktop_policy.DesktopPolicyError:
+        return False
+    # Check again after awaited state reads: a stop/restart can change identity.
+    return session_id == _WATCH_SESSION_ID and is_watching()
+
+
+async def _watch_loop(session_id: int | None = None) -> None:
+    """Observe only within the exact user-started session; never wake quiet state."""
+    global _WATCH_SESSION_ACTIVE
     from . import bot_core as bot_module
-    from . import orchestrator_routing
+    from . import orchestrator_routing, tasks
 
+    session_id = _WATCH_SESSION_ID if session_id is None else session_id
+    last_sent = ""
     logger.info("Vision watch loop active")
-    while is_watching():
-        try:
-            # Request frame from sidecar
-            frame = await request_screen_capture("Continuous watch session sample")
-            if frame:
-                # Prompt Sofia with screen view
-                system_note = (
-                    "[Internal trigger: You are currently in an active Screen Watch session with Teja.\n"
-                    "You can see his live monitor screenshot attached.\n"
-                    "Observe what he is doing in his game, code editor, or browser.\n"
-                    "If you notice something interesting, exciting, a bug in his code, or want to cheer him on, "
-                    "speak to him naturally! You may also call desktop_point_at or desktop_doodle to interact on his screen.\n"
-                    "If nothing notable has changed and you don't want to disturb his concentration, reply with PASS.]"
-                )
-                raw = await orchestrator_routing.reply(
-                    "Here is my active screen frame.",
-                    system_note=system_note,
-                    image_bytes=frame,
-                    mime_type=get_latest_screen_frame()[1],
-                )
-                if raw and raw.strip() != "PASS" and not raw.startswith("PASS"):
-                    bot_instance = bot_module.get_bot()
-                    if bot_instance:
-                        await bot_module.send_text(bot_instance, raw)
-        except asyncio.CancelledError:
-            break
-        except Exception as exc:
-            logger.debug("Vision watch loop iteration note: %s", exc)
-
-        # Interval between proactive live watch observations (e.g. 45-60 seconds)
-        await asyncio.sleep(45)
-
+    try:
+        while await _watch_permitted(session_id):
+            try:
+                frame = await request_screen_capture("Continuous watch session sample")
+                if frame and await _watch_permitted(session_id):
+                    raw = await orchestrator_routing.observe_watch_frame(frame, get_latest_screen_frame()[1])
+                    clean = tasks.clean_generated_text(raw or "").strip()
+                    if clean and clean.upper() != "PASS" and clean != last_sent:
+                        bot_instance = bot_module.get_bot()
+                        if bot_instance and await _watch_permitted(session_id):
+                            await bot_module.send_text(bot_instance, clean)
+                            last_sent = clean
+                            try:
+                                await bot_module._log_message("sofia", clean, "text")
+                            except Exception:
+                                logger.exception("Watch message delivered but logging failed")
+            except asyncio.CancelledError:
+                break
+            except Exception as exc:
+                logger.debug("Vision watch loop iteration note: %s", exc)
+            await asyncio.sleep(45)
+    finally:
+        if session_id == _WATCH_SESSION_ID:
+            _WATCH_SESSION_ACTIVE = False
