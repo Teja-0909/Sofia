@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import logging
 import pathlib
 import sqlite3
@@ -13,22 +14,40 @@ logger = logging.getLogger(__name__)
 _turso_client = None
 _local_conn: aiosqlite.Connection | None = None
 _local_lock: asyncio.Lock | None = None
+_local_lock_loop = None
 _local_db_path: str | None = None
 
 
 def _get_local_lock() -> asyncio.Lock:
-    global _local_lock
+    global _local_lock, _local_lock_loop
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
         loop = None
-    if _local_lock is None or getattr(_local_lock, "_loop", None) is not loop:
+    if _local_lock is None or _local_lock_loop is not loop:
         _local_lock = asyncio.Lock()
+        _local_lock_loop = loop
     return _local_lock
 
 
 def is_turso() -> bool:
     return bool(config.TURSO_DATABASE_URL and config.TURSO_AUTH_TOKEN)
+
+
+def _decode_hrana_value(cell: dict):
+    """Decode Hrana's tagged values, including decimal-string SQLite integers."""
+    kind = cell.get("type")
+    if kind == "null":
+        return None
+    if kind == "integer":
+        return int(cell["value"])
+    if kind == "float":
+        return float(cell["value"])
+    if kind == "text":
+        return str(cell["value"])
+    if kind == "blob":
+        return base64.b64decode(cell["base64"], validate=True)
+    raise ValueError(f"Unsupported Hrana value type: {kind!r}")
 
 
 class TursoHttpFallback:
@@ -49,6 +68,8 @@ class TursoHttpFallback:
                 args.append({"type": "null"})
             elif isinstance(p, int):
                 args.append({"type": "integer", "value": str(p)})
+            elif isinstance(p, (bytes, bytearray, memoryview)):
+                args.append({"type": "blob", "base64": base64.b64encode(bytes(p)).decode("ascii")})
             elif isinstance(p, float):
                 args.append({"type": "float", "value": p})
             else:
@@ -80,7 +101,7 @@ class TursoHttpFallback:
                 cols = [c["name"] for c in res.get("cols", [])]
                 rows = []
                 for row_data in res.get("rows", []):
-                    row_vals = [c.get("value") for c in row_data]
+                    row_vals = [_decode_hrana_value(c) for c in row_data]
                     rows.append(row_vals)
 
                 class SimpleResultSet:
@@ -93,6 +114,55 @@ class TursoHttpFallback:
                 err_msg = results[0].get("error", {}).get("message", "Turso error")
                 raise ValueError(f"Turso query error: {err_msg}")
             return None
+
+
+    async def batch(self, statements: list[tuple[str, tuple]]) -> list:
+        """Execute a Hrana transaction with conditional rollback on any failure."""
+        steps = [{"stmt": {"sql": "BEGIN", "want_rows": False}}]
+        for sql, params in statements:
+            args = []
+            for value in params:
+                if value is None:
+                    args.append({"type": "null"})
+                elif isinstance(value, int):
+                    args.append({"type": "integer", "value": str(value)})
+                elif isinstance(value, float):
+                    args.append({"type": "float", "value": value})
+                elif isinstance(value, (bytes, bytearray, memoryview)):
+                    args.append({"type": "blob", "base64": base64.b64encode(bytes(value)).decode("ascii")})
+                else:
+                    args.append({"type": "text", "value": str(value)})
+            steps.append({"condition": {"type": "ok", "step": len(steps) - 1},
+                          "stmt": {"sql": sql, "args": args, "want_rows": True}})
+        steps.append({"condition": {"type": "ok", "step": len(steps) - 1},
+                      "stmt": {"sql": "COMMIT", "want_rows": False}})
+        steps.append({"condition": {"type": "not", "cond": {"type": "ok", "step": len(steps) - 1}},
+                      "stmt": {"sql": "ROLLBACK", "want_rows": False}})
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.post(
+                self.endpoint, headers={"Authorization": f"Bearer {self.token}"},
+                json={"requests": [{"type": "batch", "batch": {"steps": steps}}, {"type": "close"}]},
+            )
+            response.raise_for_status()
+            result = response.json()["results"][0]
+        if result.get("type") != "ok":
+            raise RuntimeError("Turso batch request failed")
+        batch = result["response"]["result"]
+        if any(batch["step_errors"]):
+            raise RuntimeError("Turso batch transaction failed and was rolled back")
+        values = batch["step_results"]
+        if len(values) != len(statements) + 3 or values[-2] is None:
+            raise RuntimeError("Turso batch commit was not acknowledged")
+        from types import SimpleNamespace
+        results = []
+        for result in values[1:-2]:
+            if result is None:
+                raise RuntimeError("Turso batch statement was not acknowledged")
+            results.append(SimpleNamespace(
+                columns=[column["name"] for column in result.get("cols", [])],
+                rows=[[_decode_hrana_value(cell) for cell in row] for row in result.get("rows", [])],
+            ))
+        return results
 
 
 async def get_turso_client():
@@ -369,6 +439,57 @@ async def init() -> None:
         finally:
             await conn.close()
 
+    # Additive migrations work for both existing local and Turso databases.
+    # Inspect columns rather than swallowing arbitrary migration failures.
+    task_columns = {r["name"] for r in await fetch_all("PRAGMA table_info(tasks)")}
+    if "cancelled_at" not in task_columns:
+        await execute("ALTER TABLE tasks ADD COLUMN cancelled_at TEXT")
+
+
+async def execute_batch(statements: list[tuple[str, tuple]]) -> list[list[dict]]:
+    """Atomic multi-statement mutation for canonical changes and audit records."""
+    if is_turso():
+        client = await get_turso_client()
+        results = await client.batch(statements)
+        return [[dict(zip(result.columns, row)) for row in result.rows] for result in results]
+    async with _get_local_lock():
+        conn = await _get_local_conn()
+        try:
+            await conn.execute("BEGIN IMMEDIATE")
+            results = []
+            for sql, params in statements:
+                cursor = await conn.execute(sql, params)
+                results.append([dict(row) for row in await cursor.fetchall()])
+                await cursor.close()
+            await conn.commit()
+            return results
+        except BaseException:
+            await conn.rollback()
+            raise
+
+
+async def execute_returning(query: str, params: tuple = ()) -> list[dict]:
+    """Execute one atomic mutation with RETURNING, committing before returning rows.
+
+    Unlike fetch_all this is safe for INSERT/UPDATE RETURNING on local SQLite.
+    It avoids SELECT MAX(id) races and enables compare-and-swap leases on Turso.
+    """
+    if is_turso():
+        client = await get_turso_client()
+        rs = await client.execute(query, list(params))
+        return [dict(zip(rs.columns, row)) for row in rs.rows] if rs else []
+    async with _get_local_lock():
+        conn = await _get_local_conn()
+        try:
+            cursor = await conn.execute(query, params)
+            rows = await cursor.fetchall()
+            await cursor.close()
+            await conn.commit()
+            return [dict(row) for row in rows]
+        except BaseException:
+            await conn.rollback()
+            raise
+
 
 async def fetch_all(query: str, params: tuple = ()) -> list[dict]:
     if is_turso():
@@ -445,3 +566,4 @@ async def backup_database(backup_dir: str | None = None) -> str:
     await asyncio.to_thread(_sync_backup)
     logger.info("Local database backed up to %s", backup_file)
     return str(backup_file)
+

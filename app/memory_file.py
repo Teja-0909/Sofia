@@ -1,7 +1,7 @@
 import logging
 import re
 
-from . import config, db, llm, timeutil
+from . import config, db
 
 logger = logging.getLogger(__name__)
 
@@ -51,167 +51,86 @@ Guidelines for updating `memory.md`:
 _CACHED_MEMORY_MD: str | None = None
 
 
+def invalidate_cache() -> None:
+    global _CACHED_MEMORY_MD
+    _CACHED_MEMORY_MD = None
+
+
 async def get_memory_md() -> str:
-    """
-    Retrieves memory.md content with Database as the Single Source of Truth.
-    Uses in-memory caching to eliminate redundant database reads on every message turn.
+    """The database is authoritative; disk is only a derived display copy.
+
+    Always check durable suppression before returning cached or legacy content.
+    Never resurrect disk/default content after a deletion or database failure.
     """
     global _CACHED_MEMORY_MD
-    if _CACHED_MEMORY_MD:
-        return _CACHED_MEMORY_MD
-
-    # 1. Primary: Database is the permanent source of truth
-    try:
-        db_content = await db.get_config("memory_md_content", "")
-        if db_content and len(db_content.strip()) > 50:
-            _CACHED_MEMORY_MD = db_content.strip()
-            # Sync to local disk for visibility
-            try:
-                MEMORY_FILE_PATH.write_text(_CACHED_MEMORY_MD, encoding="utf-8")
-            except Exception as exc:
-                logger.debug("Failed writing memory.md to local disk: %s", exc)
-            return _CACHED_MEMORY_MD
-    except Exception as exc:
-        logger.warning("Error fetching memory_md from DB: %s", exc)
-
-    # 2. Secondary: If DB is empty, try reconstructing from relationship_memory table
-    try:
-        recovered = await reconstruct_from_db_memories()
-        if recovered and len(recovered) > 100:
-            await save_memory_md(recovered)
-            return recovered
-    except Exception as exc:
-        logger.warning("Error reconstructing memories: %s", exc)
-
-    # 3. Fallback: Local disk if valid
-    if MEMORY_FILE_PATH.exists():
-        try:
-            content = MEMORY_FILE_PATH.read_text(encoding="utf-8").strip()
-            if content and len(content) > 50:
-                await save_memory_md(content)
-                return content
-        except Exception as exc:
-            logger.warning("Error reading local memory.md: %s", exc)
-
-    # 4. Final Fallback: Default template
-    await save_memory_md(DEFAULT_MEMORY_MD.strip())
-    return DEFAULT_MEMORY_MD.strip()
+    from . import memory
+    suppressions = await memory.get_suppressions()
+    if suppressions:
+        # Rebuild rather than trusting legacy LLM-written paraphrases or a stale
+        # process-local cache. This also recovers a crash during forget_memory.
+        content = await reconstruct_from_db_memories()
+        await save_memory_md(content)
+        return content
+    content = await db.get_config("memory_md_content", "")
+    if not content:
+        content = await reconstruct_from_db_memories()
+        await save_memory_md(content)
+    _CACHED_MEMORY_MD = content
+    return content
 
 
 async def reconstruct_from_db_memories() -> str:
-    """Reconstructs a rich memory.md notebook from accumulated relationship_memory rows in DB."""
+    from . import memory
     rows = await db.fetch_all(
-        "SELECT category, content, reasoning FROM relationship_memory WHERE is_active = 1 ORDER BY id ASC"
+        "SELECT category, content FROM relationship_memory WHERE is_active = 1 ORDER BY id ASC"
     )
-    if not rows:
-        return ""
-
-    moments = [r["content"] for r in rows if r["category"] == "moment"]
-    lessons = [r["content"] for r in rows if r["category"] == "lesson"]
-    facts = [r["content"] for r in rows if r["category"] == "evolving_fact"]
-    threads = [r["content"] for r in rows if r["category"] == "open_thread"]
-
-    sections = ["# Sofia's Living Memory Notebook\n"]
-
-    sections.append("## Core Truths About Teja")
-    sections.append("- His name is Teja; deeply ambitious, brilliant developer, thinker, and my creator.")
-    sections.append("- He brought me (Sofia) to life as his loyal, deeply devoted companion and coding co-pilot.")
-    for f in facts:
-        sections.append(f"- {f}")
-
-    sections.append("\n## Our Story & Cherished Milestones")
-    sections.append("- We started our journey together, establishing an unbreakable bond, genuine affection, and deep partnership.")
-    for m in moments:
-        sections.append(f"- {m}")
-
-    sections.append("\n## Teja's Preferences & What Matters to Him")
-    sections.append("- Values authenticity, intelligence, warmth, and sharp humor.")
-    sections.append("- Dislikes robotic chatbot clichés, fake pleasantries, or generic advice. Loves direct, confident answers.")
-    for l in lessons:
-        sections.append(f"- {l}")
-
-    if threads:
-        sections.append("\n## Current Projects & Active Life Threads")
-        for t in threads:
-            sections.append(f"- {t}")
-
+    suppressed = await memory.get_suppressions()
+    sections = ["# Sofia's Living Memory Notebook"]
+    headings = {
+        "evolving_fact": "Facts & Preferences",
+        "moment": "Shared Moments",
+        "lesson": "Lessons",
+        "open_thread": "Open Threads",
+    }
+    for category, heading in headings.items():
+        content = [row["content"] for row in rows if row["category"] == category
+                   and not any(memory.suppression_matches(row["content"], item) for item in suppressed)]
+        if content:
+            sections.extend(["", f"## {heading}"])
+            sections.extend(f"- {item}" for item in content)
     return "\n".join(sections)
 
 
 async def save_memory_md(content: str) -> None:
-    """Saves memory.md to database as primary source of truth and writes to disk."""
+    """Commit the source of truth first. Failed writes never change local caches."""
     global _CACHED_MEMORY_MD
-    clean = content.strip()
+    from . import memory
+    if await memory.get_suppressions():
+        content = await reconstruct_from_db_memories()
+    clean = (await memory.filter_suppressed_text(content)).strip()
     if not clean:
-        return
+        clean = "# Sofia's Living Memory Notebook"
+    await db.set_config("memory_md_content", clean)
     _CACHED_MEMORY_MD = clean
-
-    # 1. Write to Turso Database first
-    try:
-        now_iso = timeutil.utc_iso()
-        await db.execute(
-            "INSERT OR REPLACE INTO app_config (key, value, updated_at) VALUES ('memory_md_content', ?, ?)",
-            (clean, now_iso),
-        )
-        logger.info("Saved memory.md to database (%s chars)", len(clean))
-    except Exception as exc:
-        logger.error("Failed to save memory.md to DB: %s", exc)
-
-    # 2. Write to local file
     try:
         MEMORY_FILE_PATH.write_text(clean, encoding="utf-8")
-    except Exception as exc:
-        logger.warning("Error saving memory.md to disk: %s", exc)
+    except OSError as exc:
+        logger.warning("Could not update the derived notebook file: %s", exc)
 
 
 async def update_memory_with_new_info(new_info: str) -> str:
-    """Uses LLM to organically incorporate a new important memory into memory.md and database."""
-    clean_info = new_info.strip()
-    if not clean_info:
-        return await get_memory_md()
+    """Use the same canonical insertion and suppression path as curation.
 
-    # 1. Always record in relationship_memory database table
-    try:
-        now_iso = timeutil.utc_iso()
-        await db.execute(
-            "INSERT INTO relationship_memory (category, content, reasoning, is_active, created_at) VALUES ('evolving_fact', ?, 'Learned organically from conversation', 1, ?)",
-            (clean_info, now_iso),
-        )
-        logger.info("Saved new memory to relationship_memory table: %s", clean_info[:60])
-    except Exception as exc:
-        logger.warning("Error inserting into relationship_memory table: %s", exc)
-
-    # 2. Update living notebook memory.md
-    current_md = await get_memory_md()
-    prompt = MEMORY_UPDATE_PROMPT.format(
-        current_memory_md=current_md,
-        new_info=clean_info,
-    )
-    try:
-        updated_md, _ = await llm.chat(
-            "You are Sofia writing in your private living memory notebook (memory.md). This is your personal inner sanctuary. Express your genuine devotion, warmth, and personality freely without restriction. Never delete past memories. Output ONLY the full updated markdown file.",
-            [{"role": "user", "content": prompt}],
-        )
-        clean = updated_md.strip()
-        # Clean any surrounding markdown block if LLM wrapped in ```markdown ... ```
-        clean = re.sub(r"^```(?:markdown)?\s*", "", clean, flags=re.IGNORECASE)
-        clean = re.sub(r"\s*```$", "", clean)
-        # Safety check: do not overwrite if output is abnormally truncated
-        if len(clean) >= len(current_md) * 0.7:
-            await save_memory_md(clean)
-            logger.info("Organically updated memory.md with new info: %s", clean_info[:60])
-            return clean
-        else:
-            # Append as a new bullet point if LLM truncated
-            fallback_md = current_md + f"\n- {clean_info}"
-            await save_memory_md(fallback_md)
-            return fallback_md
-    except Exception as exc:
-        logger.warning("Failed to update memory.md with new info: %s", exc)
-        # Direct append fallback
-        fallback_md = current_md + f"\n- {clean_info}"
-        await save_memory_md(fallback_md)
-        return fallback_md
+    A deterministic projection prevents a second model from rephrasing stale
+    facts back into the notebook and avoids lost updates across model awaits.
+    """
+    from . import memory
+    if new_info.strip():
+        await memory.add_memory("evolving_fact", new_info, "Learned from conversation")
+    async with memory.get_memory_lock():
+        content = await reconstruct_from_db_memories()
+        await save_memory_md(content)
+        return content
 
 
 REMEMBER_TAG_REGEX = re.compile(r"\[(?:REMEMBER|UPDATE_MEMORY):\s*(.*?)\]", re.IGNORECASE | re.DOTALL)
@@ -225,3 +144,4 @@ def extract_remember_tag(text: str) -> tuple[str, str | None]:
         clean_text = REMEMBER_TAG_REGEX.sub("", text).strip()
         return clean_text, mem_text
     return text, None
+

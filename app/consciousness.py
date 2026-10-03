@@ -402,7 +402,7 @@ async def inner_thought_cycle() -> None:
 
     # Get pending tasks
     pending = await db.fetch_all(
-        "SELECT description, due_time FROM tasks WHERE status = 'pending' ORDER BY due_time LIMIT 5"
+        "SELECT description, due_time FROM tasks WHERE status = 'pending' AND cancelled_at IS NULL ORDER BY due_time LIMIT 5"
     )
     tasks_ctx = ", ".join(f"\"{t['description']}\" (due {t['due_time']})" for t in pending) if pending else "none"
 
@@ -426,7 +426,7 @@ Rules:
 - Your thoughts should feel genuine, not performative"""
 
     try:
-        response = await llm.chat(
+        response, _ = await llm.chat(
             system="You are Sofia's subconscious. Output exactly one line.",
             messages=[{"role": "user", "content": prompt}],
         )
@@ -775,3 +775,4 @@ async def find_relevant_thoughts_and_dreams(context_text: str, top_k: int = 2, q
             lines.append(f"[Your subconscious: You dreamed something related — \"{text[:200]}\"]")
 
     return "\n".join(lines) if lines else None
+

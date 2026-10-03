@@ -1,7 +1,9 @@
+import asyncio
 import datetime as dt
 import json
 import logging
 import re
+import unicodedata
 
 from . import db, llm, timeutil
 
@@ -36,48 +38,190 @@ CORRECTION_PATTERNS = [
 ]
 
 
-async def add_memory(category: str, content: str, reasoning: str, weight: float = 1.0) -> int:
-    now_iso = timeutil.utc_iso()
-    # Check if a very similar active memory exists in this category
-    existing = await db.fetch_all(
-        "SELECT id, content, weight FROM relationship_memory WHERE is_active = 1 AND category = ?",
-        (category,),
-    )
-    content_lower = content.lower().strip()
-    for row in existing:
-        ex_content = row["content"].lower().strip()
-        # Word overlap check
-        words_new = set(content_lower.split())
-        words_ex = set(ex_content.split())
-        overlap = words_new & words_ex
-        if len(overlap) >= max(3, len(words_new) * 0.6):
-            new_weight = min(3.0, row["weight"] + 0.3)
-            await db.execute(
-                "UPDATE relationship_memory SET weight = ?, last_reinforced_at = ? WHERE id = ?",
-                (new_weight, now_iso, row["id"]),
-            )
-            logger.info("Reinforced existing memory #%s (%s): %s", row["id"], category, content)
-            return row["id"]
+_memory_lock: asyncio.Lock | None = None
+_memory_loop = None
 
+
+def get_memory_lock() -> asyncio.Lock:
+    global _memory_lock, _memory_loop
+    loop = asyncio.get_running_loop()
+    if _memory_lock is None or _memory_loop is not loop:
+        _memory_lock = asyncio.Lock()
+        _memory_loop = loop
+    return _memory_lock
+
+
+def normalize_memory(content: str) -> str:
+    """Only surface-normalize. Shared words do not prove two facts are equal."""
+    text = unicodedata.normalize("NFKC", content).casefold()
+    return " ".join(re.findall(r"[\w]+(?:['’][\w]+)?", text))
+
+
+def suppression_matches(content: str, suppressed: str) -> bool:
+    candidate = normalize_memory(content)
+    return bool(suppressed and f" {suppressed} " in f" {candidate} ")
+
+
+async def get_suppressions() -> list[str]:
+    rows = await db.fetch_all("SELECT normalized_content FROM memory_suppressions")
+    return [row["normalized_content"] for row in rows]
+
+
+async def filter_suppressed_text(text: str) -> str:
+    """Filter matching historical lines at the retrieval boundary, even after restart."""
+    suppressed = await get_suppressions()
+    return "\n".join(
+        line for line in text.splitlines()
+        if not any(suppression_matches(line, item) for item in suppressed)
+    )
+
+
+async def add_memory(category: str, content: str, reasoning: str, weight: float = 1.0) -> int:
+    """Save canonical facts. 0 means a forgotten fact was blocked by a tombstone."""
+    if category not in ("moment", "lesson", "evolving_fact", "open_thread"):
+        raise ValueError("Invalid memory category")
+    content = content.strip()
+    normalized = normalize_memory(content)
+    if not normalized:
+        return 0
+    # Do not keep the mutation lock across network/model work.
     embedding_json = "[]"
+    if any(suppression_matches(content, item) for item in await get_suppressions()):
+        return 0
     try:
         embedding_vector = await llm.embed_text(content)
         if embedding_vector:
             embedding_json = json.dumps(embedding_vector)
-    except Exception as e:
-        logger.warning(f"Failed to generate embedding for memory: {e}")
+    except Exception as exc:
+        logger.warning("Failed to generate memory embedding: %s", exc)
+    async with get_memory_lock():
+        # Recheck after the await: forget may have run while embedding was pending.
+        if any(suppression_matches(content, item) for item in await get_suppressions()):
+            return 0
+        existing = await db.fetch_all(
+            "SELECT id, content, weight FROM relationship_memory WHERE is_active = 1 AND category = ?",
+            (category,),
+        )
+        now_iso = timeutil.utc_iso()
+        for row in existing:
+            if normalize_memory(row["content"]) == normalized:
+                await db.execute(
+                    "UPDATE relationship_memory SET weight = MIN(3.0, weight + 0.3), last_reinforced_at = ? WHERE id = ?",
+                    (now_iso, row["id"]),
+                )
+                return row["id"]
+        rows = await db.execute_returning(
+            """INSERT INTO relationship_memory
+               (category, content, reasoning, weight, is_active, created_at, last_reinforced_at, embedding)
+               SELECT ?, ?, ?, ?, 1, ?, ?, ?
+               WHERE NOT EXISTS (SELECT 1 FROM memory_suppressions
+                 WHERE instr(' ' || ? || ' ', ' ' || normalized_content || ' ') > 0)
+               RETURNING id""",
+            (category, content, reasoning, weight, now_iso, now_iso, embedding_json, normalized),
+        )
+        return rows[0]["id"] if rows else 0
 
-    await db.execute(
-        """
-        INSERT INTO relationship_memory (category, content, reasoning, weight, is_active, created_at, last_reinforced_at, embedding)
-        VALUES (?, ?, ?, ?, 1, ?, ?, ?)
-        """,
-        (category, content, reasoning, weight, now_iso, now_iso, embedding_json),
-    )
-    last_row = await db.fetch_one("SELECT MAX(id) AS id FROM relationship_memory")
-    mem_id = last_row["id"] if last_row and last_row.get("id") else 1
-    logger.info("Created new memory #%s (%s): %s", mem_id, category, content)
-    return mem_id
+
+async def forget_memory(memory_id: int) -> dict | None:
+    """Durably suppress a fact and rebuild every notebook copy from active rows.
+
+    Historical logs remain audit history, so retrieval must use
+    filter_suppressed_text. Suppression is deterministic normalized containment,
+    not semantic erasure of every possible paraphrase.
+    """
+    from . import memory_file
+    async with get_memory_lock():
+        row = await db.fetch_one(
+            "SELECT id, category, content FROM relationship_memory WHERE id = ?",
+            (memory_id,),
+        )
+        if not row:
+            return None
+        normalized = normalize_memory(row["content"])
+        # Tombstone first: a crash cannot allow the fact to be relearned.
+        await db.execute(
+            "INSERT OR IGNORE INTO memory_suppressions (normalized_content, content, suppressed_at) VALUES (?, ?, ?)",
+            (normalized, row["content"], timeutil.utc_iso()),
+        )
+        active = await db.fetch_all("SELECT id, content FROM relationship_memory WHERE is_active = 1")
+        for item in active:
+            if suppression_matches(item["content"], normalized):
+                await db.execute("UPDATE relationship_memory SET is_active = 0 WHERE id = ?", (item["id"],))
+        memory_file.invalidate_cache()
+        # The notebook is a derived view. Rebuilding removes LLM-paraphrased
+        # copies as well as exact duplicates; canonical unrelated facts survive.
+        await memory_file.save_memory_md(await memory_file.reconstruct_from_db_memories())
+        return row
+
+
+async def correct_memory(memory_id: int, replacement: str) -> dict | None:
+    """Explicitly replace one fact without guessing contradictions from overlap.
+
+    Canonical rows, suppression, and old/new ID audit link commit atomically.
+    Projection errors propagate: a retry of the same correction reconciles the
+    notebook rather than creating another row or falsely claiming success.
+    """
+    from . import memory_file
+    replacement = replacement.strip()
+    normalized = normalize_memory(replacement)
+    if not normalized:
+        raise ValueError("Replacement must not be empty")
+    old = await db.fetch_one("SELECT * FROM relationship_memory WHERE id = ?", (memory_id,))
+    if old is None:
+        return None
+    old_normalized = normalize_memory(old["content"])
+    if suppression_matches(replacement, old_normalized):
+        raise ValueError("Replacement must differ from and not repeat the superseded fact")
+    # Model work precedes the transaction, never retaining the old embedding.
+    embedding = []
+    try:
+        embedding = await llm.embed_text(replacement) or []
+    except Exception as exc:
+        logger.warning("Correction embedding unavailable: %s", exc)
+    async with get_memory_lock():
+        previous = await db.fetch_one(
+            "SELECT r.* FROM memory_corrections c JOIN relationship_memory r ON r.id = c.new_memory_id "
+            "WHERE c.old_memory_id = ?", (memory_id,),
+        )
+        if previous:
+            if normalize_memory(previous["content"]) != normalized:
+                raise ValueError(f"Memory #{memory_id} was already corrected; correct #{previous['id']} instead")
+            if not previous["is_active"]:
+                raise ValueError("The replacement was subsequently forgotten or corrected")
+            new_id = previous["id"]
+        else:
+            if any(suppression_matches(replacement, item) for item in await get_suppressions()):
+                raise ValueError("Replacement matches a previously forgotten fact")
+            active = await db.fetch_all("SELECT id, content FROM relationship_memory WHERE is_active = 1")
+            remove_ids = [row["id"] for row in active if suppression_matches(row["content"], old_normalized)]
+            now = timeutil.utc_iso()
+            statements = [(
+                "INSERT OR IGNORE INTO memory_suppressions (normalized_content, content, suppressed_at) VALUES (?, ?, ?)",
+                (old_normalized, old["content"], now),
+            )]
+            statements.extend(("UPDATE relationship_memory SET is_active = 0 WHERE id = ?", (row_id,)) for row_id in remove_ids)
+            statements.extend([
+                (("INSERT INTO relationship_memory (category, content, reasoning, weight, is_active, created_at, "
+                  "last_reinforced_at, embedding) VALUES (?, "
+                  "CASE WHEN EXISTS (SELECT 1 FROM memory_suppressions "
+                  "WHERE instr(' ' || ? || ' ', ' ' || normalized_content || ' ') > 0) THEN NULL ELSE ? END, "
+                  "?, ?, 1, ?, ?, ?) RETURNING id"),
+                 (old["category"], normalized, replacement, f"Explicit correction of memory #{memory_id}", old["weight"], now, now, json.dumps(embedding))),
+                ("INSERT INTO memory_corrections (old_memory_id, new_memory_id, corrected_at) VALUES (?, last_insert_rowid(), ?)",
+                 (memory_id, now)),
+                ("DELETE FROM app_config WHERE key = 'memory_md_content'", ()),
+            ])
+            result = await db.execute_batch(statements)
+            new_id = result[-3][0]["id"]
+        memory_file.invalidate_cache()
+        try:
+            await memory_file.save_memory_md(await memory_file.reconstruct_from_db_memories())
+        except Exception as exc:
+            raise RuntimeError(
+                "Canonical correction was saved, but notebook refresh failed; retry the same correction"
+            ) from exc
+        return {"id": new_id, "old_id": memory_id, "new_id": new_id,
+                "category": old["category"], "old_content": old["content"], "content": replacement}
 
 
 async def curate_recent_conversations(lookback: int = 20, min_batch: int = 3) -> int:
@@ -98,7 +242,7 @@ async def curate_recent_conversations(lookback: int = 20, min_batch: int = 3) ->
     if not rows or len(rows) < min_batch:
         return 0
 
-    transcript = "\n".join(f"{r['role']}: {r['content']}" for r in rows)
+    transcript = await filter_suppressed_text("\n".join(f"{r['role']}: {r['content']}" for r in rows))
     max_id = max(r["id"] for r in rows)
 
     try:
@@ -146,8 +290,8 @@ async def curate_recent_conversations(lookback: int = 20, min_batch: int = 3) ->
             reasoning = (item.get("reasoning") or "").strip()
             weight = float(item.get("weight") or 1.0)
             if content and reasoning:
-                await add_memory(cat, content, reasoning, weight)
-                count += 1
+                if await add_memory(cat, content, reasoning, weight):
+                    count += 1
 
         await db.execute(
             "INSERT OR REPLACE INTO app_config (key, value, updated_at) VALUES ('last_curated_msg_id', ?, ?)",
@@ -213,13 +357,7 @@ async def try_handle_correction(user_text: str) -> dict | None:
         if not target_row:
             return None
 
-        await db.execute("UPDATE relationship_memory SET is_active = 0 WHERE id = ?", (target_id,))
-        logger.info("Deactivated memory #%s (%s) upon user request", target_id, target_row["content"])
-        return {
-            "id": target_id,
-            "category": target_row["category"],
-            "content": target_row["content"],
-        }
+        return await forget_memory(target_id)
     except Exception as exc:
         logger.warning("Error during memory correction matching: %s", exc)
         return None
@@ -251,7 +389,7 @@ async def summarize_old_messages() -> None:
         )
         return
 
-    transcript = "\n".join(f"{r['role']}: {r['content']}" for r in rows)
+    transcript = await filter_suppressed_text("\n".join(f"{r['role']}: {r['content']}" for r in rows))
     prompt = (
         "Please summarize this chunk of conversation history objectively and concisely. "
         "Keep all important facts, commitments, and emotional context. If there is a mix of topics, summarize them clearly.\n\n"
@@ -265,7 +403,9 @@ async def summarize_old_messages() -> None:
         )
         if raw:
             last_ts = rows[-1]["timestamp"]
-            clean_summary = raw.strip()
+            clean_summary = await filter_suppressed_text(raw.strip())
+            if not clean_summary:
+                clean_summary = "[Suppressed memory omitted]"
             
             embedding_json = "[]"
             try:
@@ -306,3 +446,4 @@ async def backfill_empty_embeddings() -> int:
     if backfilled > 0:
         logger.info("Successfully backfilled %d empty embeddings in conversation_summaries", backfilled)
     return backfilled
+

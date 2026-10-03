@@ -129,22 +129,6 @@ TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "desktop_run_command",
-            "description": "Executes a shell command or script on Teja's Windows PC (e.g. running tests, git commands, builds, python scripts) and returns exit code and output. Destructive commands are blocked by security policy.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "command": {"type": "string", "description": "The shell command to execute on his Windows PC (e.g. 'pytest tests/', 'git status', 'python run.py')"},
-                    "cwd": {"type": "string", "description": "Optional working directory path (e.g. 'c:\\Games\\Alya')"},
-                    "timeout_seconds": {"type": "integer", "description": "Maximum seconds to wait for command completion (default 15, max 60)"}
-                },
-                "required": ["command"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
             "name": "desktop_read_clipboard",
             "description": "Reads whatever text or code snippet Teja currently has copied on his Windows clipboard.",
             "parameters": {
@@ -250,3 +234,4 @@ LAZY_CODE_PATTERNS = [
     re.compile(r"\b(?:remaining code is straightforward|you can implement the rest|fill in the rest|left as an exercise)\b", re.IGNORECASE)
 ]
 _tool_lock = asyncio.Lock()
+

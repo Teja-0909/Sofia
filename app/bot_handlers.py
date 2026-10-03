@@ -1,4 +1,3 @@
-import asyncio
 
 from telegram import Update
 from telegram.constants import ChatAction
@@ -15,7 +14,7 @@ from . import (
     tasks,
     timeutil,
 )
-from .bot_core import _allowed, _log_message
+from .bot_core import _allowed, _log_message, split_telegram_text
 from .bot_globals import (
     AUDIO_EXTENSIONS,
     IMAGE_EXTENSIONS,
@@ -31,7 +30,7 @@ class ImageGenerationError(Exception):
     pass
 
 async def _handle_image_generation(update: Update, context: ContextTypes.DEFAULT_TYPE, user_text: str) -> None:
-    from . import images, moods, timeutil
+    from . import images, moods
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_PHOTO)
     try:
         mood_key, mood_info = await moods.get_current_mood()
@@ -55,7 +54,8 @@ async def _handle_image_generation(update: Update, context: ContextTypes.DEFAULT
     error_note = "[Internal System Error: Teja asked for an image, but your FLUX image generation API just crashed or timed out. DO NOT emit an [IMAGE] tag. Apologize to him naturally and let him know your camera/image engine is temporarily unavailable.]"
     reply = await orchestrator_routing.reply(user_text, system_note=error_note)
     await _log_message("sofia", reply)
-    await update.message.reply_text(reply)
+    for part in split_telegram_text(reply):
+        await update.message.reply_text(part)
 
 
 async def _process_and_send_reply(
@@ -66,166 +66,32 @@ async def _process_and_send_reply(
     done_id: int | None = None,
     turn_task_created_id: int | None = None,
 ) -> None:
-    from . import consciousness, diary, images, memory_file, moods
-    clean_reply, embedded_image_desc = images.extract_embedded_image_tag(raw_reply)
-    clean_reply, remember_info = memory_file.extract_remember_tag(clean_reply)
-    clean_reply, mood_tag = moods.extract_mood_tag(clean_reply)
-    clean_reply, done_tag = parser.extract_done_tag(clean_reply)
-    clean_reply, task_tag_data = parser.extract_task_tag(clean_reply)
-    clean_reply, wants_sleep = parser.extract_sleep_tag(clean_reply)
-    clean_reply, new_focus_tag = parser.extract_focus_tag(clean_reply)
-    clean_reply, clear_focus_tag = parser.extract_clear_focus_tag(clean_reply)
+    """Deliver content; model-authored tags never authorize state changes.
 
-    if wants_sleep:
-        asyncio.create_task(consciousness.begin_sleep())
+    Explicit controls and direct user intent handling own those actions. In
+    particular, text read from a document/screenshot/page cannot schedule a
+    task, change memory, or upload an image by inducing a response tag.
+    """
+    import re
 
-    if new_focus_tag:
-        await db.set_config("active_focus_goal", new_focus_tag)
-        await db.set_config("active_focus_started_at", timeutil.utc_iso())
-        logger.info("Sofia set active focus sprint via [FOCUS: %s]", new_focus_tag)
-    elif clear_focus_tag:
-        await db.delete_config("active_focus_goal")
-        await db.delete_config("active_focus_started_at")
-        logger.info("Sofia cleared active focus sprint via [FOCUS_DONE/CLEAR_FOCUS]")
-
-    # If Sofia emitted [DONE: ...], mark that task done in DB
-    if done_tag:
-        import re as _re
-        pending = await tasks.list_pending()
-        matched_id = None
-
-        # 1. Direct ID match: [DONE: 3] or [DONE: #3]
-        id_match = _re.search(r'^\s*#?(\d+)\s*$', done_tag)
-        if id_match:
-            candidate = int(id_match.group(1))
-            if any(t["id"] == candidate for t in pending):
-                matched_id = candidate
-
-        # 2. Fuzzy description match against pending task descriptions
-        if matched_id is None and pending:
-            done_lower = done_tag.lower().strip()
-            _stop = {"the", "a", "an", "to", "at", "me", "my", "and", "if", "i", "for"}
-            best_score = 0
-            for t in pending:
-                desc_lower = t["description"].lower().strip()
-                # Exact or substring match
-                if done_lower == desc_lower or done_lower in desc_lower or desc_lower in done_lower:
-                    matched_id = t["id"]
-                    break
-                # Word overlap scoring
-                done_words = set(done_lower.split()) - _stop
-                desc_words = set(desc_lower.split()) - _stop
-                if done_words and desc_words:
-                    overlap = len(done_words & desc_words)
-                    score = overlap / max(len(done_words), len(desc_words))
-                    if score > best_score and score >= 0.3:
-                        best_score = score
-                        matched_id = t["id"]
-
-        # 3. Fallback: if only one pending task, assume it's the one
-        if matched_id is None and len(pending) == 1:
-            matched_id = pending[0]["id"]
-
-        # 4. Last resort: LLM semantic match (prefix with "I completed:" so
-        #    detect_completion sees a completion statement, not a bare description)
-        if matched_id is None and pending:
-            matched_id = await parser.detect_completion(
-                f"I completed: {done_tag}", pending
-            )
-
-        if matched_id:
-            await tasks.mark_done(int(matched_id))
-            logger.info("Sofia [DONE: %s] marked task #%s as done in DB", done_tag, matched_id)
-        else:
-            logger.warning("Sofia emitted [DONE: %s] but could not match to any pending task: %s",
-                           done_tag, [t["description"] for t in pending])
-
-        active_goal = await db.get_config("active_focus_goal", "")
-        if active_goal and (done_tag.lower() in active_goal.lower() or active_goal.lower() in done_tag.lower()):
-            await db.delete_config("active_focus_goal")
-            await db.delete_config("active_focus_started_at")
-            logger.info("Cleared active focus goal '%s' on task completion", active_goal)
-
-    # Only create new task if this turn wasn't marking a task as done and task wasn't already created this turn
-    is_completion_turn = (done_id is not None) or (done_tag is not None)
-    if not is_completion_turn and not turn_task_created_id and task_tag_data and task_tag_data.get("description") and task_tag_data.get("due_utc"):
-        try:
-            task_id = await tasks.create_task(task_tag_data["description"], task_tag_data["due_utc"])
-            logger.info("Sofia created task #%s ('%s' due %s) in tasks table", task_id, task_tag_data["description"], task_tag_data["due_utc"])
-        except Exception as task_exc:
-            logger.error("Failed to write Sofia's task to tasks table: %s", task_exc)
-
-    if remember_info:
-        asyncio.create_task(memory_file.update_memory_with_new_info(remember_info))
-
-    if mood_tag:
-        asyncio.create_task(moods.set_mood(mood_tag))
-
+    from . import images, memory_file, moods
+    # Preserve fenced code literally, even when it contains an example tag.
+    pieces = re.split(r"(```[\s\S]*?```)", raw_reply)
+    extractors = (images.extract_embedded_image_tag, memory_file.extract_remember_tag,
+                  moods.extract_mood_tag, parser.extract_done_tag, parser.extract_task_tag,
+                  parser.extract_sleep_tag, parser.extract_focus_tag, parser.extract_clear_focus_tag)
+    for index in range(0, len(pieces), 2):
+        for extractor in extractors:
+            pieces[index], _ = extractor(pieces[index])
+    clean_reply = "".join(pieces)
     try:
-        asyncio.create_task(diary.recalculate_relationship_depth())
-    except Exception as e:
-        logger.debug("Diary recalculation note: %s", e)
-
-    image_failed = False
-    img_bytes = None
-    if embedded_image_desc:
-        can_send = await images.should_allow_autonomous_image()
-        if can_send:
-            try:
-                await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_PHOTO)
-                mood_key, mood_info = await moods.get_current_mood()
-                current_time = timeutil.format_local(timeutil.utc_iso())
-                context_note = f"Time: {current_time}. Sofia's current mood: {mood_info.get('name', 'cozy')}"
-                visual_prompt = await images.craft_visual_prompt(embedded_image_desc, context_note=context_note)
-                img_bytes = await images.generate_image_bytes(visual_prompt)
-                if not img_bytes:
-                    image_failed = True
-                else:
-                    await images.record_autonomous_image_sent()
-            except Exception as img_exc:
-                logger.error("Embedded image render error: %s", img_exc)
-                image_failed = True
-        else:
-            logger.info("Autonomous embedded image skipped due to cooldown")
-            image_failed = True
-            
-    if image_failed:
-        raw_reply += " [System Note: Your autonomous image generation FAILED. The image did not send. Do not pretend it did.]"
-
-    try:
-        await _log_message("sofia", raw_reply)
-    except Exception as e:
-        logger.debug("Log message note: %s", e)
-
-    try:
-        if clean_reply:
-            parts = [p.strip() for p in clean_reply.split("<split>") if p.strip()]
-            for i, part in enumerate(parts):
-                try:
-                    await update.message.reply_text(part)
-                except Exception as exc:
-                    logger.error("Telegram reply send error: %s", exc)
-                    await context.bot.send_message(chat_id=update.effective_chat.id, text=part)
-                
-                if i < len(parts) - 1:
-                    delay = min(4.0, max(1.5, len(parts[i+1]) / 20.0))
-                    try:
-                        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
-                    except Exception as e:
-                        logger.debug("Chat action note: %s", e)
-                    await asyncio.sleep(delay)
+        await _log_message("sofia", clean_reply)
     except Exception as exc:
-        logger.error("Failed to send split messages: %s", exc)
-
-    if img_bytes:
-        if img_bytes.startswith(b"DEBUG_ERROR:"):
-            await update.message.reply_text(f"[DEBUG: Image generation failed! Details: {img_bytes.decode()}]")
-        else:
-            try:
-                await update.message.reply_photo(photo=img_bytes)
-            except Exception as e:
-                logger.error("Failed to send photo: %s", e)
-                await update.message.reply_text(f"[DEBUG: Telegram failed to send autonomous photo. Error: {e}]")
+        logger.warning("Reply log failed: %s", exc)
+    for part in split_telegram_text(clean_reply):
+        # A timeout may mean Telegram accepted the message. Do not automatically
+        # resend the same part through another path and create duplicates.
+        await update.message.reply_text(part)
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -253,8 +119,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         if corr:
             system_note = (
                 f"[Internal event: Teja instructed you to forget/correct memory #{corr['id']}: "
-                f"'{corr['content']}'. You have quietly deactivated this memory. "
-                "Acknowledge naturally and warmly, confirming you've let it go.]"
+                f"'{corr['content']}'. The active fact was removed and matching future memory context suppressed; historical logs are retained. "
+                "Acknowledge this limited removal accurately without repeating the forgotten content.]"
             )
         else:
             # 2. Lightweight safety net for task completion (single task case)
@@ -275,6 +141,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 )
     except Exception as exc:
         logger.error("Intent / memory parsing error in handle_message: %s", exc)
+
+    # Parse only an explicit reminder request, before any external evidence is
+    # fetched. A webpage or assistant-generated [TASK] tag cannot schedule work.
+    import re
+    if re.match(r"^(?:please\s+)?(?:remind me|nudge me|ping me|wake me(?: up)?|text me|message me|check on me|reminder|schedule a reminder|set (?:a )?reminder|add (?:a )?task|new task|create task|remember to|don'?t let me forget)\b", user_text, re.IGNORECASE):
+        try:
+            intent = await parser.parse(user_text)
+            if intent.get("description") and intent.get("due_utc"):
+                turn_task_created_id = await tasks.create_task(intent["description"], intent["due_utc"])
+                system_note = f"Task #{turn_task_created_id} was saved, due {intent['due_utc']}. Confirm only that saved result."
+        except Exception as exc:
+            logger.warning("Direct reminder request failed: %s", exc)
+            system_note = "The reminder could not be saved. Do not claim it was scheduled; suggest /add."
 
     try:
         await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
@@ -593,5 +472,6 @@ async def handle_voice_or_audio(update: Update, context: ContextTypes.DEFAULT_TY
         raw_reply = orchestrator_globals.FALLBACK_MESSAGE
 
     await _process_and_send_reply(update, context, raw_reply, user_text=user_caption)
+
 
 

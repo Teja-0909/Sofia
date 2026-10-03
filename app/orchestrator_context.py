@@ -3,21 +3,15 @@ import datetime as dt
 import json
 import math
 import pathlib
-import re
 
-from . import config, consciousness, db, llm, memory_file, moods, timeutil
+from . import config, consciousness, db, llm, memory, memory_file, moods, timeutil
 from . import tasks as tasks_module
 from .orchestrator_globals import _CHARS_PER_TOKEN, _MAX_CONTEXT_TOKENS, logger
 
 
 def _clean_asterisks(text: str) -> str:
-    """Strips any accidental roleplay asterisk action descriptions so Sofia speaks directly and naturally."""
-    clean = re.sub(r"\*.*?\*", "", text)
-    clean = re.sub(r"\s+", " ", clean).strip()
-    # Strip wrapping quotes if entire message is quoted
-    if clean.startswith('"') and clean.endswith('"') and clean.count('"') == 2:
-        clean = clean[1:-1].strip()
-    return clean
+    """Compatibility name: preserve prose, arithmetic, markdown and code verbatim."""
+    return text
 
 
 def _estimate_tokens(text: str) -> int:
@@ -449,6 +443,7 @@ async def _build_system_prompt(extra_note: str | None = None, user_text: str = "
         mood_block,
         consciousness_block,
         subconscious_result,
+        task_block,
     ) = await asyncio.gather(
         _ctx_relationship_stage(),
         _ctx_living_notebook(),
@@ -458,6 +453,7 @@ async def _build_system_prompt(extra_note: str | None = None, user_text: str = "
         _ctx_active_mood(),
         consciousness.get_consciousness_directive(),
         subconscious_future,
+        _ctx_tasks_and_threads(),
     )
 
     time_block = _ctx_time_mood()
@@ -465,11 +461,13 @@ async def _build_system_prompt(extra_note: str | None = None, user_text: str = "
 
     core_blocks = [base, relationship_block, notebook_block]
     context_blocks = [mem_block, past_conv_block, recent_summaries_block, diary_block]
-    state_blocks = [consciousness_block, subconscious_block, mood_block, time_block]
+    state_blocks = [task_block, consciousness_block, subconscious_block, mood_block, time_block]
 
     if extra_note:
         state_blocks.append(f"\n{extra_note}")
 
+    context_blocks = [await memory.filter_suppressed_text(block) for block in context_blocks]
+    state_blocks = [await memory.filter_suppressed_text(block) for block in state_blocks]
     all_blocks = core_blocks + context_blocks + state_blocks
     total_tokens = sum(_estimate_tokens(b) for b in all_blocks if b)
 
@@ -505,8 +503,9 @@ async def _history(limit: int = 100) -> list[dict]:
     for r in reversed(raw_rows):
         messages.append({
             "role": "assistant" if r["role"] in ("sofia", "alisa") else "user",
-            "content": r["content"]
+            "content": await memory.filter_suppressed_text(r["content"])
         })
     return messages
+
 
 
