@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     completed_at        TEXT,
     cancelled_at        TEXT,
     is_recurring        TEXT,
+    kind                TEXT NOT NULL DEFAULT 'reminder',
     created_at          TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
 CREATE INDEX IF NOT EXISTS idx_tasks_due ON tasks(status, due_time);
