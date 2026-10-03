@@ -190,33 +190,39 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     done_id = None
     turn_task_created_id = None
 
+    verified_response = None
     try:
-        # 1. Check for conversational memory correction ("forget that") (Spec §9)
+        # Conversational memory correction owns its verified mutation result.
         corr = await memory.try_handle_correction(user_text)
         if corr:
-            await _send_verified_response(update, f"Memory #{corr['id']} was removed from active memory. Historical logs remain.")
-            return
-        # The narrow bare-done control must check its boolean mutation receipt.
-        pending = await tasks.list_pending()
-        if pending and len(pending) == 1 and pending[0].get("kind") != "timer" and user_text.lower().strip() in ("done", "finished", "completed", "did it"):
-            task = pending[0]
-            if not await tasks.mark_done(int(task["id"])):
-                await _send_verified_response(update, "I couldn't confirm that task was marked done. Check /tasks for its current status.")
-                return
-            desc = task["description"]
-            focus_note = ""
-            try:
-                active_goal = await db.get_config("active_focus_goal", "")
-                if active_goal and (desc.lower() in active_goal.lower() or active_goal.lower() in desc.lower()):
-                    await db.delete_config("active_focus_goal")
-                    await db.delete_config("active_focus_started_at")
-            except Exception:
-                focus_note = " I couldn't verify the related focus-goal cleanup."
-            await _send_verified_response(update, f"Marked task #{task['id']} done. Nice one!" +
-                (" Its next daily occurrence remains scheduled." if task.get("is_recurring") == "daily" else "") + focus_note)
-            return
+            verified_response = f"Memory #{corr['id']} was removed from active memory. Historical logs remain."
+        else:
+            # A bare 'done' must never stop a timer or claim a failed mutation.
+            pending = await tasks.list_pending()
+            if pending and len(pending) == 1 and pending[0].get("kind") != "timer" and user_text.lower().strip() in ("done", "finished", "completed", "did it"):
+                task = pending[0]
+                if not await tasks.mark_done(int(task["id"])):
+                    verified_response = "I couldn't confirm that task was marked done. Check /tasks for its current status."
+                else:
+                    desc = task["description"]
+                    focus_note = ""
+                    try:
+                        active_goal = await db.get_config("active_focus_goal", "")
+                        if active_goal and (desc.lower() in active_goal.lower() or active_goal.lower() in desc.lower()):
+                            await db.delete_config("active_focus_goal")
+                            await db.delete_config("active_focus_started_at")
+                    except Exception:
+                        focus_note = " I couldn't verify the related focus-goal cleanup."
+                    verified_response = (f"Marked task #{task['id']} done. Nice one!" +
+                        (" Its next daily occurrence remains scheduled." if task.get("is_recurring") == "daily" else "") + focus_note)
     except Exception as exc:
         logger.error("Intent / memory parsing error in handle_message: %s", exc)
+
+    if verified_response is not None:
+        # A Telegram timeout may mean the receipt arrived. Never turn that
+        # uncertainty into a second generated send or repeat the mutation.
+        await _send_verified_response(update, verified_response)
+        return
 
     try:
         await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)

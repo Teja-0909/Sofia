@@ -134,8 +134,8 @@ def _select_specialist(user_text: str) -> str | None:
     return None
 
 
-async def _finish_answer(text, system, messages, user_text, calls):
-    specialist = _select_specialist(user_text) if config.ENABLE_SPECIALISTS else None
+async def _finish_answer(text, system, messages, user_text, calls, *, review=True):
+    specialist = _select_specialist(user_text) if review and config.ENABLE_SPECIALISTS else None
     if specialist:
         # Carry the same retrieved evidence/history, never just the last sentence.
         # Specialists cannot execute tools and produce concise conclusions only.
@@ -360,7 +360,7 @@ async def _generate(
             
     # Fallback if too many tool calls
     text, _ = await llm.chat(system + timeutil.clock_prompt(), current_messages)
-    return await _finish_answer(text, system, current_messages, user_text, max_tool_turns + 1)
+    return await _finish_answer(text, system, current_messages, user_text, max_tool_turns + 1, review=False)
 
 
 
