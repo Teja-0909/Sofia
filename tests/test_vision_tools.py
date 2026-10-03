@@ -23,6 +23,17 @@ class TestVisionDesktopTools(unittest.IsolatedAsyncioTestCase):
         self.tmp_dir = tempfile.TemporaryDirectory()
         self.db_path = os.path.join(self.tmp_dir.name, "test_vision.db")
         config.DB_PATH = self.db_path
+        policy = patch.dict(os.environ, {
+            "DESKTOP_ALLOW_SCREEN_CAPTURE": "true", "DESKTOP_ALLOW_MUTATIONS": "true",
+            "DESKTOP_ALLOW_CLIPBOARD_READ": "true", "DESKTOP_ALLOW_CLIPBOARD_WRITE": "true",
+            "DESKTOP_WORKSPACE_ROOT": self.tmp_dir.name, "DESKTOP_PAUSED": "false", "DESKTOP_PAUSE_FILE": "",
+        })
+        policy.start()
+        self.addCleanup(policy.stop)
+        token = patch.object(config, "WEB_AUTH_TOKEN", "offline-test-token")
+        token.start()
+        self.addCleanup(token.stop)
+        await vision_session.set_desktop_paused(False)
         await db.init()
 
     async def asyncTearDown(self):
@@ -87,7 +98,7 @@ class TestVisionDesktopTools(unittest.IsolatedAsyncioTestCase):
         self.assertIn("desktop_sticky_note", tool_names)
         self.assertIn("desktop_clear_overlay", tool_names)
         self.assertIn("desktop_capture_screen", tool_names)
-        self.assertIn("desktop_run_command", tool_names)
+        self.assertNotIn("desktop_run_command", tool_names)
         self.assertIn("desktop_read_clipboard", tool_names)
         self.assertIn("desktop_set_clipboard", tool_names)
         self.assertIn("desktop_workspace_status", tool_names)
@@ -98,7 +109,7 @@ class TestVisionDesktopTools(unittest.IsolatedAsyncioTestCase):
 
         # Start execution in background task
         exec_task = asyncio.create_task(
-            vision_session.execute_desktop_command_and_wait("run_command", {"command": "echo test"}, timeout=5.0)
+            vision_session.execute_desktop_command_and_wait("workspace_status", {"workspace_dir": self.tmp_dir.name}, timeout=5.0)
         )
 
         # Allow command to enqueue
@@ -106,8 +117,10 @@ class TestVisionDesktopTools(unittest.IsolatedAsyncioTestCase):
         cmds = await vision_session.pop_pending_commands()
         self.assertEqual(len(cmds), 1)
         cmd_id = cmds[0]["id"]
-        self.assertEqual(cmds[0]["type"], "run_command")
+        self.assertEqual(cmds[0]["type"], "workspace_status")
 
+        # Only an acknowledged live command may submit a result.
+        self.assertTrue(vision_session.acknowledge_command(cmd_id)["allowed"])
         # Simulate sidecar resolving command
         vision_session.store_command_result(cmd_id, {"status": "ok", "exit_code": 0, "output": "test output"})
 
@@ -126,7 +139,7 @@ class TestVisionDesktopTools(unittest.IsolatedAsyncioTestCase):
 
         runner = await web.start_web_server(port=18494)
         try:
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(trust_env=False, headers={"X-Auth-Token": "offline-test-token"}) as client:
                 # 1. Test polling commands
                 poll_resp = await client.get("http://127.0.0.1:18494/api/desktop/poll")
                 self.assertEqual(poll_resp.status_code, 200)
@@ -135,11 +148,15 @@ class TestVisionDesktopTools(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(data["commands"][0]["type"], "point_at")
 
                 # 2. Test uploading screen frame
+                capture = await vision_session.enqueue_desktop_command("capture_screen", {"reason": "test"})
+                await vision_session.pop_pending_commands()
+                ack = await client.post("http://127.0.0.1:18494/api/desktop/ack", json={"id": capture["id"]})
+                self.assertTrue(ack.json()["allowed"])
                 dummy_bytes = b"fake_screenshot_bytes_123"
                 up_resp = await client.post(
                     "http://127.0.0.1:18494/api/desktop/upload",
                     content=dummy_bytes,
-                    headers={"Content-Type": "image/jpeg"},
+                    headers={"Content-Type": "image/jpeg", "X-Command-ID": str(capture["id"])},
                 )
                 self.assertEqual(up_resp.status_code, 200)
 
@@ -156,6 +173,8 @@ class TestVisionDesktopTools(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(len(pending), 1)
                 cmd_id = pending[0]["id"]
 
+                ack = await client.post("http://127.0.0.1:18494/api/desktop/ack", json={"id": cmd_id})
+                self.assertTrue(ack.json()["allowed"])
                 res_resp = await client.post(
                     "http://127.0.0.1:18494/api/desktop/result",
                     json={"id": cmd_id, "status": "ok", "text": "Copied from test"},
@@ -210,3 +229,4 @@ class TestVisionDesktopTools(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

@@ -110,10 +110,10 @@ class TestAlisaCore(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIsInstance(mem_id1, int)
 
-        # Reinforce similar memory
+        # Reinforce an identical fact; shared words alone are not duplication
         mem_id2 = await memory.add_memory(
             "moment",
-            "He nicknamed me Fox",
+            "He nicknamed me Fox for the first time",
             "Reinforced during chat",
             weight=1.0,
         )
@@ -230,7 +230,7 @@ class TestAlisaCore(unittest.IsolatedAsyncioTestCase):
         # Start on ephemeral random port
         runner = await web.start_web_server(port=18492)
         try:
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(trust_env=False) as client:
                 res_root = await client.get("http://127.0.0.1:18492/")
                 self.assertEqual(res_root.status_code, 200)
                 self.assertIn("Sofia", res_root.text)
@@ -268,7 +268,7 @@ class TestAlisaCore(unittest.IsolatedAsyncioTestCase):
         # Test get_memory_md
         content = await memory_file.get_memory_md()
         self.assertIn("Sofia's Living Memory Notebook", content)
-        self.assertIn("Core Truths About Teja", content)
+        self.assertNotIn("deeply ambitious", content)  # Do not invent default facts
 
     async def test_moods_lifecycle(self):
         from app import moods
@@ -337,3 +337,4 @@ class TestAlisaCore(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
