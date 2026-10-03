@@ -19,41 +19,55 @@ async def _handle_presence_payload(payload_bytes: bytes) -> dict:
         data = json.loads(payload_bytes.decode("utf-8"))
         if not isinstance(data, dict):
             raise TypeError("Expected a JSON object")
-        app_name = (data.get("active_app") or "").strip()
-        window_title = (data.get("window_title") or "").strip()
-        idle_minutes = int(data.get("idle_minutes", 0))
-        media_playing = (data.get("media_playing") or "").strip()
+        def text_field(name, limit):
+            value = data.get(name, "")
+            if not isinstance(value, str) or len(value) > limit or "\x00" in value:
+                raise ValueError("Invalid text field")
+            return value.strip()
+
+        app_name = text_field("active_app", 256)
+        window_title = text_field("window_title", 4096)
+        media_playing = text_field("media_playing", 1024)
+        idle_minutes = data.get("idle_minutes")
+        if idle_minutes is not None and (type(idle_minutes) is not int or not 0 <= idle_minutes <= 525600):
+            raise ValueError("Invalid idle duration")
+        detection = data.get("detection_status", "ok" if app_name or window_title else "unavailable")
+        if "detection_status" not in data and app_name == "Desktop" and not window_title:
+            detection = "unavailable"  # Old sidecars used this value on native API failures.
+        if detection not in {"ok", "unavailable"}:
+            raise ValueError("Invalid detection status")
+        if detection == "unavailable" or not (app_name or window_title):
+            detection = "unavailable"
+            app_name = window_title = media_playing = ""
         now_iso = timeutil.utc_iso()
+        previous = await db.fetch_all(
+            "SELECT key, value FROM app_config WHERE key IN ('last_presence_app', 'last_presence_title', 'last_presence_idle', 'last_presence_updated_at')"
+        )
+        previous = {row["key"]: row["value"] for row in previous}
+        prev_app = previous.get("last_presence_app", "")
+        prev_title = previous.get("last_presence_title", "")
+        prev_idle_str = previous.get("last_presence_idle", "")
+        prev_idle = int(prev_idle_str) if prev_idle_str.isdigit() else None
+        prev_time = previous.get("last_presence_updated_at", "")
+        values = {
+            "last_presence_app": app_name, "last_presence_title": window_title,
+            "last_presence_idle": "" if idle_minutes is None else str(idle_minutes),
+            "last_presence_media": media_playing, "last_presence_updated_at": now_iso,
+            "last_presence_detection_status": detection,
+        }
+        if desktop_policy.is_paused():
+            return {"status": "ok", "synced": False, "paused": True, "commands": []}
+        # Acknowledgement means the complete observation committed atomically.
+        # Empty/failed observations supersede old content instead of retaining it.
+        await db.execute_batch([
+            ("INSERT OR REPLACE INTO app_config (key, value, updated_at) VALUES (?, ?, ?)", (key, value, now_iso))
+            for key, value in values.items()
+        ])
+        if desktop_policy.is_paused():
+            return {"status": "ok", "synced": True, "paused": True, "commands": []}
+        logger.info("Presence observation stored; detection=%s", detection)
 
-        prev_app = await db.get_config("last_presence_app", "")
-        prev_title = await db.get_config("last_presence_title", "")
-        prev_idle_str = await db.get_config("last_presence_idle", "0")
-        prev_idle = int(prev_idle_str) if prev_idle_str.isdigit() else 0
-        prev_time = await db.get_config("last_presence_updated_at", "")
-
-        if app_name or window_title:
-            await db.execute(
-                "INSERT OR REPLACE INTO app_config (key, value, updated_at) VALUES ('last_presence_app', ?, ?)",
-                (app_name, now_iso),
-            )
-            await db.execute(
-                "INSERT OR REPLACE INTO app_config (key, value, updated_at) VALUES ('last_presence_title', ?, ?)",
-                (window_title, now_iso),
-            )
-            await db.execute(
-                "INSERT OR REPLACE INTO app_config (key, value, updated_at) VALUES ('last_presence_idle', ?, ?)",
-                (str(idle_minutes), now_iso),
-            )
-            await db.execute(
-                "INSERT OR REPLACE INTO app_config (key, value, updated_at) VALUES ('last_presence_media', ?, ?)",
-                (media_playing, now_iso),
-            )
-            await db.execute(
-                "INSERT OR REPLACE INTO app_config (key, value, updated_at) VALUES ('last_presence_updated_at', ?, ?)",
-                (now_iso, now_iso),
-            )
-            logger.info("Updated live presence: App=%s, Title=%s, Idle=%s min", app_name, window_title, idle_minutes)
-
+        if detection == "ok" and idle_minutes is not None and prev_idle is not None:
             # Sleep Cycle Detection: if he has been totally offline/idle for >6 hours and is now back
             import datetime as dt_mod
             
@@ -72,7 +86,7 @@ async def _handle_presence_payload(payload_bytes: bytes) -> dict:
                     if (hours_since_last_ping >= 6.0 or prev_idle >= 360) and idle_minutes < 15:
                         woke_up = True
                         hours_offline = max(hours_since_last_ping, prev_idle / 60.0)
-                        logger.info("Sleep cycle detection: Teja was offline/idle for %.1f hours. Wake up event triggered!", hours_offline)
+                        logger.info("Presence gap/input-idle interval of %.1f hours; check-in event triggered", hours_offline)
                 except Exception as e:
                     logger.warning("Failed to parse prev_time for sleep cycle: %s", e)
             
@@ -87,9 +101,9 @@ async def _handle_presence_payload(payload_bytes: bytes) -> dict:
 
         from . import vision_session
         pending_commands = await vision_session.pop_pending_commands()
-        return {"status": "ok", "synced": True, "paused": False, "commands": pending_commands}
+        return {"status": "ok", "synced": True, "paused": False, "detection_status": detection, "commands": pending_commands}
     except Exception as exc:
-        logger.warning("Presence handler error: %s", exc)
+        logger.warning("Presence handler failed (%s)", type(exc).__name__)
         return {"status": "error", "message": "Invalid presence payload"}
 
 
@@ -220,7 +234,7 @@ async def _handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWri
             raise HTTPRequestError(417, "Expect is not supported")
         if method not in {"GET", "POST"}:
             raise HTTPRequestError(405, "Method not allowed")
-        valid_get = {"/", "/health", "/ready", "/api/desktop/poll"}
+        valid_get = {"/", "/health", "/ready", "/api/desktop/poll", "/api/desktop/status"}
         if path not in valid_get | _BODY_LIMITS.keys():
             raise HTTPRequestError(404, "Not found")
         if (path in valid_get) != (method == "GET"):
@@ -251,6 +265,16 @@ async def _handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWri
         elif path == "/ready":
             result = await _check_readiness()
             await _respond(writer, 200 if result["ready"] else 503, result)
+        elif path == "/api/desktop/status":
+            from . import desktop_policy, pc_presence
+            snapshot = await pc_presence.read_snapshot()
+            if snapshot["state"] == "error":
+                raise HTTPRequestError(503, "Presence storage is unavailable")
+            await _respond(writer, 200, {
+                "status": "ok", "protocol": 2, "paused": desktop_policy.is_paused(),
+                "ready": (await _check_readiness())["ready"],
+                "presence": {key: snapshot[key] for key in ("state", "age_seconds")},
+            })
         elif path == "/api/presence":
             _json_object(body_bytes)
             data = await _handle_presence_payload(body_bytes)

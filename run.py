@@ -2,6 +2,7 @@ import asyncio
 import logging
 
 from app import bot, config, db, scheduler, web
+from app.safe_logging import configure_safe_logging
 
 logger = logging.getLogger(__name__)
 
@@ -79,9 +80,7 @@ async def run_bot() -> None:
 
 
 def main() -> None:
-    logging.basicConfig(
-        format="%(asctime)s %(name)s %(levelname)s %(message)s", level=logging.INFO
-    )
+    configure_safe_logging(vars(config))
     if not config.BOT_TOKEN:
         raise SystemExit("BOT_TOKEN is not set — copy .env.example to .env and fill it in")
     if not config.ALLOWED_USER_ID:
@@ -94,6 +93,10 @@ def main() -> None:
         asyncio.run(run_bot())
     except (KeyboardInterrupt, SystemExit):
         logger.info("Sofia bot stopped.")
+    except Exception:
+        # Do not let Python print an unredacted credential-bearing traceback.
+        logger.exception("Sofia bot failed")
+        raise SystemExit(1) from None
 
 
 if __name__ == "__main__":
