@@ -107,13 +107,19 @@ class TestExplicitControls(unittest.IsolatedAsyncioTestCase):
     async def test_add_command_schedules_documented_examples(self):
         update = self.make_update()
         for text, expected in [('call mom at 9pm', 'call mom'), ('stretch in 5 minutes', 'stretch')]:
+            async def saved_row(*args):
+                return {'id': 1, 'description': create.await_args.args[0],
+                        'due_time': create.await_args.args[1], 'is_recurring': None}
             with patch.object(config, 'ALLOWED_USER_ID', 42), patch.object(
                 bot_commands.tasks, 'create_task', AsyncMock(return_value=1),
-            ) as create:
+            ) as create, patch.object(db, 'fetch_one', AsyncMock(side_effect=saved_row)), \
+                 patch.object(db, 'get_config', AsyncMock(return_value='false')), \
+                 patch.object(bot_handlers, '_log_message', AsyncMock()):
                 await bot_commands.cmd_add(update, SimpleNamespace(args=text.split()))
             create.assert_awaited_once()
             self.assertEqual(create.call_args.args[0], expected)
             self.assertTrue(create.call_args.args[1].endswith('Z'))
+            self.assertIn('Saved reminder #1', update.message.reply_text.await_args.args[0])
 
     async def test_fenced_control_tags_are_preserved_as_code(self):
         update = self.make_update()
@@ -139,16 +145,23 @@ class TestExplicitControls(unittest.IsolatedAsyncioTestCase):
         for text in ['nudge me in 5 minutes to stretch', 'ping me in 5 minutes to stretch', 'set a reminder to stretch in 5 minutes']:
             update = self.make_update()
             update.message.text = text
+            async def saved_row(*args):
+                return {'id': 7, 'description': create.await_args.args[0],
+                        'due_time': create.await_args.args[1], 'is_recurring': None}
             with patch.object(config, 'ALLOWED_USER_ID', 42), \
                  patch.object(bot_handlers, '_log_message', AsyncMock()), \
                  patch.object(memory, 'try_handle_correction', AsyncMock(return_value=None)), \
                  patch.object(bot_handlers.tasks, 'list_pending', AsyncMock(return_value=[])), \
                  patch.object(bot_handlers.tasks, 'create_task', AsyncMock(return_value=7)) as create, \
-                 patch.object(bot_handlers.orchestrator_routing, 'reply', AsyncMock(return_value='saved')), \
+                 patch.object(db, 'fetch_one', AsyncMock(side_effect=saved_row)), \
+                 patch.object(db, 'get_config', AsyncMock(return_value='false')), \
+                 patch.object(bot_handlers.orchestrator_routing, 'reply', AsyncMock(return_value='saved')) as reply, \
                  patch.object(bot_handlers, '_process_and_send_reply', AsyncMock()):
                 await bot_handlers.handle_message(update, ctx)
             create.assert_awaited_once()
             self.assertIn('stretch', create.call_args.args[0])
+            self.assertIn('Saved reminder #7', update.message.reply_text.await_args.args[0])
+            reply.assert_not_awaited()
 
     async def test_correction_control_is_explicit(self):
         update = self.make_update()
