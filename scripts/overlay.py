@@ -4,14 +4,23 @@ Runs as a lightweight background daemon process on Windows.
 Renders real-time glowing arrows, doodles, and floating notes directly on Teja's screen.
 """
 
+import hmac
 import json
 import logging
 import math
+import os
 import queue
+import socket
+import sys
 import threading
 import time
 import tkinter as tk
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
+
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from app import desktop_policy
 
 try:
     import win32con
@@ -24,6 +33,10 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger("sofia_overlay")
 
 PORT = 18493
+OVERLAY_TOKEN = os.environ.get("SOFIA_OVERLAY_TOKEN", "")
+MAX_HEADER_BYTES = 16 * 1024
+MAX_BODY_BYTES = 64 * 1024
+REQUEST_TIMEOUT_SECONDS = 5.0
 OVERLAY_BG = "#010101"  # Transparent key color
 
 
@@ -54,9 +67,36 @@ class OverlayEngine:
         self.elements = {}
         self._next_id = 1
         self._lock = threading.Lock()
-        self.cmd_queue = queue.Queue()
+        self.cmd_queue = queue.Queue(maxsize=50)
+        self._active_command = None
 
         self._apply_click_through()
+
+    def _queue_task(self, task):
+        self.cmd_queue.put_nowait((self._active_command, task))
+
+    def submit_command(self, command):
+        """Only queue data here; Tk work is performed on the Tk event thread."""
+        self.cmd_queue.put_nowait((dict(command), None))
+
+    def _dispatch_command(self, command):
+        operation = command["type"]
+        params = desktop_policy.validate_command(command, time.time())
+        self._active_command = command
+        try:
+            if operation == "point_at":
+                self.point_at(params.get("x", 500), params.get("y", 500), params.get("label", ""),
+                              params.get("color", "#00ffd5"), params.get("duration", 5))
+            elif operation == "doodle":
+                self.doodle(params.get("shape", "heart"), params.get("x", 500), params.get("y", 500),
+                            params.get("scale", 1), params.get("color", "#ff2d75"), params.get("duration", 6))
+            elif operation == "sticky_note":
+                self.sticky_note(params.get("text", ""), params.get("position", "top_right"),
+                                 params.get("color", "#ff2d75"), params.get("duration", 8))
+            elif operation == "clear":
+                self.clear()
+        finally:
+            self._active_command = None
 
     def _apply_click_through(self):
         """Sets Windows extended styles to make the overlay 100% click-through."""
@@ -168,7 +208,7 @@ float,
                 }
 
 
-        self.cmd_queue.put(task)
+        self._queue_task(task)
         return elem_id
 
     def doodle(
@@ -285,7 +325,7 @@ str,
                 }
 
 
-        self.cmd_queue.put(task)
+        self._queue_task(task)
         return elem_id
 
     def sticky_note(
@@ -359,7 +399,7 @@ str,
                 }
 
 
-        self.cmd_queue.put(task)
+        self._queue_task(task)
         return elem_id
 
     def clear(self):
@@ -367,7 +407,7 @@ str,
             with self._lock:
                 self.canvas.delete("all")
                 self.elements.clear()
-        self.cmd_queue.put(task)
+        self._queue_task(task)
 
     def update_loop(self):
         now = time.time()
@@ -383,9 +423,14 @@ str,
 
         while not self.cmd_queue.empty():
             try:
-                task = self.cmd_queue.get_nowait()
+                command, task = self.cmd_queue.get_nowait()
                 try:
-                    task()
+                    if command is not None:
+                        desktop_policy.validate_command(command, time.time())
+                    if task is None:
+                        self._dispatch_command(command)
+                    else:
+                        task()
                 except Exception as e:
                     logger.error("Error executing overlay task: %s", e)
             except queue.Empty:
@@ -403,74 +448,129 @@ str,
 OVERLAY_INSTANCE: OverlayEngine | None = None
 
 
+class _LimitedHeaders:
+    def __init__(self, stream):
+        self.stream = stream
+        self.remaining = MAX_HEADER_BYTES
+        self.headers_done = False
+
+    def readline(self, size=-1):
+        if self.headers_done:
+            return self.stream.readline(size)
+        if self.remaining <= 0:
+            raise ValueError("Header limit exceeded")
+        line = self.stream.readline(min(self.remaining + 1, size if size > 0 else self.remaining + 1))
+        self.remaining -= len(line)
+        if self.remaining < 0:
+            raise ValueError("Header limit exceeded")
+        if line == b"\r\n":
+            self.headers_done = True
+        return line
+
+    def read(self, size):
+        return self.stream.read(size)
+
+    def close(self):
+        self.stream.close()
+
+
 class OverlayHttpHandler(BaseHTTPRequestHandler):
+    def setup(self):
+        self.request.settimeout(REQUEST_TIMEOUT_SECONDS)
+        super().setup()
+        self.rfile = _LimitedHeaders(self.rfile)
+
+    def handle(self):
+        # A total deadline covers header + body trickling, not just idle reads.
+        def expire():
+            try:
+                self.connection.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+        timer = threading.Timer(REQUEST_TIMEOUT_SECONDS, expire)
+        timer.daemon = True
+        timer.start()
+        try:
+            super().handle()
+        except (OSError, ValueError):
+            pass
+        finally:
+            timer.cancel()
+
     def _send_json(self, status: int, data: dict):
+        self.close_connection = True
+        body = json.dumps(data).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Connection", "close")
         self.end_headers()
-        self.wfile.write(json.dumps(data).encode("utf-8"))
+        self.wfile.write(body)
+
+    def _authenticated(self):
+        tokens = self.headers.get_all("X-Auth-Token", [])
+        if not OVERLAY_TOKEN.strip():
+            self._send_json(503, {"error": "Overlay authentication not configured"})
+            return False
+        if len(tokens) != 1 or not hmac.compare_digest(tokens[0].encode(), OVERLAY_TOKEN.encode()):
+            self._send_json(401, {"error": "Unauthorized"})
+            return False
+        return True
+
+    def handle_expect_100(self):
+        self._send_json(417, {"error": "Expect not supported"})
+        return False
 
     def do_GET(self):
+        if not self._authenticated():
+            return
         if self.path == "/health":
-            self._send_json(200, {"status": "ok", "active_elements": len(OVERLAY_INSTANCE.elements if OVERLAY_INSTANCE else {})})
+            self._send_json(200 if OVERLAY_INSTANCE else 503, {"status": "ok" if OVERLAY_INSTANCE else "starting", "protocol": 2})
         else:
             self._send_json(404, {"error": "Not found"})
 
     def do_POST(self):
-        content_length = int(self.headers.get("Content-Length", 0))
-        body = self.rfile.read(content_length).decode("utf-8") if content_length > 0 else "{}"
+        if not self._authenticated():
+            return
+        lengths = self.headers.get_all("Content-Length", [])
+        if "Transfer-Encoding" in self.headers or "Expect" in self.headers or len(lengths) != 1 or not lengths[0].isascii() or not lengths[0].isdigit():
+            self._send_json(400, {"error": "Invalid HTTP framing"})
+            return
+        if len(lengths[0]) > 8 or not 0 < int(lengths[0]) <= MAX_BODY_BYTES:
+            self._send_json(413, {"error": "Request body too large"})
+            return
+        length = int(lengths[0])
+        body = self.rfile.read(length)
+        if len(body) != length:
+            self._send_json(400, {"error": "Incomplete request body"})
+            return
         try:
             payload = json.loads(body)
-        except Exception:
-            payload = {}
-
+            desktop_policy.validate_command(payload, time.time())
+            if payload["type"] not in desktop_policy.OVERLAY_OPERATIONS or self.path != "/" + payload["type"]:
+                raise desktop_policy.DesktopPolicyError("Unknown overlay operation")
+        except (ValueError, TypeError):
+            self._send_json(400, {"error": "Invalid or unpermitted overlay command"})
+            return
         if OVERLAY_INSTANCE is None:
             self._send_json(503, {"error": "Overlay not ready"})
             return
-
-        if self.path == "/point_at":
-            eid = OVERLAY_INSTANCE.point_at(
-                norm_x=float(payload.get("x", 500)),
-                norm_y=float(payload.get("y", 500)),
-                label=payload.get("label", ""),
-                color=payload.get("color", "#00ffd5"),
-                duration=float(payload.get("duration", 5.0)),
-            )
-            self._send_json(200, {"status": "ok", "element_id": eid})
-
-        elif self.path == "/doodle":
-            eid = OVERLAY_INSTANCE.doodle(
-                shape=payload.get("shape", "heart"),
-                norm_x=float(payload.get("x", 500)),
-                norm_y=float(payload.get("y", 500)),
-                scale=float(payload.get("scale", 1.0)),
-                color=payload.get("color", "#ff2d75"),
-                duration=float(payload.get("duration", 6.0)),
-            )
-            self._send_json(200, {"status": "ok", "element_id": eid})
-
-        elif self.path == "/sticky_note":
-            eid = OVERLAY_INSTANCE.sticky_note(
-                text=payload.get("text", "💕"),
-                position=payload.get("position", "top_right"),
-                color=payload.get("color", "#ff2d75"),
-                duration=float(payload.get("duration", 8.0)),
-            )
-            self._send_json(200, {"status": "ok", "element_id": eid})
-
-        elif self.path == "/clear":
-            OVERLAY_INSTANCE.clear()
-            self._send_json(200, {"status": "ok", "cleared": True})
-
-        else:
-            self._send_json(404, {"error": "Unknown endpoint"})
+        try:
+            OVERLAY_INSTANCE.submit_command(payload)
+        except queue.Full:
+            self._send_json(503, {"error": "Overlay command queue is full"})
+            return
+        # This only acknowledges queue admission, not that a drawing appeared.
+        self._send_json(202, {"status": "queued"})
 
     def log_message(self, format, *args):
         pass
 
 
 def start_http_server():
+    if not OVERLAY_TOKEN.strip():
+        raise RuntimeError("SOFIA_OVERLAY_TOKEN must be configured by the sidecar")
     server = HTTPServer(("127.0.0.1", PORT), OverlayHttpHandler)
     logger.info("Overlay HTTP IPC server running on http://127.0.0.1:%s", PORT)
     server.serve_forever()
@@ -483,3 +583,4 @@ if __name__ == "__main__":
     OVERLAY_INSTANCE = OverlayEngine()
     logger.info("Sofia Ghost Overlay initialized (%sx%s)", OVERLAY_INSTANCE.screen_width, OVERLAY_INSTANCE.screen_height)
     OVERLAY_INSTANCE.run()
+

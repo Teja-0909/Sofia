@@ -6,24 +6,29 @@ and frame buffers between Sofia's Brain and the Windows Sidecar.
 
 import asyncio
 import logging
+import math
+import secrets
 import time
 from typing import Any
 
-from . import timeutil
+from . import desktop_policy, timeutil
 
 logger = logging.getLogger(__name__)
 
-# In-memory command queue for Windows sidecar
+# All transitions run in the event loop. Futures are registered before publication.
 _PENDING_COMMANDS: list[dict[str, Any]] = []
 _COMMAND_LOCK = asyncio.Lock()
-
-# Pending futures for bi-directional command-response execution
 _PENDING_FUTURES: dict[int, asyncio.Future] = {}
+_CAPTURE_FUTURES: dict[int, asyncio.Future] = {}
+_COMMAND_RECORDS: dict[int, dict[str, Any]] = {}
+MAX_PENDING_COMMANDS = 50
+MAX_COMMAND_RECORDS = 500
 
 # Latest captured screen frame cache
 _LATEST_FRAME: bytes | None = None
 _LATEST_FRAME_MIME: str = "image/webp"
 _LATEST_FRAME_TIME: float = 0.0
+_LATEST_FRAME_COMMAND_ID: int | None = None
 
 # Active watch session tracking
 _WATCH_SESSION_ACTIVE: bool = False
@@ -33,82 +38,191 @@ _WATCH_TASK: asyncio.Task | None = None
 
 # ─── Command Queue Management ─────────────────────────────────────────
 
-async def enqueue_desktop_command(cmd_type: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Enqueues a drawing or capture command for the Windows sidecar."""
-    global _PENDING_COMMANDS
-    cmd = {
-        "id": int(time.time() * 1000),
-        "type": cmd_type,
-        **(params or {}),
-        "created_at": timeutil.utc_iso(),
-    }
-    async with _COMMAND_LOCK:
-        _PENDING_COMMANDS.append(cmd)
-        # Keep queue bounded
-        if len(_PENDING_COMMANDS) > 50:
-            _PENDING_COMMANDS = _PENDING_COMMANDS[-50:]
+def _finish_command(command_id: int, status: str, error: str) -> dict[str, Any]:
+    record = _COMMAND_RECORDS.get(command_id)
+    result = {"id": command_id, "status": status, "error": error}
+    if record:
+        record["state"] = status
+        record["result"] = result
+    _PENDING_COMMANDS[:] = [cmd for cmd in _PENDING_COMMANDS if cmd["id"] != command_id]
+    future = _PENDING_FUTURES.get(command_id)
+    if future and not future.done():
+        future.set_result(result)
+    capture = _CAPTURE_FUTURES.get(command_id)
+    if capture and not capture.done():
+        capture.set_result(None)
+    return result
 
-    logger.info("Enqueued desktop command: %s (id=%s)", cmd_type, cmd["id"])
-    return cmd
+
+def _expire_commands() -> None:
+    now = time.time()
+    for command_id, record in list(_COMMAND_RECORDS.items()):
+        if record["state"] in {"queued", "offered", "executing"} and record["command"]["deadline"] <= now:
+            executing = record["state"] == "executing"
+            _finish_command(command_id, "unknown_outcome" if executing else "expired",
+                            "Execution may have started; do not retry automatically" if executing else "Command expired before execution")
+    # Never evict an outstanding waiter or a live command.
+    for command_id, record in list(_COMMAND_RECORDS.items()):
+        if len(_COMMAND_RECORDS) < MAX_COMMAND_RECORDS:
+            break
+        if command_id not in _PENDING_FUTURES and record["state"] not in {"queued", "offered", "executing"}:
+            _COMMAND_RECORDS.pop(command_id)
+
+
+async def _enqueue(cmd_type: str, params: dict[str, Any] | None, timeout: float,
+                   future: asyncio.Future | None = None,
+                   capture_future: asyncio.Future | None = None) -> dict[str, Any]:
+    clean = desktop_policy.validate_parameters(cmd_type, params or {})
+    if isinstance(timeout, bool) or not math.isfinite(timeout) or not 0 < timeout <= 120:
+        raise ValueError("Command timeout must be between 0 and 120 seconds")
+    async with _COMMAND_LOCK:
+        _expire_commands()
+        active = sum(record["state"] in {"queued", "offered", "executing"} for record in _COMMAND_RECORDS.values())
+        if active >= MAX_PENDING_COMMANDS or len(_COMMAND_RECORDS) >= MAX_COMMAND_RECORDS:
+            raise desktop_policy.DesktopPolicyError("Desktop command queue is full")
+        command_id = secrets.randbits(52) or 1
+        while command_id in _COMMAND_RECORDS:
+            command_id = secrets.randbits(52) or 1
+        cmd = {**clean, "id": command_id, "type": cmd_type, "created_at": timeutil.utc_iso(),
+               "deadline": time.time() + timeout}
+        if future is not None:
+            _PENDING_FUTURES[command_id] = future
+        if capture_future is not None:
+            _CAPTURE_FUTURES[command_id] = capture_future
+        _COMMAND_RECORDS[command_id] = {"command": cmd, "state": "queued"}
+        _PENDING_COMMANDS.append(cmd)
+    return dict(cmd)
+
+
+async def enqueue_desktop_command(cmd_type: str, params: dict[str, Any] | None = None,
+                                  timeout: float = 15.0) -> dict[str, Any]:
+    """Queue an allowed command with an expiry; never silently drop live commands."""
+    return await _enqueue(cmd_type, params, timeout)
 
 
 async def pop_pending_commands() -> list[dict[str, Any]]:
-    """Pops all pending desktop commands to send to the Windows sidecar."""
-    global _PENDING_COMMANDS
+    """Offer commands once. A separate live acknowledgment is required to execute."""
     async with _COMMAND_LOCK:
-        cmds = list(_PENDING_COMMANDS)
+        _expire_commands()
+        commands = []
+        for cmd in _PENDING_COMMANDS.copy():
+            try:
+                desktop_policy.validate_command(cmd, time.time())
+            except desktop_policy.DesktopPolicyError as exc:
+                _finish_command(cmd["id"], "denied", str(exc))
+                continue
+            _COMMAND_RECORDS[cmd["id"]]["state"] = "offered"
+            commands.append(dict(cmd))
         _PENDING_COMMANDS.clear()
-        return cmds
+        return commands
+
+
+def acknowledge_command(command_id: int) -> dict[str, Any]:
+    """Atomically authorize a single execution attempt immediately before action."""
+    _expire_commands()
+    record = _COMMAND_RECORDS.get(command_id)
+    if not record or record["state"] != "offered":
+        return {"allowed": False, "status": record["state"] if record else "unknown"}
+    try:
+        desktop_policy.validate_command(record["command"], time.time())
+    except desktop_policy.DesktopPolicyError as exc:
+        _finish_command(command_id, "denied", str(exc))
+        return {"allowed": False, "status": "denied"}
+    record["state"] = "executing"
+    return {"allowed": True, "status": "executing", "deadline": record["command"]["deadline"]}
 
 
 def store_command_result(command_id: int, result_data: dict[str, Any]) -> bool:
-    """Stores/resolves the execution result for a pending desktop command."""
-    global _PENDING_FUTURES
+    """Resolve only an acknowledged live attempt. Late results cannot imply success."""
+    _expire_commands()
+    record = _COMMAND_RECORDS.get(command_id)
+    if not record or record["state"] != "executing":
+        return False
+    if not isinstance(result_data, dict) or result_data.get("status") not in {"ok", "error", "denied", "expired", "unknown_outcome"}:
+        return False
+    record["state"] = "completed"
+    record["result"] = dict(result_data)
     future = _PENDING_FUTURES.get(command_id)
     if future and not future.done():
-        future.set_result(result_data)
-        logger.info("Resolved desktop command #%s with status: %s", command_id, result_data.get("status"))
-        return True
-    return False
+        future.set_result(dict(result_data))
+    capture = _CAPTURE_FUTURES.get(command_id)
+    if capture and not capture.done() and result_data["status"] != "ok":
+        capture.set_result(None)
+    return True
+
+
+def cancel_desktop_command(command_id: int) -> dict[str, Any]:
+    record = _COMMAND_RECORDS.get(command_id)
+    if not record:
+        return {"id": command_id, "status": "not_pending"}
+    if record["state"] not in {"queued", "offered", "executing"}:
+        return dict(record.get("result", {"id": command_id, "status": record["state"]}))
+    executing = record["state"] == "executing"
+    return _finish_command(command_id, "unknown_outcome" if executing else "cancelled",
+                           "Execution may have started; do not retry automatically" if executing else "Cancelled before execution")
+
+
+def desktop_permission_status() -> dict[str, Any]:
+    return desktop_policy.permission_status()
+
+
+async def set_desktop_paused(paused: bool) -> dict[str, Any]:
+    global _WATCH_SESSION_ACTIVE, _LATEST_FRAME, _LATEST_FRAME_TIME
+    desktop_policy.set_runtime_paused(paused)
+    if paused:
+        _WATCH_SESSION_ACTIVE = False
+        if _WATCH_TASK and not _WATCH_TASK.done():
+            _WATCH_TASK.cancel()
+            await asyncio.gather(_WATCH_TASK, return_exceptions=True)
+        for command_id in list(_COMMAND_RECORDS):
+            cancel_desktop_command(command_id)
+        _LATEST_FRAME = None
+        _LATEST_FRAME_TIME = 0.0
+    return desktop_permission_status()
 
 
 async def execute_desktop_command_and_wait(
-    cmd_type: str,
-    params: dict[str, Any] | None = None,
-    timeout: float = 15.0,
+    cmd_type: str, params: dict[str, Any] | None = None, timeout: float = 15.0,
 ) -> dict[str, Any]:
-    """
-    Enqueues a command for the Windows sidecar and awaits its execution result.
-    Returns the result dictionary, or a timeout dictionary if the sidecar takes too long.
-    """
-    global _PENDING_FUTURES
-    loop = asyncio.get_running_loop()
-    cmd = await enqueue_desktop_command(cmd_type, params)
-    cmd_id = cmd["id"]
-    fut = loop.create_future()
-    _PENDING_FUTURES[cmd_id] = fut
-
+    future = asyncio.get_running_loop().create_future()
     try:
-        result = await asyncio.wait_for(fut, timeout=timeout)
-        return result
+        cmd = await _enqueue(cmd_type, params, timeout, future)
+    except desktop_policy.DesktopPolicyError as exc:
+        return {"status": "denied", "error": str(exc)}
+    command_id = cmd["id"]
+    try:
+        return await asyncio.wait_for(asyncio.shield(future), timeout=timeout)
     except asyncio.TimeoutError:
-        logger.warning("Desktop command #%s ('%s') timed out after %.1fs", cmd_id, cmd_type, timeout)
-        return {
-            "status": "timeout",
-            "error": f"Desktop command timed out after {timeout}s. The Windows PC sidecar may be offline, busy, or the command took too long.",
-        }
+        return cancel_desktop_command(command_id)
+    except asyncio.CancelledError:
+        cancel_desktop_command(command_id)
+        raise
     finally:
-        _PENDING_FUTURES.pop(cmd_id, None)
+        _PENDING_FUTURES.pop(command_id, None)
+        if not future.done():
+            future.cancel()
 
 
 # ─── Frame Storage ───────────────────────────────────────────────────
 
-def store_screen_frame(frame_bytes: bytes, mime_type: str = "image/webp") -> None:
+def store_screen_frame(frame_bytes: bytes, mime_type: str = "image/webp", command_id: int | None = None) -> None:
     """Stores the latest screen frame uploaded by the sidecar."""
-    global _LATEST_FRAME, _LATEST_FRAME_MIME, _LATEST_FRAME_TIME
+    global _LATEST_FRAME, _LATEST_FRAME_MIME, _LATEST_FRAME_TIME, _LATEST_FRAME_COMMAND_ID
+    desktop_policy.authorize_operation("capture_screen")
+    if command_id is not None:
+        _expire_commands()
+        record = _COMMAND_RECORDS.get(command_id)
+        if not record or record["state"] != "executing" or record["command"]["type"] != "capture_screen":
+            raise desktop_policy.DesktopPolicyError("Capture command is not active")
+    if not frame_bytes or len(frame_bytes) > 8 * 1024 * 1024 or mime_type not in {"image/jpeg", "image/png", "image/webp"}:
+        raise ValueError("Invalid screen frame size or media type")
     _LATEST_FRAME = frame_bytes
     _LATEST_FRAME_MIME = mime_type
     _LATEST_FRAME_TIME = time.time()
+    _LATEST_FRAME_COMMAND_ID = command_id
+    capture = _CAPTURE_FUTURES.get(command_id)
+    if capture and not capture.done():
+        capture.set_result(frame_bytes)
     logger.debug("Received screen frame (%d bytes, %s)", len(frame_bytes), mime_type)
 
 
@@ -134,7 +248,7 @@ async def point_at(
         "color": color,
         "duration": max(1, min(60, duration_seconds)),
     })
-    return f"Pointed at screen ({norm_x}, {norm_y}) with label: '{label}'"
+    return f"Queued pointer at screen ({norm_x}, {norm_y}) with label: '{label}'"
 
 
 async def doodle(
@@ -156,7 +270,7 @@ async def doodle(
         "color": color,
         "duration": max(1, min(60, duration_seconds)),
     })
-    return f"Doodled '{clean_shape}' at ({norm_x}, {norm_y})"
+    return f"Queued doodle '{clean_shape}' at ({norm_x}, {norm_y})"
 
 
 async def sticky_note(
@@ -172,13 +286,13 @@ async def sticky_note(
         "color": color,
         "duration": max(2, min(120, duration_seconds)),
     })
-    return f"Placed sticky note at {position}: '{text}'"
+    return f"Queued sticky note at {position}: '{text}'"
 
 
 async def clear_overlay() -> str:
     """Clears all active markings and doodles from Teja's screen."""
     await enqueue_desktop_command("clear")
-    return "Cleared desktop overlay canvas"
+    return "Queued desktop overlay clear"
 
 
 async def request_screen_capture(reason: str = "Inspect screen") -> bytes | None:
@@ -186,22 +300,26 @@ async def request_screen_capture(reason: str = "Inspect screen") -> bytes | None
     Requests the Windows sidecar to capture the screen immediately,
     waiting up to 10 seconds for the frame to arrive.
     """
-    start_time = time.time()
-    await enqueue_desktop_command("capture_screen", {"reason": reason})
-
-    # Poll for frame newer than request time (up to 10s)
-    for _ in range(50):
-        await asyncio.sleep(0.2)
-        frame, _, frame_ts = get_latest_screen_frame()
-        if frame and frame_ts >= start_time:
-            return frame
-
-    # Return whatever recent frame we have if fresh (< 45s)
-    frame, _, frame_ts = get_latest_screen_frame()
-    if frame and (time.time() - frame_ts) < 45.0:
+    try:
+        desktop_policy.authorize_operation("capture_screen")
+    except desktop_policy.DesktopPolicyError:
+        return None
+    frame_future = asyncio.get_running_loop().create_future()
+    cmd = await _enqueue("capture_screen", {"reason": reason}, 10.0, capture_future=frame_future)
+    received = False
+    try:
+        frame = await asyncio.wait_for(asyncio.shield(frame_future), 10.0)
+        desktop_policy.authorize_operation("capture_screen")
+        received = frame is not None
         return frame
-
-    return None
+    except (desktop_policy.DesktopPolicyError, asyncio.TimeoutError):
+        return None
+    finally:
+        if not received:
+            cancel_desktop_command(cmd["id"])
+        _CAPTURE_FUTURES.pop(cmd["id"], None)
+        if not frame_future.done():
+            frame_future.cancel()
 
 
 async def run_desktop_command(
@@ -274,12 +392,14 @@ def is_watching() -> bool:
 async def start_watch_session(duration_minutes: int = 30) -> str:
     """Starts a live continuous screen watching session."""
     global _WATCH_SESSION_ACTIVE, _WATCH_SESSION_EXPIRES_AT, _WATCH_TASK
+    desktop_policy.authorize_operation("capture_screen")
     duration_minutes = max(1, min(180, duration_minutes))
     _WATCH_SESSION_ACTIVE = True
     _WATCH_SESSION_EXPIRES_AT = time.time() + (duration_minutes * 60)
 
     if _WATCH_TASK and not _WATCH_TASK.done():
         _WATCH_TASK.cancel()
+        await asyncio.gather(_WATCH_TASK, return_exceptions=True)
 
     _WATCH_TASK = asyncio.create_task(_watch_loop())
     logger.info("Started screen watch session for %d minutes", duration_minutes)
@@ -292,6 +412,7 @@ async def stop_watch_session() -> str:
     _WATCH_SESSION_ACTIVE = False
     if _WATCH_TASK and not _WATCH_TASK.done():
         _WATCH_TASK.cancel()
+        await asyncio.gather(_WATCH_TASK, return_exceptions=True)
     await clear_overlay()
     logger.info("Screen watch session stopped")
     return "Stopped screen watch session. Rest easy baby 💕"
@@ -321,7 +442,7 @@ async def _watch_loop() -> None:
                     "Here is my active screen frame.",
                     system_note=system_note,
                     image_bytes=frame,
-                    mime_type="image/webp",
+                    mime_type=get_latest_screen_frame()[1],
                 )
                 if raw and raw.strip() != "PASS" and not raw.startswith("PASS"):
                     bot_instance = bot_module.get_bot()
@@ -334,3 +455,4 @@ async def _watch_loop() -> None:
 
         # Interval between proactive live watch observations (e.g. 45-60 seconds)
         await asyncio.sleep(45)
+

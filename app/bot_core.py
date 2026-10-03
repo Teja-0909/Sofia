@@ -9,16 +9,41 @@ from telegram.ext import (
     filters,
 )
 
-from . import config, db
-from .bot_globals import _bot_instance, logger
+from . import bot_globals, config, db
+from .bot_globals import logger
 
 
 def get_bot():
-    return _bot_instance
+    return bot_globals._bot_instance
+
+
+def set_bot(bot_instance) -> None:
+    """Use one shared state binding for startup and background senders."""
+    bot_globals._bot_instance = bot_instance
+
+
+def split_telegram_text(text: str, limit: int = 4000) -> list[str]:
+    """Preserve whitespace/code exactly while respecting Telegram's message limit."""
+    if limit < 1:
+        raise ValueError("limit must be positive")
+    chunks = []
+    for part in text.split("<split>"):
+        while part:
+            end = min(len(part), limit)
+            # Prefer a line boundary without stripping indentation or newlines.
+            if end < len(part):
+                boundary = part.rfind("\n", 0, end)
+                if boundary >= end // 2:
+                    end = boundary + 1
+            chunks.append(part[:end])
+            part = part[end:]
+    return chunks
 
 
 async def send_text(bot_instance, text: str) -> None:
-    parts = [p.strip() for p in text.split("<split>") if p.strip()]
+    if await db.get_config("proactivity_paused", "false") == "true":
+        raise RuntimeError("Background messaging is paused")
+    parts = split_telegram_text(text)
     for i, part in enumerate(parts):
         await bot_instance.send_message(chat_id=config.ALLOWED_USER_ID, text=part)
         if i < len(parts) - 1:
@@ -56,18 +81,24 @@ def _allowed(update: Update) -> bool:
 def build_application() -> Application:
     from .bot_commands import (
         cmd_add,
+        cmd_cancel,
+        cmd_correct,
         cmd_depth,
         cmd_done,
         cmd_focus,
+        cmd_forget,
         cmd_help,
         cmd_image,
         cmd_memory,
         cmd_mood,
         cmd_overlay,
+        cmd_pause,
+        cmd_permissions,
         cmd_read,
         cmd_screen,
         cmd_search,
         cmd_sleep,
+        cmd_snooze,
         cmd_start,
         cmd_status,
         cmd_tasks,
@@ -87,6 +118,12 @@ def build_application() -> Application:
         .token(config.BOT_TOKEN)
         .build()
     )
+    app.add_handler(CommandHandler("pause", cmd_pause))
+    app.add_handler(CommandHandler("permissions", cmd_permissions))
+    app.add_handler(CommandHandler("cancel", cmd_cancel))
+    app.add_handler(CommandHandler("snooze", cmd_snooze))
+    app.add_handler(CommandHandler("forget", cmd_forget))
+    app.add_handler(CommandHandler("correct", cmd_correct))
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("help", cmd_help))
     app.add_handler(CommandHandler("commands", cmd_help))
@@ -119,5 +156,6 @@ def build_application() -> Application:
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
     app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, handle_voice_or_audio))
     return app
+
 
 

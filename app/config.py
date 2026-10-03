@@ -77,3 +77,7 @@ THOUGHT_INTERVAL_MINUTES = int(os.environ.get("THOUGHT_INTERVAL_MINUTES", "12"))
 CONSCIOUSNESS_TICK_MINUTES = int(os.environ.get("CONSCIOUSNESS_TICK_MINUTES", "5"))
 
 WEB_AUTH_TOKEN = os.environ.get("WEB_AUTH_TOKEN", "")
+
+
+# Direct generation is the default; opt in to one selective reviewer + synthesis.
+ENABLE_SPECIALISTS = os.environ.get("ENABLE_SPECIALISTS", "false").lower() == "true"

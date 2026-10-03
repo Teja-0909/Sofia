@@ -5,6 +5,8 @@ Syncs window presence, executes overlay drawings, and streams screen perceptions
 """
 
 import ctypes
+import hashlib
+import hmac
 import io
 import json
 import logging
@@ -13,10 +15,18 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.error
 import urllib.request
 from ctypes import wintypes
+from pathlib import Path
+from urllib.parse import urlsplit
 
 from dotenv import load_dotenv
+
+# Support both `python scripts/sidecar.py` and package imports in tests.
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from app import desktop_policy
 
 load_dotenv()
 
@@ -31,16 +41,66 @@ logging.basicConfig(
 )
 logger = logging.getLogger("sofia_sidecar")
 
-SOFIA_BASE_URL = os.environ.get("SOFIA_BASE_URL", "https://sofia-va07.onrender.com").rstrip("/")
+SOFIA_BASE_URL = os.environ.get("SOFIA_BASE_URL", "").rstrip("/")
 SOFIA_PRESENCE_URL = f"{SOFIA_BASE_URL}/api/presence"
 SOFIA_UPLOAD_URL = f"{SOFIA_BASE_URL}/api/desktop/upload"
 SOFIA_POLL_URL = f"{SOFIA_BASE_URL}/api/desktop/poll"
+SOFIA_ACK_URL = f"{SOFIA_BASE_URL}/api/desktop/ack"
 SOFIA_RESULT_URL = f"{SOFIA_BASE_URL}/api/desktop/result"
 WEB_AUTH_TOKEN = os.environ.get("WEB_AUTH_TOKEN", "")
+def _overlay_token(web_token: str) -> str:
+    # Stable across sidecar restarts, scoped so the cloud secret is never sent
+    # to localhost. An explicit separately-managed local token is also allowed.
+    return os.environ.get("SOFIA_OVERLAY_TOKEN") or (hmac.new(
+        web_token.encode(), b"sofia-overlay-ipc-v2", hashlib.sha256,
+    ).hexdigest() if web_token.strip() else "")
+
+
+OVERLAY_TOKEN = _overlay_token(WEB_AUTH_TOKEN)
+_OVERLAY_PROCESS = None
+_EXECUTION_LOCK = threading.Lock()
+_SEEN_COMMANDS: dict[int, float] = {}
 OVERLAY_IPC_URL = "http://127.0.0.1:18493"
 
 FAST_POLL_INTERVAL_SECONDS = 1.5  # High-speed 1.5s command polling
 PRESENCE_SYNC_SECONDS = 15        # Presence metadata sync interval
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise urllib.error.HTTPError(req.full_url, code, "Redirects are disabled", headers, fp)
+
+
+def _open_request(request, timeout: float):
+    if not WEB_AUTH_TOKEN.strip():
+        raise ValueError("WEB_AUTH_TOKEN must be configured")
+    return urllib.request.build_opener(_NoRedirect()).open(request, timeout=timeout)
+
+
+def _read_json_response(response) -> dict:
+    deadline = time.monotonic() + 5
+    body = bytearray()
+    while len(body) <= 1024 * 1024:
+        if time.monotonic() >= deadline:
+            raise TimeoutError("Response deadline exceeded")
+        # read1 makes at most one underlying read, so trickling data cannot
+        # extend the total deadline indefinitely.
+        chunk = response.read1(min(65536, 1024 * 1024 + 1 - len(body)))
+        if not chunk:
+            data = json.loads(body)
+            if not isinstance(data, dict):
+                raise ValueError("Invalid response object")
+            return data
+        body.extend(chunk)
+    raise ValueError("Response is too large")
+
+
+def validate_transport_configuration() -> None:
+    if not WEB_AUTH_TOKEN.strip():
+        raise ValueError("WEB_AUTH_TOKEN must be configured")
+    parsed = urlsplit(SOFIA_BASE_URL)
+    if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
+        raise ValueError("SOFIA_BASE_URL must be an explicit HTTPS server URL without credentials")
 
 
 class LASTINPUTINFO(ctypes.Structure):
@@ -171,6 +231,7 @@ def get_active_window_info() -> tuple[str, str]:
 
 def capture_screen_bytes(max_dim: int = 1280) -> bytes | None:
     """Captures the primary display and returns compressed JPEG image bytes."""
+    desktop_policy.authorize_operation("capture_screen")
     from PIL import Image
 
     # 1. Privacy filter
@@ -178,7 +239,7 @@ def capture_screen_bytes(max_dim: int = 1280) -> bytes | None:
     lower_title = title.lower()
     for sensitive in ("1password", "bitwarden", "keepass", "password", "bank", "credit card", "login -"):
         if sensitive in lower_title:
-            logger.info("Screen capture suppressed for sensitive window: '%s'", title)
+            logger.info("Screen capture suppressed for sensitive window")
             return None
 
     img = None
@@ -216,55 +277,73 @@ def capture_screen_bytes(max_dim: int = 1280) -> bytes | None:
 
 # ─── Overlay Process Supervisor & IPC ─────────────────────────────────
 
-def ensure_overlay_running():
-    """Checks if overlay daemon is running on localhost:18493, launches it if not."""
-    try:
-        req = urllib.request.Request(f"{OVERLAY_IPC_URL}/health")
-        with urllib.request.urlopen(req, timeout=1) as resp:
-            if resp.status == 200:
-                return
-    except Exception:
-        pass
-
-    overlay_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "overlay.py")
-    if os.path.exists(overlay_script):
+def ensure_overlay_running() -> bool:
+    """Require authenticated protocol-v2 health, never spawn over another daemon."""
+    global _OVERLAY_PROCESS
+    for attempt in range(5):
         try:
-            flags = 0x08000000 if sys.platform == "win32" else 0  # CREATE_NO_WINDOW
-            subprocess.Popen([sys.executable, overlay_script], creationflags=flags)
-            logger.info("Spawned Sofia Desktop Ghost Overlay daemon (scripts/overlay.py)")
-        except Exception as exc:
-            logger.warning("Failed spawning overlay daemon: %s", exc)
+            req = urllib.request.Request(f"{OVERLAY_IPC_URL}/health", headers={"X-Auth-Token": OVERLAY_TOKEN})
+            with _open_request(req, timeout=1) as resp:
+                data = _read_json_response(resp)
+                if resp.status == 200 and data.get("protocol") == 2:
+                    return True
+                logger.warning("Incompatible overlay daemon; restart it with the updated sidecar")
+                return False
+        except urllib.error.HTTPError as exc:
+            if exc.code != 503:
+                logger.warning("Overlay authentication/protocol mismatch; restart the overlay after changing its token")
+                return False
+        except (urllib.error.URLError, ConnectionError, OSError):
+            if attempt == 0 and (_OVERLAY_PROCESS is None or _OVERLAY_PROCESS.poll() is not None):
+                overlay_script = str(Path(__file__).resolve().with_name("overlay.py"))
+                try:
+                    flags = 0x08000000 if sys.platform == "win32" else 0
+                    child_env = {key: value for key, value in os.environ.items() if key != "WEB_AUTH_TOKEN"}
+                    child_env["SOFIA_OVERLAY_TOKEN"] = OVERLAY_TOKEN
+                    _OVERLAY_PROCESS = subprocess.Popen([sys.executable, overlay_script], creationflags=flags, env=child_env)
+                except OSError:
+                    logger.exception("Could not start overlay daemon")
+                    return False
+        except (ValueError, TimeoutError):
+            return False
+        time.sleep(0.1)
+    return False
 
 
 def forward_to_overlay(endpoint: str, payload: dict) -> bool:
     """Forwards a draw/clear command to local overlay daemon."""
-    ensure_overlay_running()
+    desktop_policy.authorize_operation(endpoint)
+    if not ensure_overlay_running():
+        return False
+    # Startup can consume time; don't forward a command that expired meanwhile.
+    desktop_policy.validate_command(payload, time.time())
     url = f"{OVERLAY_IPC_URL}/{endpoint.lstrip('/')}"
     try:
-        data = json.dumps(payload).encode("utf-8")
+        data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         req = urllib.request.Request(
             url,
             data=data,
-            headers={"X-Auth-Token": WEB_AUTH_TOKEN, "Content-Type": "application/json"},
+            headers={"X-Auth-Token": OVERLAY_TOKEN, "Content-Type": "application/json"},
             method="POST"
         )
-        with urllib.request.urlopen(req, timeout=3) as resp:
-            return resp.status == 200
+        with _open_request(req, timeout=3) as resp:
+            return resp.status == 202
     except Exception as exc:
         logger.warning("Could not forward command to overlay (%s): %s", url, exc)
         return False
 
 
-def upload_screen_frame(frame_bytes: bytes) -> bool:
+def upload_screen_frame(frame_bytes: bytes, command_id: int) -> bool:
     """Uploads a captured screen frame to Sofia's server."""
+    desktop_policy.authorize_operation("capture_screen")
     try:
         req = urllib.request.Request(
             SOFIA_UPLOAD_URL,
             data=frame_bytes,
-            headers={"X-Auth-Token": WEB_AUTH_TOKEN, "Content-Type": "image/jpeg", "User-Agent": "SofiaSidecar/1.0"},
+            headers={"X-Auth-Token": WEB_AUTH_TOKEN, "Content-Type": "image/jpeg", "X-Command-ID": str(command_id), "User-Agent": "SofiaSidecar/1.0"},
             method="POST"
         )
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        with _open_request(req, timeout=10) as resp:
             return resp.status == 200
     except Exception as exc:
         logger.warning("Failed uploading screen frame to Sofia: %s", exc)
@@ -278,92 +357,27 @@ def send_command_result(command_id: int, result: dict) -> bool:
         **result,
     }
     try:
-        data_bytes = json.dumps(payload).encode("utf-8")
+        data_bytes = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         req = urllib.request.Request(
             SOFIA_RESULT_URL,
             data=data_bytes,
             headers={"X-Auth-Token": WEB_AUTH_TOKEN, "Content-Type": "application/json", "User-Agent": "SofiaSidecar/1.0"},
             method="POST"
         )
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        with _open_request(req, timeout=10) as resp:
             return resp.status == 200
     except Exception as exc:
         logger.warning("Failed sending command #%s result to Sofia (%s): %s", command_id, SOFIA_RESULT_URL, exc)
         return False
 
 
-COMMAND_SAFETY_BLACKLIST = (
-    "format",
-    "del /s",
-    "del /f /s",
-    "rmdir /s",
-    "rd /s",
-    "rm -rf /",
-    "rm -rf c:",
-    "mkfs",
-    ":(){ :|:& };:",
-    "diskpart",
-)
-
-
-def _is_safe_command(cmd_str: str) -> bool:
-    lower = cmd_str.lower().strip()
-    for bad in COMMAND_SAFETY_BLACKLIST:
-        if bad in lower:
-            return False
-    return True
-
-
 def handle_run_command(cmd: dict) -> dict:
-    command_str = cmd.get("command", "").strip()
-    cwd = cmd.get("cwd") or os.getcwd()
-    timeout = max(1, min(60, int(cmd.get("timeout", 15))))
-
-    if not command_str:
-        return {"status": "error", "error": "Empty command"}
-
-    if not _is_safe_command(command_str):
-        return {
-            "status": "error",
-            "error": "Command blocked by security policy: destructive commands (format, rmdir, mass delete) are strictly forbidden.",
-        }
-
-    try:
-        res = subprocess.run(
-            command_str,
-            shell=True,
-            capture_output=True,
-            text=True,
-            cwd=cwd if os.path.isdir(cwd) else None,
-            timeout=timeout,
-            encoding="utf-8",
-            errors="replace",
-        )
-        stdout = (res.stdout or "").strip()
-        stderr = (res.stderr or "").strip()
-
-        output_parts = []
-        if stdout:
-            output_parts.append(stdout)
-        if stderr:
-            output_parts.append(f"[stderr]\n{stderr}")
-
-        full_output = "\n".join(output_parts)
-        if len(full_output) > 3000:
-            full_output = full_output[:1500] + "\n\n... [output truncated] ...\n\n" + full_output[-1500:]
-
-        return {
-            "status": "ok",
-            "exit_code": res.returncode,
-            "output": full_output,
-        }
-    except subprocess.TimeoutExpired:
-        return {"status": "error", "error": f"Command timed out after {timeout} seconds"}
-    except Exception as exc:
-        return {"status": "error", "error": f"Execution error: {exc}"}
+    """Compatibility response for older callers; never execute model-supplied shell."""
+    return {"status": "denied", "error": "Raw shell execution is disabled; use structured desktop operations"}
 
 
 def handle_get_clipboard() -> dict:
+    desktop_policy.authorize_operation("get_clipboard")
     try:
         import win32clipboard
         import win32con
@@ -371,7 +385,7 @@ def handle_get_clipboard() -> dict:
         try:
             if win32clipboard.IsClipboardFormatAvailable(win32con.CF_UNICODETEXT):
                 data = win32clipboard.GetClipboardData(win32con.CF_UNICODETEXT)
-                return {"status": "ok", "text": data or ""}
+                return {"status": "ok", "text": desktop_policy.truncate_text(data or "")}
             return {"status": "ok", "text": ""}
         finally:
             win32clipboard.CloseClipboard()
@@ -380,99 +394,113 @@ def handle_get_clipboard() -> dict:
 
 
 def handle_set_clipboard(text: str) -> dict:
+    desktop_policy.validate_parameters("set_clipboard", {"text": text})
+    mutation_started = False
     try:
         import win32clipboard
         import win32con
         win32clipboard.OpenClipboard()
         try:
+            mutation_started = True
             win32clipboard.EmptyClipboard()
             win32clipboard.SetClipboardText(text, win32con.CF_UNICODETEXT)
             return {"status": "ok", "length": len(text)}
         finally:
             win32clipboard.CloseClipboard()
     except Exception as exc:
+        if mutation_started:
+            return {"status": "unknown_outcome", "error": "Clipboard may have changed; do not retry automatically"}
         return {"status": "error", "error": f"Clipboard write error: {exc}"}
 
 
 def handle_workspace_status(cmd: dict) -> dict:
-    target_dir = cmd.get("workspace_dir") or os.getcwd()
-    if not os.path.isdir(target_dir):
-        target_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-
-    lines = [f"Workspace: {target_dir}"]
-
-    # 1. Git status
-    try:
-        branch = subprocess.check_output(
-            ["git", "branch", "--show-current"],
-            cwd=target_dir, text=True, stderr=subprocess.DEVNULL
-        ).strip()
-        lines.append(f"Git Branch: {branch or 'detached/unknown'}")
-
-        last_commit = subprocess.check_output(
-            ["git", "log", "-1", "--oneline"],
-            cwd=target_dir, text=True, stderr=subprocess.DEVNULL
-        ).strip()
-        lines.append(f"Last Commit: {last_commit}")
-
-        status = subprocess.check_output(
-            ["git", "status", "-s"],
-            cwd=target_dir, text=True, stderr=subprocess.DEVNULL
-        ).strip()
-        if status:
-            mod_count = len(status.splitlines())
-            lines.append(f"Uncommitted Changes: {mod_count} files modified\n{status[:500]}")
-        else:
-            lines.append("Working tree clean (no uncommitted changes)")
-    except Exception:
-        lines.append("Git status: Not a git repository or git command unavailable")
-
-    # 2. System resources (CPU / RAM)
-    try:
-        import psutil
-        cpu = psutil.cpu_percent(interval=0.1)
-        mem = psutil.virtual_memory()
-        lines.append(f"System: CPU {cpu}% | RAM {mem.percent}% used ({round(mem.used / (1024**3), 1)}GB / {round(mem.total / (1024**3), 1)}GB)")
-    except Exception:
-        pass
-
+    desktop_policy.authorize_operation("workspace_status")
+    target_dir = desktop_policy.workspace_path(cmd.get("workspace_dir", ""))
+    deadline = min(float(cmd["deadline"]), time.time() + 8)
+    lines = [f"Workspace: {target_dir.name}"]
+    # Fixed argv only; disable fsmonitor hooks and optional index writes. Never
+    # accept an arbitrary executable, shell string or model-controlled options.
+    queries = [("Branch", ["branch", "--show-current"]),
+               ("Last commit", ["log", "-1", "--oneline"]),
+               ("Changes", ["status", "--porcelain=v1", "-uno", "--ignore-submodules=all"])]
+    for label, args in queries:
+        desktop_policy.authorize_operation("workspace_status")
+        remaining = deadline - time.time()
+        if remaining <= 0:
+            return {"status": "expired", "error": "Workspace query deadline reached"}
+        try:
+            output = subprocess.check_output(
+                ["git", "--no-pager", "--no-optional-locks", "-c", "core.fsmonitor=false", *args],
+                cwd=target_dir, text=True, stderr=subprocess.DEVNULL, timeout=min(3, remaining),
+            ).strip()
+            lines.append(f"{label}: {output[:1500] or '(none)'}")
+        except (subprocess.SubprocessError, OSError):
+            lines.append(f"{label}: unavailable")
     return {"status": "ok", "summary": "\n".join(lines)}
 
 
+def acknowledge_command(command_id: int) -> bool:
+    req = urllib.request.Request(
+        SOFIA_ACK_URL, data=json.dumps({"id": command_id}).encode(),
+        headers={"X-Auth-Token": WEB_AUTH_TOKEN, "Content-Type": "application/json"}, method="POST",
+    )
+    try:
+        with _open_request(req, timeout=3) as resp:
+            data = _read_json_response(resp)
+            return resp.status == 200 and data.get("allowed") is True
+    except Exception:
+        # An unconfirmed acknowledgement never grants permission. Do not retry.
+        return False
+
+
 def execute_desktop_commands(commands: list[dict]) -> None:
-    """Executes commands received from Sofia's Brain."""
-    for cmd in commands:
-        cmd_type = cmd.get("type")
-        cmd_id = cmd.get("id")
-        logger.info("Executing desktop command: %s (id=%s)", cmd_type, cmd_id)
-
-        if cmd_type == "capture_screen":
-            frame = capture_screen_bytes()
-            if frame:
-                upload_screen_frame(frame)
-
-        elif cmd_type == "run_command":
-            res = handle_run_command(cmd)
-            if cmd_id:
-                send_command_result(cmd_id, res)
-
-        elif cmd_type == "get_clipboard":
-            res = handle_get_clipboard()
-            if cmd_id:
-                send_command_result(cmd_id, res)
-
-        elif cmd_type == "set_clipboard":
-            res = handle_set_clipboard(cmd.get("text", ""))
-            if cmd_id:
-                send_command_result(cmd_id, res)
-
-        elif cmd_type == "workspace_status":
-            res = handle_workspace_status(cmd)
-            if cmd_id:
-                send_command_result(cmd_id, res)
-
-        elif cmd_type in ("point_at", "doodle", "sticky_note", "clear"):
-            forward_to_overlay(cmd_type, cmd)
+    """Validate locally, obtain live authorization, then attempt exactly once."""
+    if not isinstance(commands, list):
+        return
+    # Presence and the fast poller may deliver simultaneously. Do not execute
+    # overlapping clipboard actions or retain a second local unbounded queue.
+    with _EXECUTION_LOCK:
+        for cmd in commands[:50]:
+            now = time.time()
+            for old_id, expiry in list(_SEEN_COMMANDS.items()):
+                if expiry <= now:
+                    _SEEN_COMMANDS.pop(old_id, None)
+            try:
+                params = desktop_policy.validate_command(cmd, now)
+            except (desktop_policy.DesktopPolicyError, TypeError):
+                continue
+            command_id = cmd["id"]
+            if command_id in _SEEN_COMMANDS:
+                continue
+            _SEEN_COMMANDS[command_id] = cmd["deadline"]
+            if not acknowledge_command(command_id):
+                continue
+            try:
+                # Recheck after the network round trip: a pause or expiry while
+                # waiting for the ack must prevent the operation from starting.
+                desktop_policy.validate_command(cmd, time.time())
+                operation = cmd["type"]
+                if operation == "capture_screen":
+                    frame = capture_screen_bytes()
+                    desktop_policy.validate_command(cmd, time.time())
+                    uploaded = bool(frame and upload_screen_frame(frame, command_id))
+                    result = {"status": "ok" if uploaded else "error", "error": "" if uploaded else "Screen unavailable or upload failed"}
+                elif operation == "get_clipboard":
+                    result = handle_get_clipboard()
+                elif operation == "set_clipboard":
+                    result = handle_set_clipboard(params.get("text", ""))
+                elif operation == "workspace_status":
+                    result = handle_workspace_status(cmd)
+                else:
+                    forwarded = forward_to_overlay(operation, cmd)
+                    result = {"status": "ok" if forwarded else "unknown_outcome",
+                              "message": "Overlay queued; display not confirmed" if forwarded else "Overlay acknowledgement unavailable; do not retry automatically"}
+            except desktop_policy.DesktopPolicyError as exc:
+                result = {"status": "denied", "error": str(exc)}
+            except Exception:
+                result = {"status": "unknown_outcome", "error": "Desktop operation failed after acknowledgement; do not retry automatically"}
+                logger.exception("Desktop operation failed: %s", cmd["type"])
+            send_command_result(command_id, result)
 
 
 # ─── Fast Command Poller Thread (1.5s interval) ───────────────────────
@@ -486,10 +514,10 @@ def _fast_command_poll_loop():
                 headers={"X-Auth-Token": WEB_AUTH_TOKEN, "User-Agent": "SofiaSidecar/1.0"},
                 method="GET"
             )
-            with urllib.request.urlopen(req, timeout=5) as resp:
+            with _open_request(req, timeout=5) as resp:
                 if resp.status == 200:
-                    resp_body = resp.read().decode("utf-8")
-                    data = json.loads(resp_body)
+                    data = _read_json_response(resp)
+                    desktop_policy.set_runtime_paused(data.get("paused") is True)
                     commands = data.get("commands") or []
                     if commands:
                         execute_desktop_commands(commands)
@@ -502,12 +530,14 @@ def _fast_command_poll_loop():
 # ─── Main Presence Loop (15s interval) ────────────────────────────────
 
 def send_presence(app_name: str, window_title: str, idle_min: int) -> bool:
+    if desktop_policy.is_paused():
+        return False
     payload = {
         "active_app": app_name,
         "window_title": window_title,
         "idle_minutes": idle_min,
     }
-    data_bytes = json.dumps(payload).encode("utf-8")
+    data_bytes = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     req = urllib.request.Request(
         SOFIA_PRESENCE_URL,
         data=data_bytes,
@@ -515,11 +545,11 @@ def send_presence(app_name: str, window_title: str, idle_min: int) -> bool:
         method="POST"
     )
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        with _open_request(req, timeout=10) as resp:
             if resp.status == 200:
-                resp_body = resp.read().decode("utf-8")
                 try:
-                    data = json.loads(resp_body)
+                    data = _read_json_response(resp)
+                    desktop_policy.set_runtime_paused(data.get("paused") is True)
                     commands = data.get("commands") or []
                     if commands:
                         execute_desktop_commands(commands)
@@ -533,6 +563,7 @@ def send_presence(app_name: str, window_title: str, idle_min: int) -> bool:
 
 
 def main():
+    validate_transport_configuration()
     logger.info("Sofia Desktop Presence & High-Speed Shared Desktop Sidecar started")
     logger.info("Syncing with: %s", SOFIA_PRESENCE_URL)
     ensure_overlay_running()
@@ -546,11 +577,14 @@ def main():
 
     while True:
         try:
+            if desktop_policy.is_paused():
+                time.sleep(PRESENCE_SYNC_SECONDS)
+                continue
             app_name, title = get_active_window_info()
             idle_min = get_idle_minutes()
 
             if app_name != last_sent_app or title != last_sent_title or idle_min > 5:
-                logger.info("Presence: App='%s' | Title='%s' | Idle=%s min", app_name, title, idle_min)
+                logger.info("Presence changed; idle=%s min", idle_min)
                 success = send_presence(app_name, title, idle_min)
                 if success:
                     last_sent_app = app_name
@@ -566,3 +600,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

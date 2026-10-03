@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     reminder_sent_count INTEGER NOT NULL DEFAULT 0,
     last_reminded_at    TEXT,
     completed_at        TEXT,
+    cancelled_at        TEXT,
     is_recurring        TEXT,
     created_at          TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
@@ -172,3 +173,33 @@ CREATE TABLE IF NOT EXISTS dreams (
     created_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
 CREATE INDEX IF NOT EXISTS idx_dreams_date ON dreams(sleep_date);
+
+
+-- A successful Telegram send is acknowledged separately from the claim.
+-- Claims expire after worker crashes. Telegram offers no idempotency key: a crash
+-- after remote acceptance but before this receipt can cause a duplicate on retry.
+CREATE TABLE IF NOT EXISTS delivery_claims (
+    job_key TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('sending', 'retry', 'sent')),
+    token TEXT NOT NULL,
+    lease_until TEXT NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 1,
+    next_attempt_at TEXT,
+    last_error TEXT,
+    updated_at TEXT NOT NULL
+);
+
+-- Tombstones survive cache invalidation, notebook rewrites, and re-curation.
+CREATE TABLE IF NOT EXISTS memory_suppressions (
+    normalized_content TEXT PRIMARY KEY,
+    content TEXT NOT NULL,
+    suppressed_at TEXT NOT NULL
+);
+
+-- Explicit corrections retain an auditable link and are idempotent on retry.
+CREATE TABLE IF NOT EXISTS memory_corrections (
+    old_memory_id INTEGER PRIMARY KEY REFERENCES relationship_memory(id),
+    new_memory_id INTEGER NOT NULL REFERENCES relationship_memory(id),
+    corrected_at TEXT NOT NULL
+);

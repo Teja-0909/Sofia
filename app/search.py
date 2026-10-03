@@ -1,7 +1,9 @@
 import asyncio
+import ipaddress
 import logging
 import re
-from urllib.parse import quote_plus
+import socket
+from urllib.parse import quote_plus, urljoin, urlsplit
 
 import httpx
 
@@ -112,39 +114,71 @@ def extract_clean_article_text(html: str, max_chars: int = 4000) -> str:
     return combined[:max_chars]
 
 
+async def _resolve_public_url(url: str) -> tuple[httpx.URL, str]:
+    """Resolve once, validate every address and pin the connection to that IP."""
+    parsed = urlsplit(url)
+    if parsed.scheme not in ("http", "https") or not parsed.hostname or parsed.username or parsed.password:
+        raise ValueError("Only public HTTP(S) URLs without credentials are supported")
+    if parsed.port not in (None, 80, 443):
+        raise ValueError("Only standard web ports are supported")
+    hostname = parsed.hostname.encode("idna").decode("ascii")
+    records = await asyncio.wait_for(
+        asyncio.get_running_loop().getaddrinfo(
+            hostname, parsed.port or (443 if parsed.scheme == "https" else 80),
+            type=socket.SOCK_STREAM,
+        ), timeout=3.0,
+    )
+    addresses = [record[4][0] for record in records]
+    if not addresses or any(not ipaddress.ip_address(address).is_global for address in addresses):
+        raise ValueError("Private, loopback, link-local and reserved destinations are blocked")
+    return httpx.URL(url).copy_with(host=addresses[0]), hostname
+
+
+async def _fetch_public_page(url: str, max_chars: int) -> str:
+    # trust_env=False prevents a proxy from undoing IP pinning. Preserve Host/SNI
+    # for virtual hosts and certificate validation, but never resolve host twice.
+    async with httpx.AsyncClient(timeout=8.0, follow_redirects=False, trust_env=False) as client:
+        for _ in range(5):
+            pinned_url, hostname = await _resolve_public_url(url)
+            original = httpx.URL(url)
+            host_header = hostname if original.port in (None, 80, 443) else f"{hostname}:{original.port}"
+            async with client.stream(
+                "GET", pinned_url,
+                headers={"Host": host_header, "User-Agent": "Sofia/1.0", "Accept": "text/html,text/plain"},
+                extensions={"sni_hostname": hostname},
+            ) as response:
+                if response.status_code in (301, 302, 303, 307, 308):
+                    location = response.headers.get("location")
+                    if not location:
+                        return ""
+                    url = urljoin(url, location)
+                    continue
+                if response.status_code != 200:
+                    return ""
+                kind = response.headers.get("content-type", "").split(";", 1)[0].lower()
+                if kind not in ("text/html", "text/plain", "application/xhtml+xml"):
+                    return ""
+                chunks = []
+                total = 0
+                async for chunk in response.aiter_bytes():
+                    total += len(chunk)
+                    if total > 1_000_000:
+                        raise ValueError("Page exceeds the response size limit")
+                    chunks.append(chunk)
+                content = b"".join(chunks).decode("utf-8", errors="replace")
+                if kind == "text/plain":
+                    return content[:max_chars]
+                return extract_clean_article_text(content, max_chars=max_chars)
+    raise ValueError("Too many redirects")
+
+
 async def fetch_page_content(url: str, max_chars: int = 4000) -> str:
-    """Fetches a live webpage using a cloud headless browser (renders JS & Markdown tables) with direct HTML fallback."""
-    if not url or not url.startswith(("http://", "https://")):
+    """Fetch bounded public web content with DNS pinning and per-hop validation."""
+    try:
+        return await asyncio.wait_for(_fetch_public_page(url, max(0, min(max_chars, 20000))), 20.0)
+    except (ValueError, OSError, httpx.HTTPError, asyncio.TimeoutError) as exc:
+        logger.debug("Public page fetch rejected or unavailable: %s", type(exc).__name__)
         return ""
-
-    # Primary: Headless Browser (Jina Reader - renders JS, React SPAs, and Markdown tables)
-    jina_url = f"https://r.jina.ai/{url}"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        "Accept": "text/plain",
-        "X-No-Cache": "true",
-    }
-
-    try:
-        async with httpx.AsyncClient(timeout=14, follow_redirects=True) as client:
-            resp = await client.get(jina_url, headers=headers)
-            if resp.status_code == 200 and len(resp.text.strip()) > 80:
-                clean_md = re.sub(r'\[Skip to content\]\(.*?\)', '', resp.text).strip()
-                logger.info("Headless browser successfully scraped %s chars from %s", len(clean_md), url)
-                return clean_md[:max_chars]
-    except Exception as exc:
-        logger.debug("Headless browser fallback note for %s: %s", url, exc)
-
-    # Fallback: Direct HTML DOM Scraper
-    try:
-        async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
-            resp = await client.get(url, headers=headers)
-            if resp.status_code == 200:
-                return extract_clean_article_text(resp.text, max_chars=max_chars)
-    except Exception as exc:
-        logger.debug("Direct HTML scrape note for %s: %s", url, exc)
-
-    return ""
 
 
 def _sync_ddgs_search(query: str, max_results: int = 5) -> list[dict]:
@@ -300,3 +334,4 @@ async def react_research_loop(query: str, context: str = "") -> str:
     return "\n\n".join(sections)
     
 deep_react_research = react_research_loop
+
