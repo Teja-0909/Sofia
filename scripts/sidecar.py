@@ -4,12 +4,14 @@ Lightweight presence beacon and screen vision bridge that runs silently on Windo
 Syncs window presence, executes overlay drawings, and streams screen perceptions.
 """
 
+import argparse
 import ctypes
 import hashlib
 import hmac
 import io
 import json
 import logging
+import ntpath
 import os
 import subprocess
 import sys
@@ -18,6 +20,7 @@ import time
 import urllib.error
 import urllib.request
 from ctypes import wintypes
+from functools import lru_cache
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -32,19 +35,13 @@ load_dotenv()
 
 LOG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "sidecar.log")
 
-logging.basicConfig(
-    filename=LOG_FILE,
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    datefmt="%H:%M:%S",
-    encoding="utf-8"
-)
 logger = logging.getLogger("sofia_sidecar")
 
 SOFIA_BASE_URL = os.environ.get("SOFIA_BASE_URL", "").rstrip("/")
 SOFIA_PRESENCE_URL = f"{SOFIA_BASE_URL}/api/presence"
 SOFIA_UPLOAD_URL = f"{SOFIA_BASE_URL}/api/desktop/upload"
 SOFIA_POLL_URL = f"{SOFIA_BASE_URL}/api/desktop/poll"
+SOFIA_STATUS_URL = f"{SOFIA_BASE_URL}/api/desktop/status"
 SOFIA_ACK_URL = f"{SOFIA_BASE_URL}/api/desktop/ack"
 SOFIA_RESULT_URL = f"{SOFIA_BASE_URL}/api/desktop/result"
 WEB_AUTH_TOKEN = os.environ.get("WEB_AUTH_TOKEN", "")
@@ -64,6 +61,35 @@ OVERLAY_IPC_URL = "http://127.0.0.1:18493"
 
 FAST_POLL_INTERVAL_SECONDS = 1.5  # High-speed 1.5s command polling
 PRESENCE_SYNC_SECONDS = 15        # Presence metadata sync interval
+_STATUS_LOG_INTERVAL_SECONDS = 60
+_STATUS_LOG_LOCK = threading.Lock()
+_STATUS_LOG_STATE: dict[str, tuple[str, float]] = {}
+
+
+def _report_status(source: str, status: str) -> None:
+    """Log fixed status labels on changes and bounded failure reminders.
+
+    Callers supply labels only, never URLs, response bodies, titles or exception
+    messages (which may contain request credentials or private desktop data).
+    """
+    now = time.monotonic()
+    success = status in {"ok", "available"}
+    with _STATUS_LOG_LOCK:
+        previous, when = _STATUS_LOG_STATE.get(source, ("", 0))
+        if previous == status and (success or now - when < _STATUS_LOG_INTERVAL_SECONDS):
+            return
+        _STATUS_LOG_STATE[source] = (status, now)
+    logger.log(logging.INFO if success else logging.WARNING, "%s status=%s", source, status)
+
+
+def _transport_error_status(exc: Exception) -> str:
+    if isinstance(exc, urllib.error.HTTPError):
+        return f"http_{exc.code}" if type(exc.code) is int and 100 <= exc.code <= 599 else "http_error"
+    if isinstance(exc, TimeoutError):
+        return "timeout"
+    if isinstance(exc, (urllib.error.URLError, ConnectionError, OSError)):
+        return "connection_error"
+    return "invalid_response"
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -110,17 +136,44 @@ class LASTINPUTINFO(ctypes.Structure):
     ]
 
 
-def get_idle_minutes() -> int:
-    """Returns the number of minutes since the user last moved mouse or typed."""
+@lru_cache(maxsize=1)
+def _windows_apis():
+    """Bind pointer-sized Win32 handles explicitly; ctypes defaults to C int."""
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    signatures = (
+        (user32.GetForegroundWindow, [], wintypes.HWND),
+        (user32.GetWindowTextLengthW, [wintypes.HWND], ctypes.c_int),
+        (user32.GetWindowTextW, [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int], ctypes.c_int),
+        (user32.GetWindowThreadProcessId, [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)], wintypes.DWORD),
+        (user32.GetLastInputInfo, [ctypes.POINTER(LASTINPUTINFO)], wintypes.BOOL),
+        (kernel32.GetTickCount, [], wintypes.DWORD),
+        (kernel32.OpenProcess, [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD], wintypes.HANDLE),
+        (kernel32.QueryFullProcessImageNameW,
+         [wintypes.HANDLE, wintypes.DWORD, wintypes.LPWSTR, ctypes.POINTER(wintypes.DWORD)], wintypes.BOOL),
+        (kernel32.CloseHandle, [wintypes.HANDLE], wintypes.BOOL),
+    )
+    for function, argtypes, restype in signatures:
+        function.argtypes = argtypes
+        function.restype = restype
+    return user32, kernel32
+
+
+def get_idle_minutes() -> int | None:
+    """Return idle minutes, or None when idle detection is unavailable."""
     try:
+        user32, kernel32 = _windows_apis()
         lii = LASTINPUTINFO()
         lii.cbSize = ctypes.sizeof(LASTINPUTINFO)
-        if ctypes.windll.user32.GetLastInputInfo(ctypes.byref(lii)):
-            millis = ctypes.windll.kernel32.GetTickCount() - lii.dwTime
-            return int(millis / 1000 / 60)
+        if not user32.GetLastInputInfo(ctypes.byref(lii)):
+            raise OSError("Idle detection unavailable")
+        # Both counters are DWORDs and GetTickCount wraps after ~49.7 days.
+        millis = (kernel32.GetTickCount() - lii.dwTime) & 0xFFFFFFFF
+        _report_status("Idle detection", "available")
+        return millis // 60000
     except Exception:
-        pass
-    return 0
+        _report_status("Idle detection", "unavailable")
+        return None
 
 
 _EXE_NAMES = {
@@ -159,7 +212,7 @@ def _exe_to_friendly_name(exe_name: str) -> str:
 def _app_from_title(title: str) -> str:
     """Fallback: extracts app name from window title heuristics."""
     if not title:
-        return "Desktop"
+        return ""
     lower = title.lower()
     if "visual studio code" in lower or " - code" in lower:
         return "Visual Studio Code"
@@ -185,46 +238,57 @@ def _app_from_title(title: str) -> str:
         return title.split(" - ")[-1].strip()
     elif title:
         return title.split()[0]
-    return "Desktop"
+    return ""
 
 
-def get_active_window_info() -> tuple[str, str]:
-    """Returns (app_name, window_title) for the current foreground window."""
+def get_active_window_info() -> tuple[str, str] | None:
+    """Return bounded metadata (title/app truncated to 4096/256), or None.
+
+    Missing evidence is never a claim that the desktop is foreground.
+    """
     try:
-        user32 = ctypes.windll.user32
-        kernel32 = ctypes.windll.kernel32
+        user32, kernel32 = _windows_apis()
         hwnd = user32.GetForegroundWindow()
         if not hwnd:
-            return ("Desktop", "")
+            raise OSError("No foreground window available")
 
+        ctypes.set_last_error(0)
         length = user32.GetWindowTextLengthW(hwnd)
-        buff = ctypes.create_unicode_buffer(length + 1)
-        user32.GetWindowTextW(hwnd, buff, length + 1)
-        title = buff.value.strip()
+        if length < 0 or (length == 0 and ctypes.get_last_error()):
+            raise OSError("Foreground title unavailable")
+        capacity = min(length + 1, 32768)
+        buff = ctypes.create_unicode_buffer(capacity)
+        ctypes.set_last_error(0)
+        copied = user32.GetWindowTextW(hwnd, buff, capacity)
+        if copied == 0 and ctypes.get_last_error():
+            raise OSError("Foreground title unavailable")
+        title = buff.value.strip()[:4096]
 
-        app_name = "Desktop"
+        app_name = ""
         pid = wintypes.DWORD()
         user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
         if pid.value:
-            PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
-            handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid.value)
+            handle = kernel32.OpenProcess(0x1000, False, pid.value)
             if handle:
                 try:
-                    exe_buf = ctypes.create_unicode_buffer(512)
-                    size = wintypes.DWORD(512)
+                    exe_buf = ctypes.create_unicode_buffer(32768)
+                    size = wintypes.DWORD(len(exe_buf))
                     if kernel32.QueryFullProcessImageNameW(handle, 0, exe_buf, ctypes.byref(size)):
-                        exe_path = exe_buf.value
-                        exe_name = os.path.basename(exe_path).lower()
-                        app_name = _exe_to_friendly_name(exe_name) or exe_name.replace(".exe", "").title()
+                        exe_name = ntpath.basename(exe_buf.value).lower()
+                        app_name = (_exe_to_friendly_name(exe_name) or exe_name.removesuffix(".exe").title())[:256]
                 finally:
                     kernel32.CloseHandle(handle)
 
-        if app_name in ("Desktop", ""):
-            app_name = _app_from_title(title)
-
-        return (app_name, title)
+        if not app_name and not title:
+            raise OSError("Foreground metadata unavailable")
+        # A foreground switch while reading must not combine two applications.
+        if user32.GetForegroundWindow() != hwnd:
+            raise OSError("Foreground window changed during detection")
+        _report_status("Foreground detection", "available")
+        return app_name, title
     except Exception:
-        return ("Desktop", "")
+        _report_status("Foreground detection", "unavailable")
+        return None
 
 
 # ─── Screen Capture & Privacy Guard ───────────────────────────────────
@@ -235,7 +299,11 @@ def capture_screen_bytes(max_dim: int = 1280) -> bytes | None:
     from PIL import Image
 
     # 1. Privacy filter
-    _, title = get_active_window_info()
+    foreground = get_active_window_info()
+    if foreground is None:
+        logger.info("Screen capture suppressed because foreground detection is unavailable")
+        return None
+    _, title = foreground
     lower_title = title.lower()
     for sensitive in ("1password", "bitwarden", "keepass", "password", "bank", "credit card", "login -"):
         if sensitive in lower_title:
@@ -250,16 +318,16 @@ def capture_screen_bytes(max_dim: int = 1280) -> bytes | None:
             mon = sct.monitors[1] if len(sct.monitors) > 1 else sct.monitors[0]
             sct_img = sct.grab(mon)
             img = Image.frombytes("RGB", sct_img.size, sct_img.bgra, "raw", "BGRX")
-    except Exception as exc:
-        logger.debug("mss capture note: %s", exc)
+    except Exception:
+        logger.debug("mss capture unavailable")
 
     # 3. Fallback to PIL ImageGrab
     if img is None:
         try:
             from PIL import ImageGrab
             img = ImageGrab.grab()
-        except Exception as exc:
-            logger.debug("ImageGrab capture note: %s", exc)
+        except Exception:
+            logger.debug("ImageGrab capture unavailable")
 
     if img is None:
         return None
@@ -302,7 +370,7 @@ def ensure_overlay_running() -> bool:
                     child_env["SOFIA_OVERLAY_TOKEN"] = OVERLAY_TOKEN
                     _OVERLAY_PROCESS = subprocess.Popen([sys.executable, overlay_script], creationflags=flags, env=child_env)
                 except OSError:
-                    logger.exception("Could not start overlay daemon")
+                    _report_status("Overlay startup", "unavailable")
                     return False
         except (ValueError, TimeoutError):
             return False
@@ -327,9 +395,12 @@ def forward_to_overlay(endpoint: str, payload: dict) -> bool:
             method="POST"
         )
         with _open_request(req, timeout=3) as resp:
-            return resp.status == 202
+            data = _read_json_response(resp)
+            accepted = resp.status == 202 and data.get("status") == "queued"
+        _report_status("Overlay forwarding", "ok" if accepted else "invalid_response")
+        return accepted
     except Exception as exc:
-        logger.warning("Could not forward command to overlay (%s): %s", url, exc)
+        _report_status("Overlay forwarding", _transport_error_status(exc))
         return False
 
 
@@ -344,9 +415,13 @@ def upload_screen_frame(frame_bytes: bytes, command_id: int) -> bool:
             method="POST"
         )
         with _open_request(req, timeout=10) as resp:
-            return resp.status == 200
+            data = _read_json_response(resp)
+            accepted = (resp.status == 200 and data.get("status") == "ok"
+                        and type(data.get("received_bytes")) is int and data["received_bytes"] == len(frame_bytes))
+        _report_status("Screen upload", "ok" if accepted else "invalid_response")
+        return accepted
     except Exception as exc:
-        logger.warning("Failed uploading screen frame to Sofia: %s", exc)
+        _report_status("Screen upload", _transport_error_status(exc))
         return False
 
 
@@ -365,9 +440,12 @@ def send_command_result(command_id: int, result: dict) -> bool:
             method="POST"
         )
         with _open_request(req, timeout=10) as resp:
-            return resp.status == 200
+            data = _read_json_response(resp)
+            accepted = resp.status == 200 and data.get("status") == "ok" and data.get("handled") is True
+        _report_status("Command result", "ok" if accepted else "invalid_response")
+        return accepted
     except Exception as exc:
-        logger.warning("Failed sending command #%s result to Sofia (%s): %s", command_id, SOFIA_RESULT_URL, exc)
+        _report_status("Command result", _transport_error_status(exc))
         return False
 
 
@@ -447,9 +525,12 @@ def acknowledge_command(command_id: int) -> bool:
     try:
         with _open_request(req, timeout=3) as resp:
             data = _read_json_response(resp)
-            return resp.status == 200 and data.get("allowed") is True
-    except Exception:
+            accepted = resp.status == 200 and data.get("allowed") is True and data.get("status") == "executing"
+        _report_status("Command acknowledgement", "ok" if accepted else "not_allowed")
+        return accepted
+    except Exception as exc:
         # An unconfirmed acknowledgement never grants permission. Do not retry.
+        _report_status("Command acknowledgement", _transport_error_status(exc))
         return False
 
 
@@ -499,105 +580,171 @@ def execute_desktop_commands(commands: list[dict]) -> None:
                 result = {"status": "denied", "error": str(exc)}
             except Exception:
                 result = {"status": "unknown_outcome", "error": "Desktop operation failed after acknowledgement; do not retry automatically"}
-                logger.exception("Desktop operation failed: %s", cmd["type"])
+                _report_status("Desktop operation", "unknown_outcome")
             send_command_result(command_id, result)
 
 
 # ─── Fast Command Poller Thread (1.5s interval) ───────────────────────
 
-def _fast_command_poll_loop():
-    """High-frequency background thread polling for instant desktop commands."""
-    while True:
-        try:
-            req = urllib.request.Request(
-                SOFIA_POLL_URL,
-                headers={"X-Auth-Token": WEB_AUTH_TOKEN, "User-Agent": "SofiaSidecar/1.0"},
-                method="GET"
-            )
-            with _open_request(req, timeout=5) as resp:
-                if resp.status == 200:
-                    data = _read_json_response(resp)
-                    desktop_policy.set_runtime_paused(data.get("paused") is True)
-                    commands = data.get("commands") or []
-                    if commands:
-                        execute_desktop_commands(commands)
-        except Exception:
-            pass  # Keep polling silently
+def _validate_command_response(data: dict) -> None:
+    if (data.get("status") != "ok" or type(data.get("paused")) is not bool
+            or not isinstance(data.get("commands"), list)):
+        raise ValueError("Invalid command response")
 
+
+def _poll_commands_once() -> bool:
+    try:
+        req = urllib.request.Request(
+            SOFIA_POLL_URL,
+            headers={"X-Auth-Token": WEB_AUTH_TOKEN, "User-Agent": "SofiaSidecar/1.0"},
+            method="GET",
+        )
+        with _open_request(req, timeout=5) as resp:
+            if resp.status != 200:
+                raise ValueError("Unexpected response status")
+            data = _read_json_response(resp)
+        _validate_command_response(data)
+        desktop_policy.set_runtime_paused(data["paused"])
+        _report_status("Command polling", "ok")
+        execute_desktop_commands(data["commands"])
+        return True
+    except Exception as exc:
+        _report_status("Command polling", _transport_error_status(exc))
+        return False
+
+
+def _fast_command_poll_loop():
+    """Poll commands; surface redacted, rate-limited failures and recovery."""
+    while True:
+        _poll_commands_once()
         time.sleep(FAST_POLL_INTERVAL_SECONDS)
 
 
 # ─── Main Presence Loop (15s interval) ────────────────────────────────
 
-def send_presence(app_name: str, window_title: str, idle_min: int) -> bool:
+def send_presence(app_name: str, window_title: str, idle_min: int | None,
+                  detection_status: str = "ok") -> bool:
     if desktop_policy.is_paused():
         return False
     payload = {
         "active_app": app_name,
         "window_title": window_title,
         "idle_minutes": idle_min,
+        "detection_status": detection_status,
     }
     data_bytes = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     req = urllib.request.Request(
         SOFIA_PRESENCE_URL,
         data=data_bytes,
         headers={"X-Auth-Token": WEB_AUTH_TOKEN, "Content-Type": "application/json", "User-Agent": "SofiaSidecar/1.0"},
-        method="POST"
+        method="POST",
     )
     try:
         with _open_request(req, timeout=10) as resp:
-            if resp.status == 200:
-                try:
-                    data = _read_json_response(resp)
-                    desktop_policy.set_runtime_paused(data.get("paused") is True)
-                    commands = data.get("commands") or []
-                    if commands:
-                        execute_desktop_commands(commands)
-                except Exception:
-                    pass
-                return True
+            if resp.status != 200:
+                raise ValueError("Unexpected response status")
+            data = _read_json_response(resp)
+        _validate_command_response(data)
+        if data["paused"]:
+            desktop_policy.set_runtime_paused(True)
+            _report_status("Presence sync", "paused")
+            return False
+        if data.get("synced") is not True:
+            raise ValueError("Presence was not acknowledged")
+        # Only the serial command poller may resume runtime access. A presence
+        # response can predate a newer pause observed by that poller.
+        _report_status("Presence sync", "ok")
+        execute_desktop_commands(data["commands"])
+        return True
     except Exception as exc:
-        logger.warning("Presence sync notice (%s): %s", SOFIA_PRESENCE_URL, exc)
+        _report_status("Presence sync", _transport_error_status(exc))
         return False
-    return False
 
 
-def main():
+def diagnose() -> dict:
+    """Read-only checks: no presence upload, command polling, ACK or overlay.
+
+    Only authenticated GET /api/desktop/status is used. It cannot dequeue work.
+    No local app/title/idle value, server response text or credential is printed.
+    """
+    report = {"configuration": "valid", "local_paused": desktop_policy.is_paused()}
+    try:
+        validate_transport_configuration()
+    except ValueError:
+        report["configuration"] = "missing_token" if not WEB_AUTH_TOKEN.strip() else "invalid_url"
+    if report["local_paused"]:
+        report.update(foreground_detection="skipped_paused", idle_detection="skipped_paused")
+    else:
+        report["foreground_detection"] = "available" if get_active_window_info() is not None else "unavailable"
+        report["idle_detection"] = "available" if get_idle_minutes() is not None else "unavailable"
+    report["transport"] = "not_checked"
+    if report["configuration"] != "valid":
+        return report
+    try:
+        req = urllib.request.Request(
+            SOFIA_STATUS_URL,
+            headers={"X-Auth-Token": WEB_AUTH_TOKEN, "User-Agent": "SofiaSidecar/1.0"},
+            method="GET",
+        )
+        with _open_request(req, timeout=5) as resp:
+            if resp.status != 200:
+                raise ValueError("Unexpected response status")
+            data = _read_json_response(resp)
+        presence = data.get("presence")
+        if (data.get("status") != "ok" or type(data.get("protocol")) is not int or data["protocol"] != 2
+                or type(data.get("paused")) is not bool or type(data.get("ready")) is not bool
+                or not isinstance(presence, dict)
+                or presence.get("state") not in {"fresh", "stale", "missing", "unavailable", "invalid", "paused", "error"}
+                or (presence.get("age_seconds") is not None
+                    and (type(presence["age_seconds"]) is not int or presence["age_seconds"] < 0))):
+            raise ValueError("Invalid diagnostic response")
+        report.update(transport="ok", server_paused=data["paused"], server_ready=data["ready"],
+                      presence_state=presence["state"], presence_age_seconds=presence.get("age_seconds"))
+    except Exception as exc:
+        report["transport"] = _transport_error_status(exc)
+    return report
+
+
+def _sync_presence_once() -> bool:
+    if desktop_policy.is_paused():
+        return False
+    foreground = get_active_window_info()
+    idle_min = get_idle_minutes()
+    if foreground is None:
+        return send_presence("", "", idle_min, detection_status="unavailable")
+    return send_presence(*foreground, idle_min, detection_status="ok")
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--diagnose", action="store_true", help="Run status-only read-only checks and exit")
+    args = parser.parse_args(argv)
+    if args.diagnose:
+        report = diagnose()
+        print(json.dumps(report, sort_keys=True))
+        return 0 if (report["transport"] == "ok" and report.get("server_ready") is True
+                     and report["foreground_detection"] != "unavailable"
+                     and report["idle_detection"] != "unavailable") else 1
+
+    logging.basicConfig(
+        filename=LOG_FILE, level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s", datefmt="%H:%M:%S", encoding="utf-8",
+    )
+    from app.safe_logging import install_log_redaction
+    install_log_redaction({"WEB_AUTH_TOKEN": WEB_AUTH_TOKEN, "OVERLAY_TOKEN": OVERLAY_TOKEN})
     validate_transport_configuration()
     logger.info("Sofia Desktop Presence & High-Speed Shared Desktop Sidecar started")
-    logger.info("Syncing with: %s", SOFIA_PRESENCE_URL)
     ensure_overlay_running()
-
-    # Start dedicated high-speed command poller thread
     poll_thread = threading.Thread(target=_fast_command_poll_loop, daemon=True)
     poll_thread.start()
 
-    last_sent_app = ""
-    last_sent_title = ""
-
     while True:
         try:
-            if desktop_policy.is_paused():
-                time.sleep(PRESENCE_SYNC_SECONDS)
-                continue
-            app_name, title = get_active_window_info()
-            idle_min = get_idle_minutes()
-
-            if app_name != last_sent_app or title != last_sent_title or idle_min > 5:
-                logger.info("Presence changed; idle=%s min", idle_min)
-                success = send_presence(app_name, title, idle_min)
-                if success:
-                    last_sent_app = app_name
-                    last_sent_title = title
-            else:
-                send_presence(app_name, title, idle_min)
-
-        except Exception as e:
-            logger.error("Presence loop error: %s", e)
-
+            _sync_presence_once()
+        except Exception:
+            _report_status("Presence loop", "error")
         time.sleep(PRESENCE_SYNC_SECONDS)
 
 
 if __name__ == "__main__":
-    main()
-
+    sys.exit(main())
