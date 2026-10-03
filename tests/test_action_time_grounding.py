@@ -16,6 +16,7 @@ from app import (
     llm,
     memory,
     parser,
+    scheduler,
     tasks,
     timer_requests,
     timeutil,
@@ -70,6 +71,54 @@ class TestActionClaims(unittest.TestCase):
                 self.assertEqual(guard.guard_generated_reply(text), text)
 
 
+class TestConversationalTimerClaims(unittest.TestCase):
+    INCIDENT_REPLY = (
+        "I can’t set timers directly through chat unless you use the explicit command like `/add`, "
+        "but I’m keeping track right here with you.\nTwo minutes starting now. "
+        "Take a deep breath, and paste that assignment text whenever you’re ready."
+    )
+
+    def test_exact_live_reply_cannot_simulate_a_countdown(self):
+        for user_text in ("", "ok , set a timer for 2 minutes"):
+            self.assertTrue(guard.unsupported_action_claim(self.INCIDENT_REPLY, user_text=user_text))
+            result = guard.guard_generated_reply(self.INCIDENT_REPLY, user_text=user_text)
+            self.assertEqual(result, guard.UNVERIFIED_ACTION_REPLY)
+            self.assertNotIn("keeping track", result)
+            self.assertNotIn("starting now", result)
+
+    def test_implicit_countdowns_and_tracking_are_not_receipts(self):
+        for text in ("Two minutes starting now.", "2 minutes begins now.", "Your countdown starts now.",
+                     "I'm keeping track right here with you.", "I'll let you know when it's time.",
+                     "Starting now."):
+            with self.subTest(text=text):
+                self.assertTrue(guard.unsupported_action_claim(text, user_text="ok, set a timer for 2 minutes"))
+
+    def test_timer_explanations_are_not_countdown_promises(self):
+        for text in ("I'll tell you how a timer works: it compares the current time to a saved deadline.",
+                     "I'm keeping track of the examples in this answer.", "I'll let you know how this timer code works."):
+            self.assertEqual(guard.guard_generated_reply(text, user_text="Can you show timer code examples?"), text)
+
+    def test_capability_denial_is_corrected_separately_from_action_claims(self):
+        denial = "I can't set timers directly through chat; you need /add."
+        self.assertFalse(guard.unsupported_action_claim(denial))
+        self.assertEqual(guard.guard_generated_reply(denial), timer_requests.TIMER_CAPABILITY)
+        self.assertEqual(guard.guard_generated_reply(denial, background=True), "PASS")
+        quote = 'The old reply said "I cannot set timers directly through chat"; that was inaccurate.'
+        self.assertEqual(guard.guard_generated_reply(quote), quote)
+
+    def test_discussion_quotation_and_conditional_offers_survive(self):
+        for text in ('The log says "Two minutes starting now"; that did not create a timer.',
+                     "```Two minutes starting now.```", "If you ask, I'll let you know when it's time.",
+                     "I'm keeping track of the examples in this answer.", "Take two minutes to read this.",
+                     "I am not keeping track of time.",
+                     "I can't set a timer for 30 seconds; only whole minutes or hours are supported.",
+                     "If I cannot set a timer, I will explain why.", "I can't set timers on your phone.",
+                     "I can't set timers right now because the database is unavailable.",
+                     "The old reply said ‘Two minutes starting now’; that is not a receipt."):
+            with self.subTest(text=text):
+                self.assertEqual(guard.guard_generated_reply(text), text)
+
+
 class TestClockGrounding(unittest.IsolatedAsyncioTestCase):
     async def test_direct_clock_ignores_old_history_without_model_call(self):
         now = dt.datetime(2026, 10, 3, 16, 35, tzinfo=dt.timezone.utc)
@@ -100,6 +149,15 @@ class TestClockGrounding(unittest.IsolatedAsyncioTestCase):
         self.assertIn("16:35:00Z", chat.await_args_list[0].args[0])
         self.assertIn("16:42:00Z", chat.await_args_list[1].args[0])
         self.assertNotIn("16:35:00Z", chat.await_args_list[1].args[0])
+
+    async def test_generation_policy_explains_supported_chat_timer_capability(self):
+        with patch.object(config, "ENABLE_SPECIALISTS", False), \
+             patch.object(llm, "chat", AsyncMock(return_value=("I can't set timers directly through chat.", []))) as chat:
+            result = await pipeline._generate("policy", [], "What about a timer for my break?")
+        self.assertEqual(result, timer_requests.TIMER_CAPABILITY)
+        self.assertIn("Explicit chat timer requests are supported", chat.await_args.args[0])
+        self.assertIn("minutes starting now", chat.await_args.args[0])
+        self.assertEqual(chat.await_count, 1)
 
     async def test_guard_covers_default_specialist_refinement_and_exhaustion(self):
         with patch.object(config, "ENABLE_SPECIALISTS", False), \
@@ -151,6 +209,72 @@ class TestTimerRecords(unittest.IsolatedAsyncioTestCase):
                                  message=SimpleNamespace(text=text, reply_text=AsyncMock()))
         await bot_handlers.handle_message(update, self.ctx)
         return "".join(call.args[0] for call in update.message.reply_text.await_args_list)
+
+    async def test_exact_conversational_request_saves_confirms_and_delivers(self):
+        self.chat.return_value = TestConversationalTimerClaims.INCIDENT_REPLY
+        response = await self.say("ok , set a timer for 2 minutes")
+        row, = await db.fetch_all("SELECT * FROM tasks")
+        self.assertEqual((row["kind"], row["due_time"]), ("timer", "2026-10-03T16:37:00Z"))
+        self.assertIn(f"Saved timer #{row['id']}", response)
+        self.assertNotIn("keeping track", response)
+        self.chat.assert_not_awaited()
+        sched = await scheduler.create_scheduler()
+        job = next(job for job in sched.get_jobs() if job.func is tasks.poll_due_tasks)
+        self.assertEqual(job.trigger.interval.total_seconds(), 30)
+        bot = SimpleNamespace(send_message=AsyncMock(), send_chat_action=AsyncMock())
+        with patch("app.bot_globals._bot_instance", bot):
+            await job.func()
+            bot.send_message.assert_not_awaited()
+            self.now += dt.timedelta(minutes=2)
+            await job.func()
+            await job.func()
+            self.now += dt.timedelta(minutes=31)
+            await job.func()
+        bot.send_message.assert_awaited_once_with(chat_id=42, text=f"Timer #{row['id']} finished: 2-minute timer")
+        done = await db.fetch_one("SELECT * FROM tasks WHERE id = ?", (row["id"],))
+        claim, = await db.fetch_all("SELECT * FROM delivery_claims")
+        self.assertEqual((done["status"], done["reminder_sent_count"], claim["status"], claim["attempts"]), ("done", 1, "sent", 1))
+        self.assertEqual(len(await db.fetch_all("SELECT * FROM job_runs")), 1)
+        self.assertIn("alert delivery acknowledged; finished", await timer_requests.timer_status())
+
+    async def test_conversational_envelopes_compose_without_searching_embedded_commands(self):
+        requests = (
+            "okay, set a timer for 2 minutes", "OK! Start a timer for 2 minutes.",
+            "Yeah — please set a 2-minute timer", "Hey, Sofia, sure; could you please, set a timer for 2 minutes?",
+            "All right. Also, set a timer for 2 minutes, thanks!", "ok，set a timer for ２ minutes",
+            "sure,\nplease set a timer for 2 minutes", "Actually: would you, please, start a 2 minute timer?",
+        )
+        for text in requests:
+            with self.subTest(text=text):
+                response = await self.say(text)
+                self.assertIn("Saved timer #", response)
+        rows = await db.fetch_all("SELECT * FROM tasks")
+        self.assertEqual(len(rows), len(requests))
+        self.assertTrue(all(row["due_time"] == "2026-10-03T16:37:00Z" for row in rows))
+        self.chat.assert_not_awaited()
+
+    async def test_envelope_never_turns_quotes_negation_or_hypotheticals_into_permission(self):
+        for text in ('"ok , set a timer for 2 minutes"', "Okay, 'set a timer for 2 minutes'",
+                     "okay, don't set a timer for 2 minutes", "sure, do not set a timer for 2 minutes",
+                     "okay, if I say set a timer for 2 minutes, what happens?", "okay, maybe set a timer for 2 minutes",
+                     "okay, can you explain set a timer for 2 minutes", "okay, he said: set a timer for 2 minutes",
+                     "OK, here's a log:\nset a timer for 2 minutes", "okay, pretend to set a timer for 2 minutes",
+                     "okay, set a timer for 2 minutes if I later say yes"):
+            with self.subTest(text=text):
+                await self.say(text)
+                self.assertEqual(await db.fetch_all("SELECT * FROM tasks"), [])
+
+    async def test_timer_capability_has_truthful_no_model_answer(self):
+        for text in ("Can you set timers?", "okay, can you set timers directly through chat?", "Sofia, could you start a timer?"):
+            self.assertEqual(await self.say(text), timer_requests.TIMER_CAPABILITY)
+        self.assertEqual(await db.fetch_all("SELECT * FROM tasks"), [])
+        self.chat.assert_not_awaited()
+
+    async def test_timer_fallback_cannot_simulate_unsupported_wording(self):
+        self.chat.return_value = TestConversationalTimerClaims.INCIDENT_REPLY
+        response = await self.say("What about a timer for my break?")
+        self.assertEqual(response, guard.UNVERIFIED_ACTION_REPLY)
+        self.assertEqual(await db.fetch_all("SELECT * FROM tasks"), [])
 
     async def test_explicit_variants_create_verified_distinct_timer_rows(self):
         for text in ("set a 20 minute timer", "set 20min timer", "start a timer for 20 minutes", "timer 20min", "Sofia, could you please set a twenty-minute timer?"):

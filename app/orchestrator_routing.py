@@ -20,6 +20,8 @@ async def reply(
     if timeutil.direct_clock_question(user_text):
         return timeutil.clock_answer()
     from . import timer_requests
+    if timer_requests.direct_timer_capability(user_text):
+        return timer_requests.TIMER_CAPABILITY
     if timer_requests.direct_timer_status(user_text):
         return await timer_requests.timer_status(user_text)
     # ── Consciousness: handle sleep-wake ──

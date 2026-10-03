@@ -2,11 +2,32 @@
 import datetime as dt
 import math
 import re
+import unicodedata
 from dataclasses import dataclass
 
 from . import db, parser, tasks, timeutil
 
-_PREFIX = r"^\s*(?:(?:hey|hi)[,\s]+)?(?:sofia[,\s:]+)?(?:please\s+)?(?:(?:can|could|would|will)\s+you\s+(?:please\s+)?)?"
+# A small command-envelope grammar, not a search for an embedded imperative.
+# Consume only recognized conversational particles at the start. Unknown prose,
+# quotations, negations and hypothetical/reporting frames remain untouched.
+_SEPARATOR = r"[\s,;:!.?—–-]+"
+_LEAD_IN = re.compile(
+    r"^(?:ok(?:ay)?|yes|yeah|yep|sure|alright|all right|right|well|actually|great|"
+    r"thanks|thank you|hey|hi|hello|sofia|please|also|hmm)\b" + _SEPARATOR,
+    re.IGNORECASE,
+)
+_TRAILING_COURTESY = re.compile(r"(?:[,;.!?]\s*|\s+)(?:please|thanks|thank you)\s*[.!?]*$", re.IGNORECASE)
+_PREFIX = rf"^\s*(?:(?:can|could|would|will)\s+you{_SEPARATOR})?(?:(?:please|also){_SEPARATOR})*"
+
+
+def normalize_timer_request(text: str) -> str:
+    """Normalize an explicitly allowed envelope without extracting quoted text."""
+    value = unicodedata.normalize("NFKC", text).strip()
+    while match := _LEAD_IN.match(value):
+        value = value[match.end():].lstrip()
+    return _TRAILING_COURTESY.sub("", value).strip()
+
+
 _DURATION = rf"(?P<amount>{parser.NUMBER_PATTERN})[\s-]*(?P<unit>{parser.UNIT_PATTERN})"
 _CREATE = re.compile(
     _PREFIX + rf"(?:(?:set|start)\s+(?:a\s+)?{_DURATION}\s+timer|"
@@ -22,6 +43,20 @@ _STATUS = re.compile(
     r"(?:my )?timer status)(?:\s*#?(?P<id>\d+))?\s*[.!?]*$", re.IGNORECASE,
 )
 _CONTROL = re.compile(_PREFIX + r"(?:cancel|stop|snooze|restart|pause)\s+(?:my|the|a)?\s*(?:break )?timer\b", re.IGNORECASE)
+
+TIMER_CAPABILITY = (
+    "I can save timers from chat. Try ‘set a timer for 2 minutes’ and look for a ‘Saved timer #…’ confirmation. "
+    "A suggestion or a chat promise alone doesn't start one."
+)
+_CAPABILITY = re.compile(
+    r"^(?:can|could)\s+you\s+(?:please\s+)?(?:set|start|create)\s+(?:a\s+)?timers?"
+    r"(?:\s+(?:directly\s+)?(?:in|through|via)\s+(?:this\s+)?chat)?\s*[.!?]*$", re.IGNORECASE,
+)
+
+
+def direct_timer_capability(text: str) -> bool:
+    return bool(_CAPABILITY.fullmatch(normalize_timer_request(text)))
+
 
 TIMER_HELP = "I haven't set a timer. Try ‘set a timer for 20 minutes’ (whole minutes or hours, up to 7 days). For timer changes, use /tasks, /cancel <id>, or /snooze <id> <minutes>."
 POLL_NOTE = "Delivery is checked about every 30 seconds while Sofia is online; this isn't an exact-second alarm."
@@ -43,11 +78,12 @@ class TimerReceipt:
 
 
 def direct_timer_request(text: str) -> bool:
+    text = normalize_timer_request(text)
     return bool(_CREATE.fullmatch(text) or _ATTEMPT.match(text))
 
 
 def parse_timer(text: str) -> tuple[str, str] | None:
-    match = _CREATE.fullmatch(text)
+    match = _CREATE.fullmatch(normalize_timer_request(text))
     if not match:
         return None
     raw = match.group("duration") or match.group("short")
@@ -78,15 +114,15 @@ async def save_timer(text: str) -> str:
 
 
 def direct_timer_status(text: str) -> bool:
-    return bool(_STATUS.fullmatch(text.replace("’", "'")))
+    return bool(_STATUS.fullmatch(normalize_timer_request(text).replace("’", "'")))
 
 
 def direct_timer_control(text: str) -> bool:
-    return bool(_CONTROL.match(text))
+    return bool(_CONTROL.match(normalize_timer_request(text)))
 
 
 async def timer_status(text: str = "") -> str:
-    match = _STATUS.fullmatch(text.replace("’", "'"))
+    match = _STATUS.fullmatch(normalize_timer_request(text).replace("’", "'"))
     task_id = int(match.group("id")) if match and match.group("id") else None
     try:
         rows = await db.fetch_all(
