@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from app import bot_core, triggers
+from app import triggers
 
 
 class TestTriggersUpdate(unittest.IsolatedAsyncioTestCase):

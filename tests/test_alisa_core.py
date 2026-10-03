@@ -9,7 +9,17 @@ os.environ["TIMEZONE"] = "Asia/Kolkata"
 os.environ["BOT_TOKEN"] = "test_token"
 os.environ["ALLOWED_TELEGRAM_USER_ID"] = "12345"
 
-from app import config, db, diary, llm, memory, orchestrator_routing, orchestrator_moa, parser, tasks, timeutil
+from app import (
+    config,
+    db,
+    diary,
+    llm,
+    memory,
+    orchestrator_routing,
+    parser,
+    tasks,
+    timeutil,
+)
 
 
 class TestAlisaCore(unittest.IsolatedAsyncioTestCase):

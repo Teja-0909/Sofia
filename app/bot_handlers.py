@@ -6,7 +6,15 @@ from telegram.ext import (
     ContextTypes,
 )
 
-from . import db, memory, orchestrator_routing, orchestrator_globals, parser, tasks, timeutil
+from . import (
+    db,
+    memory,
+    orchestrator_globals,
+    orchestrator_routing,
+    parser,
+    tasks,
+    timeutil,
+)
 from .bot_core import _allowed, _log_message
 from .bot_globals import (
     AUDIO_EXTENSIONS,

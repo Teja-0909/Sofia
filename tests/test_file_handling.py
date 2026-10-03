@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from app import bot, bot_handlers, config, orchestrator_moa
+from app import bot_handlers, config
 
 
 class TestFileHandling(unittest.IsolatedAsyncioTestCase):

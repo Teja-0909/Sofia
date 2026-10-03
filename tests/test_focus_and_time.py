@@ -8,7 +8,15 @@ import tempfile
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from app import bot, bot_commands, config, db, orchestrator_routing, orchestrator_context, parser, tasks, timeutil
+from app import (
+    bot_commands,
+    config,
+    db,
+    orchestrator_context,
+    parser,
+    tasks,
+    timeutil,
+)
 
 
 class TestExecutiveTimeAndFocus(unittest.IsolatedAsyncioTestCase):
