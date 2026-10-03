@@ -1,16 +1,16 @@
-from .bot_globals import logger, _bot_instance, MAX_TELEGRAM_FILE_SIZE, TEXT_EXTENSIONS, IMAGE_EXTENSIONS, AUDIO_EXTENSIONS, PDF_EXTENSIONS
 import asyncio
-import logging
+
 from telegram import Update
 from telegram.constants import ChatAction
 from telegram.ext import (
     Application,
     CommandHandler,
-    ContextTypes,
     MessageHandler,
     filters,
 )
-from . import config, db, memory, orchestrator, parser, tasks, timeutil, triggers
+
+from . import config, db
+from .bot_globals import _bot_instance, logger
 
 
 def get_bot():
@@ -54,8 +54,34 @@ def _allowed(update: Update) -> bool:
 
 
 def build_application() -> Application:
-    from .bot_commands import cmd_start, cmd_help, cmd_traces, cmd_tasks, cmd_add, cmd_done, cmd_win, cmd_focus, cmd_search, cmd_read, cmd_image, cmd_memory, cmd_depth, cmd_mood, cmd_status, cmd_sleep, cmd_thoughts, cmd_screen, cmd_watch, cmd_overlay
-    from .bot_handlers import handle_message, handle_photo, handle_document, handle_voice_or_audio
+    from .bot_commands import (
+        cmd_add,
+        cmd_depth,
+        cmd_done,
+        cmd_focus,
+        cmd_help,
+        cmd_image,
+        cmd_memory,
+        cmd_mood,
+        cmd_overlay,
+        cmd_read,
+        cmd_screen,
+        cmd_search,
+        cmd_sleep,
+        cmd_start,
+        cmd_status,
+        cmd_tasks,
+        cmd_thoughts,
+        cmd_traces,
+        cmd_watch,
+        cmd_win,
+    )
+    from .bot_handlers import (
+        handle_document,
+        handle_message,
+        handle_photo,
+        handle_voice_or_audio,
+    )
     app = (
         Application.builder()
         .token(config.BOT_TOKEN)

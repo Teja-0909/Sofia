@@ -10,7 +10,7 @@ import datetime as dt
 import logging
 import random
 
-from . import config, db, llm, timeutil
+from . import db, llm, timeutil
 
 logger = logging.getLogger(__name__)
 
@@ -741,7 +741,8 @@ async def find_relevant_thoughts_and_dreams(context_text: str, top_k: int = 2, q
             score = _cosine_similarity(context_vector, vec)
             if score > 0.55:  # Relevance threshold
                 results.append(("thought", score, t["thought"], t["created_at"]))
-        except Exception:
+        except Exception as e:
+            logger.debug("Error computing similarity for thought/dream: %s", e)
             continue
 
     # Search dreams
@@ -755,7 +756,8 @@ async def find_relevant_thoughts_and_dreams(context_text: str, top_k: int = 2, q
             score = _cosine_similarity(context_vector, vec)
             if score > 0.55:  # Slightly lower threshold for dreams (more abstract)
                 results.append(("dream", score, d["dream_text"], d["sleep_date"]))
-        except Exception:
+        except Exception as e:
+            logger.debug("Error computing similarity for thought/dream: %s", e)
             continue
 
     if not results:

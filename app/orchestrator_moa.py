@@ -1,15 +1,17 @@
-from .orchestrator_globals import logger, _CHARS_PER_TOKEN, _MAX_CONTEXT_TOKENS, FALLBACK_MESSAGE, TRACES_MODE, TOOLS, LAZY_CODE_PATTERNS, _tool_lock
-from .orchestrator_context import _clean_asterisks, _estimate_tokens
 import asyncio
-import datetime as dt
 import json
-import logging
-import math
-import pathlib
-import re
-from . import config, consciousness, db, llm, memory_file, moods, timeutil
+
+from . import llm
 from . import search as search_module
 from . import tasks as tasks_module
+from .orchestrator_context import _clean_asterisks
+from .orchestrator_globals import (
+    LAZY_CODE_PATTERNS,
+    TOOLS,
+    TRACES_MODE,
+    _tool_lock,
+    logger,
+)
 
 
 async def _verify_and_refine_draft(

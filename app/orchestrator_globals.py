@@ -1,16 +1,6 @@
 import asyncio
-import datetime as dt
-import math
-import pathlib
-import re
-import json
 import logging
-from . import config, db, llm, memory_file, moods, timeutil
-from . import consciousness
-from . import parser
-from . import search as search_module
-from . import tasks as tasks_module
-
+import re
 
 logger = logging.getLogger(__name__)
 _CHARS_PER_TOKEN = 4

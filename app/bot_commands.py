@@ -1,18 +1,16 @@
-from .bot_handlers import *
-from .bot_globals import logger, _bot_instance, MAX_TELEGRAM_FILE_SIZE, TEXT_EXTENSIONS, IMAGE_EXTENSIONS, AUDIO_EXTENSIONS, PDF_EXTENSIONS
-from .bot_core import get_bot, send_text, _log_message, _allowed, build_application
-import asyncio
-import logging
+
 from telegram import Update
 from telegram.constants import ChatAction
 from telegram.ext import (
-    Application,
-    CommandHandler,
     ContextTypes,
-    MessageHandler,
-    filters,
 )
-from . import config, db, memory, orchestrator, parser, tasks, timeutil, triggers
+
+from . import db, orchestrator, parser, tasks, timeutil, triggers
+from .bot_core import _allowed, _log_message
+from .bot_globals import (
+    logger,
+)
+from .bot_handlers import *
 
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

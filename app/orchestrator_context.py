@@ -1,14 +1,13 @@
-from .orchestrator_globals import logger, _CHARS_PER_TOKEN, _MAX_CONTEXT_TOKENS, FALLBACK_MESSAGE, TRACES_MODE, TOOLS, LAZY_CODE_PATTERNS, _tool_lock
 import asyncio
 import datetime as dt
 import json
-import logging
 import math
 import pathlib
 import re
+
 from . import config, consciousness, db, llm, memory_file, moods, timeutil
-from . import search as search_module
 from . import tasks as tasks_module
+from .orchestrator_globals import _CHARS_PER_TOKEN, _MAX_CONTEXT_TOKENS, logger
 
 
 def _clean_asterisks(text: str) -> str:

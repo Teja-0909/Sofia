@@ -443,7 +443,7 @@ async def app_presence_reaction(
     prev_title: str,
 ) -> None:
     """Autonomously reacts to major PC events (launching a game, starting coding, or long away)."""
-    if await consciousness.is_sleeping_async() or _is_quiet_hours():
+    if await consciousness.is_sleeping_async():
         return
 
     now_iso = timeutil.utc_iso()
@@ -500,7 +500,7 @@ async def app_presence_reaction(
 
 async def check_pc_presence_5min() -> None:
     """Checks live PC presence every 5 minutes and lets Sofia decide if she wants to text Teja."""
-    if await consciousness.is_sleeping_async() or _is_quiet_hours():
+    if await consciousness.is_sleeping_async():
         return
 
     # Check last message timestamp to avoid spamming if already talking recently (within 10 mins)

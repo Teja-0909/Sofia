@@ -1,18 +1,26 @@
-from .bot_globals import logger, _bot_instance, MAX_TELEGRAM_FILE_SIZE, TEXT_EXTENSIONS, IMAGE_EXTENSIONS, AUDIO_EXTENSIONS, PDF_EXTENSIONS
-from .bot_core import get_bot, send_text, _log_message, _allowed, build_application
 import asyncio
-import logging
+
 from telegram import Update
 from telegram.constants import ChatAction
 from telegram.ext import (
-    Application,
-    CommandHandler,
     ContextTypes,
-    MessageHandler,
-    filters,
 )
-from . import config, db, memory, orchestrator, parser, tasks, timeutil, triggers
 
+from . import db, memory, orchestrator, parser, tasks, timeutil
+from .bot_core import _allowed, _log_message
+from .bot_globals import (
+    AUDIO_EXTENSIONS,
+    IMAGE_EXTENSIONS,
+    MAX_TELEGRAM_FILE_SIZE,
+    PDF_EXTENSIONS,
+    TEXT_EXTENSIONS,
+    logger,
+)
+
+
+class ImageGenerationError(Exception):
+    """Raised when image generation fails."""
+    pass
 
 async def _handle_image_generation(update: Update, context: ContextTypes.DEFAULT_TYPE, user_text: str) -> None:
     from . import images, moods, timeutil
@@ -26,7 +34,7 @@ async def _handle_image_generation(update: Update, context: ContextTypes.DEFAULT
         if img_bytes:
             if img_bytes.startswith(b"DEBUG_ERROR:"):
                 await update.message.reply_text(f"[DEBUG: Image API failed: {img_bytes.decode()}]")
-                raise Exception("DEBUG API FAILURE")
+                raise ImageGenerationError("DEBUG API FAILURE")
             caption = await images.craft_image_caption(user_text, visual_prompt)
             await _log_message("sofia", f"[Generated Image: '{visual_prompt}'] {caption}")
             await update.message.reply_photo(photo=img_bytes, caption=caption)
