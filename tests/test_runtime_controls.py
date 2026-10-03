@@ -71,6 +71,7 @@ class TestRuntimeLifecycle(unittest.IsolatedAsyncioTestCase):
              patch.object(diary, 'recalculate_relationship_depth', AsyncMock()), \
              patch.object(memory, 'backfill_empty_embeddings', AsyncMock()), \
              patch.object(memory_file, 'get_memory_md', AsyncMock()), \
+             patch.object(memory_file, 'ensure_legacy_migrated', AsyncMock(), create=True), \
              patch.object(run.bot, 'build_application', return_value=app), \
              patch.object(run.scheduler, 'create_scheduler', AsyncMock(return_value=sched)), \
              patch.object(triggers, 'check_for_updates', AsyncMock()), \
@@ -157,6 +158,36 @@ class TestExplicitControls(unittest.IsolatedAsyncioTestCase):
             await bot_commands.cmd_correct(update, SimpleNamespace(args=['3', 'works', 'at', 'Newco']))
         correction.assert_awaited_once_with(3, 'works at Newco')
         self.assertIn('#3 to #4', update.message.reply_text.call_args.args[0])
+
+    async def test_memory_sync_finishes_before_active_ids_are_read(self):
+        from app import memory_file
+        update = self.make_update()
+        events = []
+
+        async def synchronize():
+            events.append('sync')
+            return '# Memory\n- Current fact'
+
+        async def active_rows(*args):
+            events.append('rows')
+            return [{'id': 4, 'content': 'Current fact'}]
+
+        with patch.object(config, 'ALLOWED_USER_ID', 42), \
+             patch.object(memory_file, 'get_memory_md', AsyncMock(side_effect=synchronize)), \
+             patch.object(db, 'fetch_all', AsyncMock(side_effect=active_rows)):
+            await bot_commands.cmd_memory(update, SimpleNamespace(args=[]))
+        self.assertEqual(events, ['sync', 'rows'])
+        self.assertIn('#4: Current fact', update.message.reply_text.call_args.args[0])
+
+    async def test_memory_sync_conflict_is_reported_without_stale_facts(self):
+        from app import memory_file
+        update = self.make_update()
+        with patch.object(config, 'ALLOWED_USER_ID', 42), \
+             patch.object(memory_file, 'get_memory_md', AsyncMock(side_effect=ValueError('Edit conflict; source was kept'))), \
+             patch.object(db, 'fetch_all', AsyncMock()) as rows:
+            await bot_commands.cmd_memory(update, SimpleNamespace(args=[]))
+        rows.assert_not_awaited()
+        self.assertIn('source was kept', update.message.reply_text.call_args.args[0])
 
     async def test_model_tags_cannot_mutate_or_upload(self):
         from app import images, memory_file

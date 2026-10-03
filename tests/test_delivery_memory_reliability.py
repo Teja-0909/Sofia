@@ -192,15 +192,16 @@ class TestMemoryReliability(TemporaryDatabase):
     async def test_forget_suppresses_notebook_cache_disk_and_recuration(self):
         first = await memory.add_memory("evolving_fact", "Teja works in London", "said so")
         await memory.add_memory("evolving_fact", "Teja likes coffee", "said so")
-        await memory_file.save_memory_md("# Memory\n- His workplace is London\n- Teja likes coffee")
+        await db.set_config("memory_md_content", "# Memory\n- Teja works in London\n- Teja likes coffee")
         self.assertIsNotNone(await memory.forget_memory(first))
         notebook = await memory_file.get_memory_md()
         self.assertNotIn("London", notebook)
         self.assertIn("coffee", notebook)
         self.assertNotIn("London", memory_file.MEMORY_FILE_PATH.read_text())
         memory_file.invalidate_cache()
-        # Stale external write/other-process cache must not resurrect the fact.
-        await db.set_config("memory_md_content", "# Memory\n- His workplace is London")
+        # Exact suppressed content stays blocked even when pasted into the
+        # editable notebook. Semantic paraphrase erasure is not claimed.
+        await db.set_config("memory_md_content", "# Memory\n- Teja works in London\n- Teja likes coffee")
         self.assertNotIn("London", await memory_file.get_memory_md())
         self.assertEqual(await memory.add_memory("evolving_fact", "Teja works in London", "old transcript"), 0)
         await memory_file.update_memory_with_new_info("Teja works in London")
@@ -232,14 +233,17 @@ class TestMemoryReliability(TemporaryDatabase):
             self.assertEqual(await pending, 0)
 
     async def test_notebook_does_not_return_uncommitted_cache_on_write_failure(self):
-        await memory_file.save_memory_md("# Memory\n- Original")
+        await db.set_config("memory_md_content", "# Memory\n- Original")
+        await memory_file.get_memory_md()
         before = memory_file._CACHED_MEMORY_MD
-        with patch.object(db, "set_config", AsyncMock(side_effect=RuntimeError("database unavailable"))), self.assertRaises(RuntimeError):
+        with patch.object(db, "execute_batch", AsyncMock(side_effect=RuntimeError("database unavailable"))), self.assertRaises(RuntimeError):
             await memory_file.save_memory_md("# Memory\n- Uncommitted")
         self.assertEqual(memory_file._CACHED_MEMORY_MD, before)
         self.assertNotIn("Uncommitted", memory_file.MEMORY_FILE_PATH.read_text())
 
     async def test_empty_notebook_never_resurrects_disk_default(self):
+        # After initial migration, disk is a derived copy, never a fallback.
+        await memory_file.get_memory_md()
         memory_file.MEMORY_FILE_PATH.write_text("# Old Memory\n- This is a stale disk fact")
         self.assertNotIn("stale", await memory_file.get_memory_md())
 

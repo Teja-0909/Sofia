@@ -153,6 +153,29 @@ class TestGeneration(unittest.IsolatedAsyncioTestCase):
                 result = await context._build_system_prompt()
         self.assertIn('TASK_CONTEXT_MARKER', result)
 
+    async def test_history_is_filtered_after_notebook_reconciliation(self):
+        events = []
+
+        async def build(*args):
+            events.append('notebook')
+            return 'current notebook'
+
+        async def history(*args):
+            events.append('history')
+            return []
+
+        with patch.object(routing.consciousness, 'handle_incoming_while_sleeping', AsyncMock(return_value=None)), \
+             patch.object(routing.consciousness, 'get_current_state_name', AsyncMock(return_value='FOCUSED')), \
+             patch.object(routing.db, 'get_config', AsyncMock(return_value='5')), \
+             patch.object(routing, '_history', AsyncMock(side_effect=history)), \
+             patch.object(routing, '_build_system_prompt', AsyncMock(side_effect=build)), \
+             patch.object(search, 'extract_url', return_value=None), \
+             patch.object(search, 'extract_search_query', return_value=None), \
+             patch.object(routing, '_generate', AsyncMock(return_value='response')):
+            await routing.reply('hello')
+            await routing.proactive('event')
+        self.assertEqual(events, ['notebook', 'history', 'notebook', 'history'])
+
 
 class TestPublicFetch(unittest.IsolatedAsyncioTestCase):
     async def test_rejects_private_and_mixed_dns_addresses(self):
