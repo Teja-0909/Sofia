@@ -404,12 +404,11 @@ async def wake_up_reaction(hours_offline: float) -> None:
         event = f"Teja just returned to his PC at {local_now.strftime('%I:%M %p')} after being away for {hours_offline:.1f} hours. Welcome him back."
         
     try:
-        from . import orchestrator_routing
+        from . import images, orchestrator_routing
         reply_text = await orchestrator_routing.proactive(f"[Internal event: {event}]")
         clean_text, embedded_image_desc = images.extract_embedded_image_tag(reply_text)
         
         from . import bot_core as bot_module
-        from . import images
         bot_instance = bot_module.get_bot()
         if bot_instance and clean_text:
             await bot_module._log_message("sofia", reply_text, "proactive")
