@@ -30,6 +30,25 @@ class SQLiteTursoFixture:
         return result
 
 
+    async def batch(self, statements):
+        # Preserve the real transactional migration contract; a fixture must not
+        # commit each statement in a batch independently.
+        self.connection.execute("BEGIN")
+        results = []
+        try:
+            for sql, params in statements:
+                cursor = self.connection.execute(sql, params)
+                results.append(SimpleNamespace(
+                    columns=[item[0] for item in cursor.description] if cursor.description else [],
+                    rows=cursor.fetchall(),
+                ))
+            self.connection.commit()
+            return results
+        except BaseException:
+            self.connection.rollback()
+            raise
+
+
 class TestSchemaReadiness(unittest.IsolatedAsyncioTestCase):
     async def test_local_upgrade_is_additive_and_idempotent(self):
         with tempfile.TemporaryDirectory() as directory:
