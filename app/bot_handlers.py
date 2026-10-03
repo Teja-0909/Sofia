@@ -29,6 +29,53 @@ class ImageGenerationError(Exception):
     """Raised when image generation fails."""
     pass
 
+
+REMINDER_FAILURE = (
+    "I couldn't confirm that reminder was saved. Check /tasks before retrying. Please include what to do and a valid future time, "
+    "for example /add 22:13 drink water or /add drink water in 2 minutes. "
+    "For recurring reminders, daily is supported."
+)
+
+
+async def _save_requested_reminder(text: str) -> str:
+    """Only confirm persisted state, never a model's promise or parsed proposal."""
+    intent = await parser.parse(text)
+    if not intent.get("description") or not intent.get("due_utc"):
+        raise ValueError("Reminder needs a description and time")
+    if timeutil.parse_utc_iso(intent["due_utc"]) <= timeutil.utc_now():
+        raise ValueError("Reminder time must be in the future")
+    recurrence = intent.get("is_recurring")
+    if recurrence:
+        task_id = await tasks.create_task(intent["description"], intent["due_utc"], is_recurring=recurrence)
+    else:
+        task_id = await tasks.create_task(intent["description"], intent["due_utc"])
+    saved = await db.fetch_one(
+        "SELECT id, description, due_time, is_recurring FROM tasks "
+        "WHERE id = ? AND status = 'pending' AND cancelled_at IS NULL", (task_id,),
+    )
+    if not saved:
+        raise ValueError("Saved reminder could not be verified")
+    local_due = timeutil.parse_utc_iso(saved["due_time"]).astimezone(timeutil.tz())
+    when = local_due.strftime("%a %d %b %Y at %H:%M")
+    repeats = " (repeats daily)" if saved.get("is_recurring") == "daily" else ""
+    paused = await db.get_config("proactivity_paused", "false") == "true"
+    pause_note = " Reminders are paused; use /pause off to resume delivery." if paused else ""
+    return f"Saved reminder #{saved['id']}: {saved['description']} — {when} {timeutil.tz()}{repeats}.{pause_note}"
+
+
+async def _reply_to_reminder_request(update: Update, text: str) -> None:
+    try:
+        response = await _save_requested_reminder(text)
+    except Exception as exc:
+        logger.warning("Direct reminder request failed: %s", exc)
+        response = REMINDER_FAILURE
+    try:
+        await _log_message("sofia", response)
+    except Exception as exc:
+        logger.warning("Reminder confirmation log failed: %s", exc)
+    for part in split_telegram_text(response):
+        await update.message.reply_text(part)
+
 async def _handle_image_generation(update: Update, context: ContextTypes.DEFAULT_TYPE, user_text: str) -> None:
     from . import images, moods
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_PHOTO)
@@ -103,6 +150,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     except Exception as e:
         logger.warning("Log message note: %s", e)
 
+    # This grammar reads only the user's direct request, before fetching any
+    # external evidence. Its deterministic response is tied to the saved row.
+    reminder_text = parser.direct_reminder_request(user_text)
+    if reminder_text is not None:
+        await _reply_to_reminder_request(update, reminder_text)
+        return
+
     # 0. Check for Image Generation Request
     from . import images
     if images.is_image_request(user_text):
@@ -141,19 +195,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 )
     except Exception as exc:
         logger.error("Intent / memory parsing error in handle_message: %s", exc)
-
-    # Parse only an explicit reminder request, before any external evidence is
-    # fetched. A webpage or assistant-generated [TASK] tag cannot schedule work.
-    import re
-    if re.match(r"^(?:please\s+)?(?:remind me|nudge me|ping me|wake me(?: up)?|text me|message me|check on me|reminder|schedule a reminder|set (?:a )?reminder|add (?:a )?task|new task|create task|remember to|don'?t let me forget)\b", user_text, re.IGNORECASE):
-        try:
-            intent = await parser.parse(user_text)
-            if intent.get("description") and intent.get("due_utc"):
-                turn_task_created_id = await tasks.create_task(intent["description"], intent["due_utc"])
-                system_note = f"Task #{turn_task_created_id} was saved, due {intent['due_utc']}. Confirm only that saved result."
-        except Exception as exc:
-            logger.warning("Direct reminder request failed: %s", exc)
-            system_note = "The reminder could not be saved. Do not claim it was scheduled; suggest /add."
 
     try:
         await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
@@ -472,6 +513,5 @@ async def handle_voice_or_audio(update: Update, context: ContextTypes.DEFAULT_TY
         raw_reply = orchestrator_globals.FALLBACK_MESSAGE
 
     await _process_and_send_reply(update, context, raw_reply, user_text=user_caption)
-
 
 

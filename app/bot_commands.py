@@ -18,7 +18,7 @@ from .bot_core import _allowed, _log_message, split_telegram_text
 from .bot_globals import (
     logger,
 )
-from .bot_handlers import _handle_image_generation
+from .bot_handlers import _handle_image_generation, _reply_to_reminder_request
 
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -107,14 +107,7 @@ async def cmd_add(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not text:
         await update.message.reply_text("what should I remind you about? e.g. /add call mom at 9pm")
         return
-    intent = await parser.parse("remind me to " + text)
-    if intent.get("description") and intent.get("due_utc"):
-        task_id = await tasks.create_task(intent["description"], intent["due_utc"])
-        when = timeutil.format_local(intent["due_utc"])
-        await update.message.reply_text(f"got it! I scheduled a reminder for '{intent['description']}' at {when} ✨")
-    else:
-        await tasks.add_temp_mention(text)
-        await update.message.reply_text(f"noted '{text}' in your open threads! ✨")
+    await _reply_to_reminder_request(update, "remind me to " + text)
 
 
 async def cmd_done(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -616,5 +609,4 @@ async def cmd_focus(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"🎯 Focus sprint locked: '{new_goal}'\n\n"
         "I've got your back. Distractions locked out. Let's knock this out!"
     )
-
 

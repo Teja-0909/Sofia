@@ -21,10 +21,54 @@ PAST_TENSE_RE = re.compile(
     re.IGNORECASE
 )
 
-RELATIVE_RE = re.compile(r"\bin\s+(\d+)\s*(minute|min|minutes|mins|hour|hr|hours|hrs)\b", re.IGNORECASE)
+# Only this anchored, direct-user grammar may authorize chat scheduling. Do not
+# search an entire message for a reminder embedded in a quote, file or example.
+NUMBER_WORDS = dict(zip(
+    ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen"],
+    range(20),
+))
+NUMBER_WORDS.update(dict(zip(["twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"], range(20, 100, 10))))
+NUMBER_PATTERN = r"(?:\d+|(?:" + "|".join(NUMBER_WORDS) + r")(?:[ -](?:one|two|three|four|five|six|seven|eight|nine))?)"
+UNIT_PATTERN = r"(?:minutes?|mins?|hours?|hrs?)"
+DIRECT_REMINDER_RE = re.compile(
+    r"^\s*(?:(?:hey|hi)[,\s]+)?(?:sofia[,\s:]+)?(?:please\s+)?"
+    r"(?:(?:can|could|would|will)\s+you\s+(?:please\s+)?)?"
+    r"(?P<request>(?:remind me|nudge me|ping me|wake me(?: up)?|text me|message me|"
+    rf"check on me|reminder(?=\s*(?::|to\b|about\b|for\b))|schedule a reminder|set (?:a )?(?:{NUMBER_PATTERN}[\s-]+{UNIT_PATTERN}\s+)?reminder|"
+    r"add (?:a )?task|new task|create task|remember to|don'?t let me forget)\b[\s\S]*)$",
+    re.IGNORECASE,
+)
+RELATIVE_RE = re.compile(
+    rf"\b(?:in|after)\s+(?P<amount>{NUMBER_PATTERN})[\s-]*(?P<unit>{UNIT_PATTERN})\b",
+    re.IGNORECASE,
+)
+DURATION_REMINDER_RE = re.compile(
+    rf"\b(?P<amount>{NUMBER_PATTERN})[\s-]+(?P<unit>{UNIT_PATTERN})\s+reminder\b",
+    re.IGNORECASE,
+)
 ABSOLUTE_RE = re.compile(
-    r"\b(?:(?:at|by)\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)\b|\b(?:at|by)\s+(\d{1,2})(?::(\d{2}))?\b",
+    r"(?<![\w:])(?:(?:at|by)\s+)?(?P<clock>\d+:\d+)\s*(?P<clock_meridiem>am|pm|a\.m\.|p\.m\.)?(?![\w:])"
+    r"|(?<![\w:])(?:(?:at|by)\s+)?(?P<hour>\d+)\s*(?P<meridiem>am|pm|a\.m\.|p\.m\.)(?!\w)"
+    r"|\b(?:at|by)\s+(?P<bare_hour>\d+)(?![\d:])\b",
     re.IGNORECASE
+)
+DAILY_RE = re.compile(r"\b(?:daily|every day)\b", re.IGNORECASE)
+FALLBACK_DURATION_RE = re.compile(
+    r"\b(?:in|after)\s+[^\n.,;!?]+?\s+(?:minutes?|mins?|hours?|hrs?|seconds?|secs?)\b", re.IGNORECASE,
+)
+# Dates/zones beyond today/tomorrow and local clock time are not part of this
+# deterministic grammar. Reject them instead of using today's local clock and
+# retaining the unparsed date/zone as if it were part of the reminder body.
+UNSUPPORTED_CALENDAR_RE = re.compile(
+    r"\b\d{4}-\d{1,2}-\d{1,2}\b|\b\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?\b"
+    r"|\b(?:mon|tues|wednes|thurs|fri|satur|sun)day\b"
+    r"|\b(?:day after tomorrow|next week|next month|next year)\b"
+    r"|\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+\d"
+    r"|\b\d{1,2}(?:st|nd|rd|th)?\s+(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b"
+    r"|\b(?:UTC|GMT|IST|[PEMC][SD]T|CET|CEST|BST|(?:Africa|America|Antarctica|Arctic|Asia|Atlantic|Australia|Europe|Indian|Pacific|Etc)/[A-Za-z_]+(?:/[A-Za-z_]+)?)\b"
+    r"|[+-]\d{2}:?\d{2}\b|\b\d{1,2}:\d{2}(?::\d{2}|Z)\b"
+    rf"|\b(?:in|after)\s+{NUMBER_PATTERN}\s+(?:days?|weeks?|months?|years?)\b",
+    re.IGNORECASE,
 )
 DAYPART_HOURS = {
     "morning": (9, 0),       # 09:00 AM
@@ -39,15 +83,61 @@ DAYPART_RE = re.compile(r"\b(morning|noon|midday|afternoon|evening|night|tonight
 DAY_WORDS = {"today": 0, "tonight": 0, "tomorrow": 1}
 
 PREFIX_RES = [
-    re.compile(r"^\s*(?:please\s+)?(?:remind\s+me|nudge\s+me|ping\s+me|wake\s+me(?:\s+up)?|text\s+me|message\s+me|check\s+on\s+me)\s+(?:to|about|for|that|if\s+i\s+haven'?t|at|by|in)?\s*", re.IGNORECASE),
+    re.compile(r"^\s*(?:please\s+)?(?:remind\s+me|nudge\s+me|ping\s+me|wake\s+me(?:\s+up)?|text\s+me|message\s+me|check\s+on\s+me)\b\s*(?:(?:to|about|for|that|if\s+i\s+haven'?t|at|by|in)\b)?\s*", re.IGNORECASE),
     re.compile(r"^\s*(?:please\s+)?(?:make\s+sure\s+(?:i|to)|ensure\s+(?:i|that\s+i)?)\s*", re.IGNORECASE),
-    re.compile(r"^\s*(?:please\s+)?(?:add\s+task|new\s+task|create\s+task|task|todo|to-do|set\s+reminder|set\s+a\s+reminder)\s*[:\-]?\s*(?:to|for)?\s*", re.IGNORECASE),
+    re.compile(r"^\s*(?:please\s+)?(?:add\s+(?:a\s+)?task|new\s+task|create\s+task|task|todo|to-do|(?:set|schedule)\s+(?:a\s+)?reminder)\s*[:\-]?\s*(?:to|for)?\s*", re.IGNORECASE),
     re.compile(r"^\s*(?:don'?t\s+let\s+me\s+forget|remember\s+to)\s+", re.IGNORECASE),
-    re.compile(r"^\s*reminder\s+(?:to|about|for)?\s*", re.IGNORECASE),
+    re.compile(r"^\s*reminder\b\s*:?\s*(?:(?:to|about|for)\b)?\s*", re.IGNORECASE),
     re.compile(r"^\s*remember\s+that\s+i\s+", re.IGNORECASE),
 ]
 
 TASK_TAG_REGEX = re.compile(r"\[(?:TASK|REMINDER|SCHEDULE):\s*(.*?)\]", re.IGNORECASE | re.DOTALL)
+
+
+def direct_reminder_request(text: str) -> str | None:
+    match = DIRECT_REMINDER_RE.fullmatch(text)
+    request = match.group("request").strip() if match else None
+    if request and re.match(r"remind me\s+(?:what|why|how|whether|who|where)\b", request, re.IGNORECASE):
+        return None
+    return request
+
+
+def _amount(value: str) -> int:
+    if value.isdigit():
+        return int(value)
+    return sum(NUMBER_WORDS[word] for word in re.split(r"[ -]", value.lower()))
+
+
+def _absolute_parts(match: re.Match) -> tuple[int, int, str | None]:
+    if match.group("clock"):
+        hour_text, minute_text = match.group("clock").split(":")
+        if len(minute_text) != 2:
+            raise ValueError("Use HH:MM for clock times")
+        hour, minute = int(hour_text), int(minute_text)
+        meridiem = match.group("clock_meridiem")
+    else:
+        hour, minute = int(match.group("hour") or match.group("bare_hour")), 0
+        meridiem = match.group("meridiem")
+    if not 0 <= minute <= 59 or not (1 <= hour <= 12 if meridiem else 0 <= hour <= 23):
+        raise ValueError("Invalid clock time")
+    return hour, minute, meridiem
+
+
+def _invalid_time_expression(text: str) -> bool:
+    if re.search(r"\b(?:in|after)\s+(?:[+-]\s*\d|(?:negative|minus)\b)", text, re.IGNORECASE):
+        return True
+    for match in ABSOLUTE_RE.finditer(text):
+        try:
+            _absolute_parts(match)
+        except ValueError:
+            return True
+    for match in list(RELATIVE_RE.finditer(text)) + list(DURATION_REMINDER_RE.finditer(text)):
+        try:
+            if not 0 < _amount(match.group("amount")) <= 525600:
+                return True
+        except (ValueError, OverflowError):
+            return True
+    return False
 
 
 def extract_task_tag(text: str) -> tuple[str, dict | None]:
@@ -101,6 +191,8 @@ def extract_task_tag(text: str) -> tuple[str, dict | None]:
 
 
 def _is_past_event(text: str) -> bool:
+    if direct_reminder_request(text):
+        return False
     lower = text.lower()
     if any(k in lower for k in ("remind me", "nudge me", "ping me", "text me", "check on me", "wake me", "make sure", "add task", "don't let me forget", "dont let me", "remember to", "set reminder")):
         return False
@@ -112,16 +204,17 @@ def _clean_description(text: str, matched_spans: list[tuple[int, int]]) -> str:
     for start, end in sorted(matched_spans, reverse=True):
         out = out[:start] + " " + out[end:]
     out = re.sub(r"\s+(at|by|in)\s*$", "", out, flags=re.IGNORECASE)
-    out = re.sub(r"\s+", " ", out).strip(" ,.-")
+    out = re.sub(r"\s+", " ", out).strip(" ,.-?!")
     for prefix in PREFIX_RES:
         new = prefix.sub("", out)
         if new != out:
             out = new.strip()
             break
-    return out.strip() or text.strip()
+    return out.strip(" ,.-?!")
 
 
-def _resolve_absolute(base_day_offset: int | None, hour: int, minute: int, meridiem: str | None) -> dt.datetime:
+def _resolve_absolute(base_day_offset: int | None, hour: int, minute: int, meridiem: str | None,
+                      explicit_24_hour: bool = False) -> dt.datetime:
     local_now = timeutil.now_local()
     day = (local_now + dt.timedelta(days=base_day_offset or 0)).date()
     if meridiem:
@@ -130,13 +223,13 @@ def _resolve_absolute(base_day_offset: int | None, hour: int, minute: int, merid
             hour += 12
         elif meridiem_lower.startswith("a") and hour == 12:
             hour = 0
-    elif base_day_offset is None or base_day_offset == 0:
+    elif not explicit_24_hour and (base_day_offset is None or base_day_offset == 0):
         # Meridiem omitted! (e.g. "at 5", "at 6", "by 3")
         # If daytime (9 AM - 7 PM) and hour is 1..7, user almost certainly means PM today!
         if 1 <= hour <= 7 and 9 <= local_now.hour <= 19 or hour < local_now.hour and hour <= 11 and (hour + 12) > local_now.hour:
             hour += 12
 
-    due = dt.datetime.combine(day, dt.time(hour % 24, minute), tzinfo=timeutil.tz())
+    due = dt.datetime.combine(day, dt.time(hour, minute), tzinfo=timeutil.tz())
     if base_day_offset is None and due <= local_now:
         # If no day was specified and time has already passed today, advance to tomorrow
         due += dt.timedelta(days=1)
@@ -144,28 +237,37 @@ def _resolve_absolute(base_day_offset: int | None, hour: int, minute: int, merid
 
 
 def heuristic_parse(text: str) -> dict | None:
+    text = direct_reminder_request(text) or text
     if _is_past_event(text):
         return None
 
     lower = text.lower()
     if not any(k in lower for k in FUTURE_INTENT_WORDS):
         return None
+    if _invalid_time_expression(text) or UNSUPPORTED_CALENDAR_RE.search(text):
+        return None
 
     spans: list[tuple[int, int]] = []
     due: dt.datetime | None = None
 
     # 1. Relative delta ("in 30 mins", "in 2 hours")
-    m = RELATIVE_RE.search(lower)
+    m = RELATIVE_RE.search(lower) or DURATION_REMINDER_RE.search(lower)
     if m:
-        amount = int(m.group(1))
-        unit = m.group(2).lower()
+        amount = _amount(m.group("amount"))
+        unit = m.group("unit").lower()
         delta = dt.timedelta(minutes=amount) if unit.startswith(("m", "mi")) else dt.timedelta(hours=amount)
-        due = timeutil.now_local() + delta
-        spans.append(m.span())
+        # Elapsed minutes/hours are UTC durations, including across DST changes.
+        due = timeutil.now_local().astimezone(dt.timezone.utc) + delta
+        # Keep the word "reminder" so the remaining prefix can be removed.
+        spans.append((m.start(), m.end("unit")) if m.re is DURATION_REMINDER_RE else m.span())
+
+    daily = DAILY_RE.search(lower)
+    if daily:
+        spans.append(daily.span())
 
     day_offset = None
     for word, off in DAY_WORDS.items():
-        if word in lower:
+        if re.search(rf"\b{word}\b", lower):
             day_offset = off
             w = re.search(rf"\b{word}\b", lower)
             if w:
@@ -176,19 +278,13 @@ def heuristic_parse(text: str) -> dict | None:
     if due is None:
         m = ABSOLUTE_RE.search(text)
         if m:
-            if m.group(1) is not None:
-                hour = int(m.group(1))
-                minute = int(m.group(2) or 0)
-                meridiem = m.group(3)
-            else:
-                hour = int(m.group(4))
-                minute = int(m.group(5) or 0)
-                meridiem = None
             try:
-                due = _resolve_absolute(day_offset, hour, minute, meridiem)
+                hour, minute, meridiem = _absolute_parts(m)
+                due = _resolve_absolute(day_offset, hour, minute, meridiem,
+                                        explicit_24_hour=bool(m.group("clock")))
                 spans.append(m.span())
             except ValueError:
-                due = None
+                return None
 
     # 3. Qualitative dayparts ("morning", "afternoon", "evening", "tonight", "night")
     if due is None:
@@ -207,31 +303,51 @@ def heuristic_parse(text: str) -> dict | None:
 
             due = _resolve_absolute(day_offset, h, mi, "am" if h < 12 else "pm")
 
-    # 4. If explicit task/reminder phrase used without any time or day
-    if due is None and any(k in lower for k in ("add task", "new task", "create task", "task:", "todo:", "to-do:", "don't let me forget", "dont let me forget", "remember to", "set reminder", "set a reminder")):
-        local_now = timeutil.now_local()
-        # Default due time to 4 hours from now
-        due = local_now + dt.timedelta(hours=4)
-
     if due is None:
         return None
 
-    description = _clean_description(text, spans) or "your reminder"
+    description = _clean_description(text, spans)
+    if not description:
+        return None
     return {
         "description": description,
         "due_utc": timeutil.utc_iso(due),
         "source": "heuristic",
+        "is_recurring": "daily" if daily else None,
     }
 
 
 async def parse(text: str) -> dict:
+    direct = direct_reminder_request(text)
+    text = direct or text
     if _is_past_event(text):
+        return {}
+    if _invalid_time_expression(text) or UNSUPPORTED_CALENDAR_RE.search(text):
+        return {}
+    daily = DAILY_RE.search(text)
+    recurrence_text = DAILY_RE.sub("", text)
+    if re.search(r"\b(?:every|weekly|monthly|weekdays|weekends)\b", recurrence_text, re.IGNORECASE):
+        # Only daily recurrence is supported by the task store. Never confirm
+        # a one-time item as an unsupported recurring reminder.
         return {}
 
     # 1. Try instant heuristic parse first
     result = heuristic_parse(text)
     if result:
         return result
+
+    if direct:
+        # Extraction may interpret an explicitly stated duration, but may not
+        # invent a time or a reminder subject when the user supplied neither.
+        time_matches = list(ABSOLUTE_RE.finditer(text)) + list(RELATIVE_RE.finditer(text)) + list(DURATION_REMINDER_RE.finditer(text))
+        if not time_matches:
+            time_matches = list(FALLBACK_DURATION_RE.finditer(text))
+        if not time_matches:
+            return {}
+        spans = [match.span() for match in time_matches]
+        spans += [match.span() for match in re.finditer(r"\b(?:today|tomorrow|daily|every day)\b", text, re.IGNORECASE)]
+        if not _clean_description(text, spans):
+            return {}
 
     # 2. Check if message has potential future reminder signals
     lower = text.lower()
@@ -245,13 +361,14 @@ async def parse(text: str) -> dict:
     curr_iso = timeutil.utc_iso()
 
     extract_prompt = f"""You are a precise task and scheduled reminder extraction engine.
-Current Local Time: {curr_time_str} (Asia/Kolkata timezone). Current UTC: {curr_iso}.
+Current Local Time: {curr_time_str} ({timeutil.tz()} timezone). Current UTC: {curr_iso}.
 
 Analyze the user's message.
 Rules:
 - If the user is describing a PAST or COMPLETED event (e.g. "I completed my dinner at 8 PM"), output: {{"is_reminder": false}}.
 - ONLY extract FUTURE requests where the user explicitly asks to be reminded, texted, nudged, or checked on at a future time.
 - Set iso_time to null if it's not a future reminder or if no time is specified.
+- When there is a time, return a timezone-aware ISO 8601 timestamp with Z or an explicit UTC offset. Never invent a missing time or description.
 """
     
     schema = {
@@ -291,12 +408,11 @@ Rules:
             return {"description": description, "due_utc": None, "source": "llm"}
 
         normalized = iso_time.replace("z", "Z").replace("t", "T")
-        if not normalized.endswith("Z"):
-            normalized += "Z"
-        parsed = dt.datetime.strptime(normalized[:19], "%Y-%m-%dT%H:%M:%S").replace(
-            tzinfo=dt.timezone.utc
-        )
-        return {"description": description, "due_utc": timeutil.utc_iso(parsed), "source": "llm"}
+        parsed = dt.datetime.fromisoformat(normalized.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            return {}
+        return {"description": description, "due_utc": timeutil.utc_iso(parsed), "source": "llm",
+                "is_recurring": "daily" if daily else None}
     except Exception:
         return {}
 
