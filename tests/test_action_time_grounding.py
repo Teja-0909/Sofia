@@ -113,8 +113,8 @@ class TestClockGrounding(unittest.IsolatedAsyncioTestCase):
             result = await pipeline._verify_and_refine_draft("Your timer is running.", "hi", "policy", [])
             self.assertEqual(result, guard.UNVERIFIED_ACTION_REPLY)
         denied = {"id": "write", "function": {"name": "create_task", "arguments": '{}'}}
-        for user in ("hello", ""):
-            with patch.object(config, "ENABLE_SPECIALISTS", False), \
+        for user in ("hello", "", "debug this"):
+            with patch.object(config, "ENABLE_SPECIALISTS", True), \
                  patch.object(llm, "chat", AsyncMock(side_effect=[("", [denied])] * 6 + [("I saved the task.", [])])) as chat:
                 result = await pipeline._generate("policy", [], user)
                 self.assertEqual(result, guard.UNVERIFIED_ACTION_REPLY if user else "PASS")
@@ -260,6 +260,17 @@ class TestTimerRecords(unittest.IsolatedAsyncioTestCase):
         self.assertIn("couldn't verify the related focus", result)
         self.chat.assert_not_awaited()
         self.assertEqual((await db.fetch_one("SELECT status FROM tasks WHERE id = 1"))["status"], "done")
+
+    async def test_uncertain_receipt_send_cannot_fall_back_or_repeat_mutation(self):
+        await tasks.create_task("drink water", "2026-10-03T18:00:00Z", is_recurring="daily")
+        update = SimpleNamespace(effective_user=SimpleNamespace(id=42), effective_chat=SimpleNamespace(id=42),
+                                 message=SimpleNamespace(text="done", reply_text=AsyncMock(side_effect=TimeoutError("acceptance unknown"))))
+        with self.assertRaises(TimeoutError):
+            await bot_handlers.handle_message(update, self.ctx)
+        update.message.reply_text.assert_awaited_once()
+        self.chat.assert_not_awaited()
+        row = await db.fetch_one("SELECT due_time FROM tasks WHERE id = 1")
+        self.assertEqual(row["due_time"], "2026-10-04T18:00:00Z")
 
     async def test_delivery_receipt_wins_over_stale_pending_accounting(self):
         await self.say("timer 20min")
