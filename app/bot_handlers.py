@@ -100,7 +100,7 @@ async def _handle_image_generation(update: Update, context: ContextTypes.DEFAULT
                 await update.message.reply_text(f"[DEBUG: Image API failed: {img_bytes.decode()}]")
                 raise ImageGenerationError("DEBUG API FAILURE")
             from .action_grounding import guard_generated_reply
-            caption = guard_generated_reply(await images.craft_image_caption(user_text, visual_prompt))
+            caption = guard_generated_reply(await images.craft_image_caption(user_text, visual_prompt), user_text=user_text)
             await _log_message("sofia", f"[Generated Image: '{visual_prompt}'] {caption}")
             await update.message.reply_photo(photo=img_bytes, caption=caption)
             return
@@ -141,7 +141,7 @@ async def _process_and_send_reply(
     for index in range(0, len(pieces), 2):
         for extractor in extractors:
             pieces[index], _ = extractor(pieces[index])
-    clean_reply = action_grounding.guard_generated_reply("".join(pieces))
+    clean_reply = action_grounding.guard_generated_reply("".join(pieces), user_text=user_text)
     try:
         await _log_message("sofia", clean_reply)
     except Exception as exc:
@@ -163,7 +163,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     from . import timer_requests
     timer_response = None
-    if timer_requests.direct_timer_request(user_text):
+    if timer_requests.direct_timer_capability(user_text):
+        timer_response = timer_requests.TIMER_CAPABILITY
+    elif timer_requests.direct_timer_request(user_text):
         timer_response = await timer_requests.save_timer(user_text)
     elif timer_requests.direct_timer_status(user_text):
         timer_response = await timer_requests.timer_status(user_text)
