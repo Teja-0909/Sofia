@@ -1,0 +1,3 @@
+# Match the browser image; intentionally independent of the Sofia bot environment.
+playwright==1.63.0
+aiohttp==3.13.5
