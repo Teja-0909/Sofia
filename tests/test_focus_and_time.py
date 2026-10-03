@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from app import bot, config, db, orchestrator, parser, tasks, timeutil
+from app import bot, bot_commands, config, db, orchestrator_routing, orchestrator_context, parser, tasks, timeutil
 
 
 class TestExecutiveTimeAndFocus(unittest.IsolatedAsyncioTestCase):
@@ -29,25 +29,25 @@ class TestExecutiveTimeAndFocus(unittest.IsolatedAsyncioTestCase):
             local_tz = timeutil.tz()
             # 1. Deep night (02:00)
             mock_now.return_value = dt.datetime(2026, 9, 7, 2, 30, tzinfo=local_tz)
-            ctx = orchestrator._ctx_time_mood()
+            ctx = orchestrator_context._ctx_time_mood()
             self.assertIn("Deep Night / Sleep Recovery", ctx)
             self.assertIn("SLEEP & PHYSICAL RECOVERY", ctx)
 
             # 2. Peak Deep Work (10:30)
             mock_now.return_value = dt.datetime(2026, 9, 7, 10, 30, tzinfo=local_tz)
-            ctx = orchestrator._ctx_time_mood()
+            ctx = orchestrator_context._ctx_time_mood()
             self.assertIn("Peak Morning Deep Work", ctx)
             self.assertIn("PRIME COGNITIVE PEAK", ctx)
 
             # 3. Afternoon Execution (16:00)
             mock_now.return_value = dt.datetime(2026, 9, 7, 16, 0, tzinfo=local_tz)
-            ctx = orchestrator._ctx_time_mood()
+            ctx = orchestrator_context._ctx_time_mood()
             self.assertIn("Afternoon Execution & Momentum", ctx)
             self.assertIn("Active task execution", ctx)
 
             # 4. Late evening (22:30)
             mock_now.return_value = dt.datetime(2026, 9, 7, 22, 30, tzinfo=local_tz)
-            ctx = orchestrator._ctx_time_mood()
+            ctx = orchestrator_context._ctx_time_mood()
             self.assertIn("Late Evening Calm & Decompression", ctx)
 
     async def test_ctx_tasks_and_threads_urgency_tags(self):
@@ -66,7 +66,7 @@ class TestExecutiveTimeAndFocus(unittest.IsolatedAsyncioTestCase):
         today_due = timeutil.utc_iso(now + dt.timedelta(hours=4))
         await tasks.create_task("Sync with design team", today_due)
 
-        ctx = await orchestrator._ctx_tasks_and_threads()
+        ctx = await orchestrator_context._ctx_tasks_and_threads()
         self.assertIn("[🚨 OVERDUE by 30m]", ctx)
         self.assertIn("[⚡ IMMINENT — Due in", ctx)
         self.assertIn("Top Priority Task:", ctx)
@@ -79,7 +79,7 @@ class TestExecutiveTimeAndFocus(unittest.IsolatedAsyncioTestCase):
         await db.set_config("active_focus_goal", "Refactor vision pipeline")
         await db.set_config("active_focus_started_at", started_iso)
 
-        ctx = await orchestrator._ctx_tasks_and_threads()
+        ctx = await orchestrator_context._ctx_tasks_and_threads()
         self.assertIn("Current Active Focus Sprint: 'Refactor vision pipeline' (started 45m ago)", ctx)
         self.assertIn("Focus Directive: Keep Teja locked in", ctx)
 
@@ -104,33 +104,33 @@ class TestExecutiveTimeAndFocus(unittest.IsolatedAsyncioTestCase):
 
         # 1. No active sprint initially
         context.args = []
-        await bot.cmd_focus(update, context)
+        await bot_commands.cmd_focus(update, context)
         update.message.reply_text.assert_called()
         self.assertIn("No active focus sprint right now", update.message.reply_text.call_args[0][0])
 
         # 2. Set new focus sprint
         context.args = ["finish", "auth", "middleware"]
-        await bot.cmd_focus(update, context)
+        await bot_commands.cmd_focus(update, context)
         self.assertIn("Focus sprint locked: 'finish auth middleware'", update.message.reply_text.call_args[0][0])
         self.assertEqual(await db.get_config("active_focus_goal", ""), "finish auth middleware")
 
         # 3. View running sprint
         context.args = []
-        await bot.cmd_focus(update, context)
+        await bot_commands.cmd_focus(update, context)
         self.assertIn("Active Focus Sprint:\n'finish auth middleware'", update.message.reply_text.call_args[0][0])
 
         # 4. Finish sprint with /focus done
         context.args = ["done"]
-        await bot.cmd_focus(update, context)
+        await bot_commands.cmd_focus(update, context)
         self.assertEqual(await db.get_config("active_focus_goal", ""), "")
 
         # 5. Clear command
         context.args = ["build", "new", "parser"]
-        await bot.cmd_focus(update, context)
+        await bot_commands.cmd_focus(update, context)
         self.assertEqual(await db.get_config("active_focus_goal", ""), "build new parser")
 
         context.args = ["clear"]
-        await bot.cmd_focus(update, context)
+        await bot_commands.cmd_focus(update, context)
         self.assertEqual(await db.get_config("active_focus_goal", ""), "")
         self.assertIn("cleared", update.message.reply_text.call_args[0][0].lower())
 

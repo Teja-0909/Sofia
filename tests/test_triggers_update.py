@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from app import triggers
+from app import bot_core, triggers
 
 
 class TestTriggersUpdate(unittest.IsolatedAsyncioTestCase):
@@ -67,10 +67,10 @@ class TestTriggersUpdate(unittest.IsolatedAsyncioTestCase):
     @patch("app.db.execute", new_callable=AsyncMock)
     @patch("app.db.get_config", new_callable=AsyncMock)
     @patch("app.triggers._get_git_update_summary")
-    @patch("app.orchestrator.proactive", new_callable=AsyncMock)
-    @patch("app.bot.get_bot")
-    @patch("app.bot.send_text", new_callable=AsyncMock)
-    @patch("app.bot._log_message", new_callable=AsyncMock)
+    @patch("app.orchestrator_routing.proactive", new_callable=AsyncMock)
+    @patch("app.bot_core.get_bot")
+    @patch("app.bot_core.send_text", new_callable=AsyncMock)
+    @patch("app.bot_core._log_message", new_callable=AsyncMock)
     async def test_check_for_updates_sends_concrete_proactive(
         self,
         mock_log_msg,

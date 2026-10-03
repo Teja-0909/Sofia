@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from app import bot, config, db, orchestrator, vision_session, web
+from app import bot, bot_commands, config, db, orchestrator_routing, orchestrator_globals, orchestrator_moa, vision_session, web
 
 
 class TestVisionDesktopTools(unittest.IsolatedAsyncioTestCase):
@@ -73,8 +73,8 @@ class TestVisionDesktopTools(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Stopped", stop_msg)
 
     async def test_orchestrator_tools_registration(self):
-        """Verify that all desktop spatial and execution tools are properly registered in orchestrator.TOOLS."""
-        tool_names = [t["function"]["name"] for t in orchestrator.TOOLS]
+        """Verify that all desktop spatial and execution tools are properly registered in orchestrator_globals.TOOLS."""
+        tool_names = [t["function"]["name"] for t in orchestrator_globals.TOOLS]
         self.assertIn("desktop_point_at", tool_names)
         self.assertIn("desktop_doodle", tool_names)
         self.assertIn("desktop_sticky_note", tool_names)
@@ -163,7 +163,7 @@ class TestVisionDesktopTools(unittest.IsolatedAsyncioTestCase):
             await runner.cleanup()
 
     @patch("app.vision_session.request_screen_capture", new_callable=AsyncMock)
-    @patch("app.orchestrator.reply", autospec=True)
+    @patch("app.orchestrator_routing.reply", autospec=True)
     async def test_cmd_screen_orchestrator_call(self, mock_reply, mock_capture):
         """Regression test for /screen handler in app/bot.py: ensures orchestrator.reply is called with system_note (not extra_system_note)."""
         config.ALLOWED_USER_ID = 12345
@@ -176,7 +176,7 @@ class TestVisionDesktopTools(unittest.IsolatedAsyncioTestCase):
         mock_capture.return_value = dummy_jpeg
         mock_reply.return_value = "I see your desktop with code open."
 
-        await bot.cmd_screen(update, context)
+        await bot_commands.cmd_screen(update, context)
 
         # Ensure request_screen_capture was called with the user trigger reason
         mock_capture.assert_awaited_once_with("User requested /screen")

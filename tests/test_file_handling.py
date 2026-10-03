@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from app import bot, config
+from app import bot, bot_handlers, config, orchestrator_moa
 
 
 class TestFileHandling(unittest.IsolatedAsyncioTestCase):
@@ -23,7 +23,7 @@ class TestFileHandling(unittest.IsolatedAsyncioTestCase):
         return update
 
     @patch("app.bot_handlers._process_and_send_reply", new_callable=AsyncMock)
-    @patch("app.orchestrator.reply", new_callable=AsyncMock)
+    @patch("app.orchestrator_routing.reply", new_callable=AsyncMock)
     @patch("app.bot_handlers._log_message", new_callable=AsyncMock)
     async def test_document_pdf_routing(self, mock_log, mock_reply, mock_process):
         update = self._create_mock_update()
@@ -43,7 +43,7 @@ class TestFileHandling(unittest.IsolatedAsyncioTestCase):
 
         mock_reply.return_value = "I've reviewed the architecture PDF."
 
-        await bot.handle_document(update, context)
+        await bot_handlers.handle_document(update, context)
 
         mock_reply.assert_awaited_once()
         args, kwargs = mock_reply.call_args
@@ -53,7 +53,7 @@ class TestFileHandling(unittest.IsolatedAsyncioTestCase):
         mock_process.assert_awaited_once()
 
     @patch("app.bot_handlers._process_and_send_reply", new_callable=AsyncMock)
-    @patch("app.orchestrator.reply", new_callable=AsyncMock)
+    @patch("app.orchestrator_routing.reply", new_callable=AsyncMock)
     @patch("app.bot_handlers._log_message", new_callable=AsyncMock)
     async def test_document_code_file_routing(self, mock_log, mock_reply, mock_process):
         update = self._create_mock_update()
@@ -74,7 +74,7 @@ class TestFileHandling(unittest.IsolatedAsyncioTestCase):
 
         mock_reply.return_value = "Code looks solid!"
 
-        await bot.handle_document(update, context)
+        await bot_handlers.handle_document(update, context)
 
         mock_reply.assert_awaited_once()
         args, kwargs = mock_reply.call_args
@@ -87,7 +87,7 @@ class TestFileHandling(unittest.IsolatedAsyncioTestCase):
         mock_process.assert_awaited_once()
 
     @patch("app.bot_handlers._process_and_send_reply", new_callable=AsyncMock)
-    @patch("app.orchestrator.reply", new_callable=AsyncMock)
+    @patch("app.orchestrator_routing.reply", new_callable=AsyncMock)
     @patch("app.bot_handlers._log_message", new_callable=AsyncMock)
     async def test_document_uncompressed_image_routing(self, mock_log, mock_reply, mock_process):
         update = self._create_mock_update()
@@ -107,7 +107,7 @@ class TestFileHandling(unittest.IsolatedAsyncioTestCase):
 
         mock_reply.return_value = "Crisp render!"
 
-        await bot.handle_document(update, context)
+        await bot_handlers.handle_document(update, context)
 
         mock_reply.assert_awaited_once()
         args, kwargs = mock_reply.call_args
@@ -116,7 +116,7 @@ class TestFileHandling(unittest.IsolatedAsyncioTestCase):
         mock_process.assert_awaited_once()
 
     @patch("app.bot_handlers._process_and_send_reply", new_callable=AsyncMock)
-    @patch("app.orchestrator.reply", new_callable=AsyncMock)
+    @patch("app.orchestrator_routing.reply", new_callable=AsyncMock)
     @patch("app.bot_handlers._log_message", new_callable=AsyncMock)
     async def test_voice_note_routing(self, mock_log, mock_reply, mock_process):
         update = self._create_mock_update()
@@ -136,7 +136,7 @@ class TestFileHandling(unittest.IsolatedAsyncioTestCase):
 
         mock_reply.return_value = "I hear you loud and clear!"
 
-        await bot.handle_voice_or_audio(update, context)
+        await bot_handlers.handle_voice_or_audio(update, context)
 
         mock_reply.assert_awaited_once()
         args, kwargs = mock_reply.call_args
@@ -155,7 +155,7 @@ class TestFileHandling(unittest.IsolatedAsyncioTestCase):
         context = MagicMock()
         context.bot.get_file = AsyncMock()
 
-        await bot.handle_document(update, context)
+        await bot_handlers.handle_document(update, context)
 
         context.bot.get_file.assert_not_called()
         update.message.reply_text.assert_awaited_once()

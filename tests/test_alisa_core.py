@@ -9,7 +9,7 @@ os.environ["TIMEZONE"] = "Asia/Kolkata"
 os.environ["BOT_TOKEN"] = "test_token"
 os.environ["ALLOWED_TELEGRAM_USER_ID"] = "12345"
 
-from app import config, db, diary, llm, memory, orchestrator, parser, tasks, timeutil
+from app import config, db, diary, llm, memory, orchestrator_routing, orchestrator_moa, parser, tasks, timeutil
 
 
 class TestAlisaCore(unittest.IsolatedAsyncioTestCase):
@@ -194,7 +194,7 @@ class TestAlisaCore(unittest.IsolatedAsyncioTestCase):
         dummy_img = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15c4"
         with patch("app.llm.chat", new_callable=AsyncMock) as mock_chat:
             mock_chat.return_value = ("I see your code editor with a python error on line 42.", None)
-            reply = await orchestrator.reply(
+            reply = await orchestrator_routing.reply(
                 "Look at this screenshot",
                 image_bytes=dummy_img,
                 mime_type="image/png",
