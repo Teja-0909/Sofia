@@ -14,10 +14,14 @@ async def run_bot() -> None:
     web.set_readiness(False, "Starting services")
     try:
         await db.init()
+        # Preservation/reconciliation must finish before any background job
+        # can replace the editable notebook. Never serve after a failed upgrade.
+        from app import memory_file
+        await memory_file.ensure_legacy_migrated()
         from app import vision_session
         await vision_session.set_desktop_paused(await db.get_config("proactivity_paused", "false") == "true")
         try:
-            from app import diary, memory, memory_file
+            from app import diary, memory
             await diary.backfill_missing_diaries()
             await memory.backfill_empty_embeddings()
             await diary.recalculate_relationship_depth()
@@ -94,4 +98,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
