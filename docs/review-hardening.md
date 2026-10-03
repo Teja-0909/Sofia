@@ -73,6 +73,24 @@ This follow-up changes server scheduling only, with no new schema, environment v
 
 No web dashboard, new OS sandbox, arbitrary-command approval UI, production secrets, permission grants, merge or deployment is included. Full semantic memory-erasure workflows, real Windows desktop validation, live Telegram/Turso/model-provider integration and production performance/quality evaluations remain future validation work.
 
+## Desktop presence and safe logging follow-up
+
+Foreground presence is metadata about one focused window, not a screenshot, open-app/tab inventory, verified page contents or proof of physical presence. Native Windows calls now declare pointer-width-correct signatures; missing/failed capture is reported as unavailable instead of fabricated `Desktop`. Idle-read failures remain unknown. Observations commit atomically, replace stale content even when capture fails, and are usable for only 60 seconds. Common standalone PC questions return a fixed, timestamped observation; broader model replies and background consumers receive bounded, untrusted evidence and explicit limitations.
+
+The sidecar now verifies JSON acknowledgements and reports status-only transport failures/recoveries instead of silently swallowing them. A successful startup log is not a successful connection or presence upload. Presence can work with all `DESKTOP_ALLOW_*` flags false; screenshot, clipboard and mutation permissions stay separate. `DESKTOP_PAUSED=true`, a pause file or the server background pause still stops presence.
+
+Update the full server and Windows checkout together, preserving private configuration; no new environment variables, packages or schema migration are required. After the server deployment is Live and the updated sidecar has been restarted, run from the repository root:
+
+```powershell
+python scripts/sidecar.py --diagnose
+```
+
+This exits after local availability checks and one authenticated GET `/api/desktop/status`. It does not post window content, poll/drain commands, acknowledge work, capture a screenshot or launch the overlay. Output contains only fixed status labels, booleans and observation age, so it can be shared for troubleshooting. It separates local capture availability, transport/authentication, server readiness/pause and stored-sample freshness. A successful status probe does not prove a presence POST has succeeded; check for `presence_state: fresh` after the normal sidecar runs. HTTP 401 means authentication was rejected; 503 can mean missing server auth or storage/service failure; 404 can mean the server predates this endpoint. Keep the matching token private. Do not use `/api/desktop/poll` as a read-only probe because it removes queued commands.
+
+Server logging now redacts configured credentials and common credential-bearing URLs/headers in formatted messages and tracebacks. The sidecar also uses status-only diagnostics. This only protects new application log output; it does not remove old logs, revoke exposed credentials or guarantee redaction in external hosting logs. Rotate any exposed token through its provider and replace it privately before continuing. Code that adds a custom logging handler later must install the same redaction protection.
+
+Real Windows capture and live Render/Telegram/Turso behavior still need the user's rollout check. Mock native APIs cover 64-bit handle preservation and failures; temporary databases, mocked HTTP and adversarial model responses cover server and grounding contracts.
+
 ## Offline validation
 
 Run from the repository root:
