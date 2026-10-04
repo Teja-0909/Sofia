@@ -1,13 +1,18 @@
 import asyncio
+import html
 import logging
 import re
 import socket
 import threading
-from urllib.parse import quote_plus, urljoin, urlsplit
+from html.parser import HTMLParser
+from itertools import islice
+from urllib.parse import parse_qs, quote_plus, urljoin, urlsplit
 
 import httpx
 
 from browser_worker.policy import public_ip
+
+from .research_evidence import canonical_url
 
 logger = logging.getLogger(__name__)
 _SEARCH_SLOTS = asyncio.Semaphore(2)
@@ -62,15 +67,17 @@ def extract_search_query(text: str) -> str | None:
 
 def refine_query(query: str) -> str:
     """Refines raw user requests into high-signal targeted search queries."""
-    clean = re.sub(r"https?://\S+", "", query).strip(" '\"?:.,!-")
+    # Keep exact phrases, URLs and site:/negative operators intact. Removing a
+    # URL also broke site:https://... scopes and changed explicit user intent.
+    clean = " ".join(query.split())
     lower = clean.lower()
 
-    if any(k in lower for k in ("f1", "formula 1", "grand prix", "gp", "race", "podium")):
+    if re.search(r"\b(?:f1|formula 1|grand prix|gp|race|podium)\b", lower):
         if "podium" in lower or "winner" in lower or "results" in lower or "who won" in lower:
             if not any(k in lower for k in ("results", "winner", "finishing positions")):
                 return f"{clean} race winner podium results finishing positions"
 
-    if any(k in lower for k in ("fastapi", "python", "react", "asyncio", "turso", "sql", "api")):
+    if re.search(r"\b(?:fastapi|python|react|asyncio|turso|sql|api)\b", lower):
         if not any(k in lower for k in ("docs", "documentation", "guide", "example")):
             return f"{clean} documentation examples"
 
@@ -86,7 +93,7 @@ def html_to_markdown_tables(html: str) -> list[str]:
         md_rows = []
         for r in rows:
             cells = re.findall(r'<(?:td|th)[^>]*>(.*?)</(?:td|th)>', r, flags=re.DOTALL | re.IGNORECASE)
-            clean_cells = [re.sub(r'<[^>]+>', '', c).strip().replace('\n', ' ') for c in cells]
+            clean_cells = [_html_text(c).replace('\n', ' ') for c in cells]
             clean_cells = [re.sub(r'\s+', ' ', c) for c in clean_cells if c]
             if clean_cells:
                 md_rows.append(" | ".join(clean_cells))
@@ -107,7 +114,7 @@ def extract_clean_article_text(html: str, max_chars: int = 4000) -> str:
     text_blocks = re.findall(r'<(?:p|h[1-6]|li|article|section)[^>]*>(.*?)</(?:p|h[1-6]|li|article|section)>', clean_html, flags=re.DOTALL | re.IGNORECASE)
     clean_blocks = []
     for b in text_blocks:
-        clean = re.sub(r'<[^>]+>', '', b).strip()
+        clean = _html_text(b)
         clean = re.sub(r'\s+', ' ', clean)
         if len(clean) > 30 and not any(bad in clean.lower() for bad in ("cookie", "privacy policy", "terms of use", "subscribe", "newsletter", "advertisement")):
             clean_blocks.append(clean)
@@ -115,6 +122,11 @@ def extract_clean_article_text(html: str, max_chars: int = 4000) -> str:
     body_text = "\n\n".join(clean_blocks)
     combined = (f"### Extracted DOM Data Tables:\n{tables_text}\n\n" if tables_text else "") + body_text
     return combined[:max_chars]
+
+
+def _html_text(value: str) -> str:
+    """Strip markup before decoding entities; the result stays inert text."""
+    return html.unescape(re.sub(r'<[^>]+>', '', value)).strip()
 
 
 async def _resolve_public_url(url: str) -> tuple[httpx.URL, str]:
@@ -171,7 +183,7 @@ async def _fetch_public_page_receipt(url: str, max_chars: int) -> dict:
                 content = b"".join(chunks).decode("utf-8", errors="replace")
                 text = content if kind == "text/plain" else extract_clean_article_text(content, max_chars=max_chars + 1)
                 title_match = re.search(r"<title[^>]*>(.*?)</title>", content, flags=re.DOTALL | re.IGNORECASE) if kind != "text/plain" else None
-                title = re.sub(r"<[^>]+>", "", title_match.group(1)).strip()[:300] if title_match else ""
+                title = _html_text(title_match.group(1))[:300] if title_match else ""
                 return {"url": url, "title": title, "text": text[:max_chars],
                         "status": "retrieved" if text.strip() else "empty", "truncated": len(text) > max_chars}
     raise ValueError("Too many redirects")
@@ -211,19 +223,106 @@ def _sync_ddgs_search(query: str, max_results: int = 5) -> list[dict]:
             from ddgs import DDGS
         except ImportError:
             from duckduckgo_search import DDGS
-        raw = list(DDGS(timeout=8).text(query, max_results=max_results))
+        raw = DDGS(timeout=8).text(query, max_results=max_results)
         results = []
-        for r in raw:
-            title = r.get("title", "").strip()
-            body = r.get("body", "").strip()
-            href = r.get("href", "").strip()
-            if body:
-                snippet = f"{title}: {body}" if title else body
+        for r in islice(raw, max_results):
+            if not isinstance(r, dict):
+                continue
+            title = _html_text(r["title"])[:300] if isinstance(r.get("title"), str) else ""
+            body = _html_text(r["body"])[:1800] if isinstance(r.get("body"), str) else ""
+            href = _search_result_url(r.get("href"))
+            if href and (title or body):
+                snippet = ": ".join(part for part in (title, body) if part)
                 results.append({"title": title, "snippet": snippet, "url": href})
         return results
     except Exception as exc:
-        logger.debug("ddgs package search note for '%s': %s", query, exc)
+        logger.debug("Search provider unavailable: %s", type(exc).__name__)
         return []
+
+
+def _search_result_url(value: object) -> str:
+    """Read actual links, including DDG's encoded redirect destination."""
+    if not isinstance(value, str):
+        return ""
+    value = html.unescape(value).strip()
+    if value.startswith("//"):
+        value = "https:" + value
+    elif value.startswith("/l/?"):
+        value = "https://duckduckgo.com" + value
+    try:
+        parsed = urlsplit(value)
+        if parsed.hostname in {"duckduckgo.com", "www.duckduckgo.com", "html.duckduckgo.com"} and parsed.path == "/l/":
+            value = parse_qs(parsed.query).get("uddg", [""])[0]
+    except ValueError:
+        return ""
+    return canonical_url(value)
+
+
+class _HTMLSearchResults(HTMLParser):
+    """Collect each result's own title/link/snippet, never display URLs."""
+
+    def __init__(self, maximum: int):
+        super().__init__(convert_charrefs=True)
+        self.maximum = maximum
+        self.results = []
+        self.current = None
+        self.field = ""
+        self.capture_tag = ""
+        self.capture_depth = 0
+        self.ignored = 0
+        self.div_depth = 0
+        self.result_depth = None
+
+    def handle_starttag(self, tag, attrs):
+        if tag in {"script", "style"}:
+            self.ignored += 1
+        if self.ignored:
+            return
+        if self.field and tag == self.capture_tag:
+            self.capture_depth += 1
+        attributes = dict(attrs)
+        classes = (attributes.get("class") or "").split()
+        if tag == "div":
+            self.div_depth += 1
+            if "result" in classes:
+                self.result_depth = self.div_depth
+                self.current, self.field = None, ""
+        if tag == "a" and "result__a" in classes:
+            self.current = None
+            self.field = ""
+            if len(self.results) < self.maximum:
+                self.current = {"url": _search_result_url(attributes.get("href")), "title": [], "snippet": []}
+                self.results.append(self.current)
+                self.field, self.capture_tag, self.capture_depth = "title", tag, 1
+        elif "result__snippet" in classes and self.current is not None:
+            self.field, self.capture_tag, self.capture_depth = "snippet", tag, 1
+
+    def handle_endtag(self, tag):
+        if tag in {"script", "style"} and self.ignored:
+            self.ignored -= 1
+            return
+        if self.field and tag == self.capture_tag:
+            self.capture_depth -= 1
+            if self.capture_depth <= 0:
+                self.field = ""
+        if tag == "div" and not self.ignored:
+            if self.div_depth == self.result_depth:
+                self.current, self.field, self.result_depth = None, "", None
+            self.div_depth = max(0, self.div_depth - 1)
+
+    def handle_data(self, data):
+        if self.field and self.current is not None and not self.ignored:
+            self.current[self.field].append(data)
+
+
+def _html_search_results(document: str, max_results: int) -> list[dict]:
+    parser = _HTMLSearchResults(max_results)
+    parser.feed(document[:1_000_000])
+    parser.close()
+    return [{"url": result["url"],
+             "title": " ".join("".join(result["title"]).split())[:300],
+             "snippet": " ".join("".join(result["snippet"]).split())[:1800]}
+            for result in parser.results if result["url"]]
 
 
 async def search_web(query: str, max_results: int = 5) -> list[dict]:
@@ -276,17 +375,9 @@ async def _search_web_held(query: str, max_results: int, owns_slot: list[bool]) 
         async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
             resp = await client.get(url, headers=headers)
             if resp.status_code == 200:
-                html = resp.text
-                snippets = re.findall(r'<a class="result__snippet[^>]*>(.*?)</a>', html, re.DOTALL)
-                titles = re.findall(r'<a class="result__url[^>]*>(.*?)</a>', html, re.DOTALL)
-                for i in range(min(len(snippets), max_results)):
-                    clean_s = re.sub(r'<[^>]+>', '', snippets[i]).strip()
-                    clean_u = re.sub(r'<[^>]+>', '', titles[i]).strip() if i < len(titles) else ""
-                    clean_s = re.sub(r'\s+', ' ', clean_s)
-                    if clean_s:
-                        results.append({"title": "", "snippet": clean_s, "url": clean_u})
+                results = _html_search_results(resp.text, max_results)
     except Exception as exc:
-        logger.debug("ddg html fallback parse note: %s", exc)
+        logger.debug("Search HTML fallback unavailable: %s", type(exc).__name__)
     return results
 
 
@@ -389,4 +480,3 @@ async def react_research_loop(query: str, context: str = "") -> str:
     return "\n\n".join(sections)
     
 deep_react_research = react_research_loop
-
