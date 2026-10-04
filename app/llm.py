@@ -17,6 +17,18 @@ class AllProvidersFailed(Exception):
     pass
 
 
+def _raise_for_provider_status(response: httpx.Response, provider: str) -> None:
+    """Keep retry/status information without echoing prompts, bodies or key URLs."""
+    try:
+        response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        message = f"{provider} API error (HTTP {response.status_code})"
+        logger.error("%s", message)
+        raise httpx.HTTPStatusError(
+            message, request=exc.request, response=exc.response,
+        ) from None
+
+
 def _provider_chain() -> list[tuple[str, str, str]]:
     chain = []
     # 1. Primary: Google Gemini Flash
@@ -171,7 +183,10 @@ async def _call_gemini(
     if response_format:
         body["generationConfig"]["responseMimeType"] = "application/json"
         if "schema" in response_format.get("json_schema", {}):
-            body["generationConfig"]["responseSchema"] = response_format["json_schema"]["schema"]
+            # responseSchema is Gemini's OpenAPI subset, which rejects JSON
+            # Schema's additionalProperties and type arrays (nullable unions).
+            # Keep the original schema; callers still validate output locally.
+            body["generationConfig"]["responseJsonSchema"] = response_format["json_schema"]["schema"]
 
     if tools:
         # Convert OpenAI tool format to Gemini tool format safely
@@ -204,17 +219,15 @@ async def _call_gemini(
             params={"key": config.GEMINI_API_KEY.strip()},
             json=body,
         )
-        if resp.status_code != 200:
-            logger.error("Gemini API error (HTTP %s): %s", resp.status_code, resp.text)
-        resp.raise_for_status()
+        _raise_for_provider_status(resp, "gemini")
         data = resp.json()
 
     candidates = data.get("candidates", [])
     if not candidates or "content" not in candidates[0] or "parts" not in candidates[0]["content"]:
-        raise ValueError(f"Gemini returned invalid or blocked candidate structure: {data}")
+        raise ValueError("Gemini returned invalid or blocked candidate structure")
     
     parts = candidates[0]["content"]["parts"]
-    text_parts = [p.get("text", "") for p in parts if "text" in p]
+    text_parts = [p.get("text", "") for p in parts if "text" in p and not p.get("thought")]
     raw_text = "".join(text_parts)
     text = re.sub(r"<think>.*?</think>", "", raw_text, flags=re.DOTALL).strip() or raw_text.strip()
     
@@ -327,9 +340,7 @@ async def _call_openai_compatible(
             headers={"Authorization": f"Bearer {api_key.strip()}"},
             json=json_payload,
         )
-        if resp.status_code != 200:
-            logger.error("Provider '%s' (model %s) error (HTTP %s): %s", provider, target_model, resp.status_code, resp.text)
-        resp.raise_for_status()
+        _raise_for_provider_status(resp, provider)
         data = resp.json()
         
     choice = data["choices"][0]["message"]

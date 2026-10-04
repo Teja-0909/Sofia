@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 import hashlib
+import html
 import ipaddress
 import re
 from datetime import datetime, timezone
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, unquote, urlencode, urlsplit, urlunsplit
 
 from browser_worker.policy import public_ip
 
@@ -13,6 +14,69 @@ MAX_QUERY_CHARS = 320
 MAX_REQUEST_CHARS = 6000
 MAX_EXCERPT_CHARS = 12000
 TRACKING_KEYS = {"fbclid", "gclid", "msclkid", "mc_cid", "mc_eid"}
+# Request scaffolding must not make an otherwise unrelated result look topical.
+_QUERY_STOPWORDS = frozenset({
+    'a', 'an', 'and', 'are', 'as', 'at', 'be', 'been', 'by', 'can', 'could', 'did',
+    'do', 'does', 'for', 'from', 'how', 'i', 'in', 'into', 'is', 'it', 'its', 'me',
+    'my', 'of', 'on', 'or', 'our', 'please', 'that', 'the', 'their', 'them', 'there', 'these',
+    'they', 'this', 'those', 'to', 'us', 'was', 'we', 'were', 'what', 'when', 'where', 'which',
+    'who', 'why', 'will', 'with', 'would', 'you', 'your', 'about', 'answer', 'compare', 'comparison', 'comparing',
+    'difference', 'differences', 'explain', 'find', 'information', 'look', 'research', 'search', 'searching', 'summarize', 'summary', 'tell',
+    'versus', 'vs', 'using', 'use', 'latest', 'current', 'recent', 'official', 'source', 'sources', 'documentation', 'docs',
+    'guide', 'example', 'examples', 'online', 'web',
+})
+_SITE_SCOPE = re.compile(r"(?<![\w-])site:((?:https?://)?[^\s,;<>\"']+)", re.IGNORECASE)
+
+
+def _terms(text: str) -> set[str]:
+    return {word for word in re.findall(r"[^\W_]+", html.unescape(text).casefold())
+            if len(word) > 1 and word not in _QUERY_STOPWORDS}
+
+
+def requested_domains(request: str) -> set[str]:
+    """Honor explicit positive site: scopes, without guessing official domains."""
+    domains = set()
+    for match in _SITE_SCOPE.finditer(request[:MAX_REQUEST_CHARS]):
+        value = match.group(1).rstrip(".)!?")
+        normalized = canonical_url(value if "://" in value else f"https://{value}")
+        if normalized:
+            domains.add(urlsplit(normalized).hostname)
+    return domains
+
+
+def source_is_relevant(source: dict, request: str, *, fetched: bool = False) -> bool:
+    """Screen obvious mismatches, not factual support or semantic relevance.
+
+    Sparse search metadata remains an unverified lead. A fetched passage is
+    checked independently: a matching snippet or URL cannot bless unrelated
+    page text. Explicit user URLs should bypass this thematic screen at the
+    coordinator, while still undergoing the normal public-URL safety checks.
+    """
+    if not request:
+        return True
+    scopes = requested_domains(request)
+    try:
+        host = (urlsplit(source.get("url", "")).hostname or "").rstrip(".").lower()
+        host = host.encode("idna").decode("ascii")
+    except (ValueError, UnicodeError, TypeError):
+        return False
+    if scopes and not any(host == domain or host.endswith("." + domain) for domain in scopes):
+        return False
+    query = _SITE_SCOPE.sub(" ", request[:MAX_REQUEST_CHARS])
+    query = re.sub(r"https?://\S+", " ", query)
+    wanted = _terms(query)
+    if not wanted:
+        return True
+    fields = ("title", "excerpt") if fetched else ("title", "snippet")
+    text = " ".join(source.get(key, "")[:MAX_EXCERPT_CHARS]
+                    for key in fields if isinstance(source.get(key), str))
+    observed = _terms(text)
+    if not fetched:
+        # A titleless link/very short snippet is insufficient to reject a lead.
+        if len(observed) < 3:
+            return True
+        observed |= _terms(unquote(source.get("url", "")))
+    return bool(wanted & observed)
 
 
 def canonical_url(value: object) -> str:
@@ -104,7 +168,7 @@ def source_rank(source: dict, *, now: datetime | None = None) -> tuple[int, floa
     return authority, recency
 
 
-def ranked_candidates(results: list[dict], *, maximum: int = 24) -> list[dict]:
+def ranked_candidates(results: list[dict], *, request: str = "", maximum: int = 24) -> list[dict]:
     candidates: dict[str, dict] = {}
     for item in results[:144]:
         if not isinstance(item, dict):
@@ -116,10 +180,12 @@ def ranked_candidates(results: list[dict], *, maximum: int = 24) -> list[dict]:
         snippet = item.get("snippet")
         candidate = {
             "url": url,
-            "title": title[:300] if isinstance(title, str) else "Source",
-            "snippet": snippet[:1800] if isinstance(snippet, str) else "",
+            "title": html.unescape(title)[:300] if isinstance(title, str) else "Source",
+            "snippet": html.unescape(snippet)[:1800] if isinstance(snippet, str) else "",
             "published_at": item.get("published_at", item.get("date")),
         }
+        if not source_is_relevant(candidate, request):
+            continue
         if url not in candidates or source_rank(candidate) > source_rank(candidates[url]):
             candidates[url] = candidate
     return sorted(candidates.values(), key=source_rank, reverse=True)[:maximum]
@@ -129,7 +195,7 @@ def receipt(identifier: str, *, url: str, title: str, method: str, excerpt: str 
             truncated: bool = False, status: str = "retrieved", published_at: object = None) -> dict:
     text = excerpt[:MAX_EXCERPT_CHARS]
     result = {
-        "id": identifier, "url": canonical_url(url), "title": " ".join(title.split())[:300],
+        "id": identifier, "url": canonical_url(url), "title": " ".join(html.unescape(title).split())[:300],
         "retrieved_at": datetime.now(timezone.utc).isoformat(),
         "method": method, "truncated": bool(truncated or len(excerpt) > len(text)),
         "excerpt": text, "content_hash": hashlib.sha256(text.encode("utf-8")).hexdigest(),

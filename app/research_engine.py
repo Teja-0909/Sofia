@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
 import time
 from builtins import BaseExceptionGroup, ExceptionGroup
@@ -26,12 +27,40 @@ from .research_evidence import (
     is_fetched,
     ranked_candidates,
     receipt,
+    source_is_relevant,
     validated_queries,
 )
 
 AsyncCallback = Callable[..., Awaitable[object]]
 # Only background research is gated here. Interactive Sofia calls do not acquire it.
 _MODEL_SLOTS = asyncio.Semaphore(2)
+logger = logging.getLogger(__name__)
+
+
+def _failure_details(exc: Exception) -> tuple[str, int, str]:
+    """Fixed diagnostic labels only; never expose a provider body, URL or query."""
+    if isinstance(exc, httpx.HTTPStatusError):
+        status = exc.response.status_code
+        if status in (401, 403):
+            category, explanation = "access_denied", "model credentials or access were rejected"
+        elif status == 404:
+            category, explanation = "model_unavailable", "the configured model was unavailable"
+        elif status == 429:
+            category, explanation = "rate_limited", "the model quota or rate limit was reached"
+        elif status >= 500:
+            category, explanation = "provider_unavailable", "the model provider was unavailable"
+        else:
+            category, explanation = "request_rejected", "the model request was rejected"
+        return category, status, f"HTTP {status}: {explanation}"
+    if isinstance(exc, (httpx.TimeoutException, TimeoutError)):
+        return "timeout", 0, "the model or network timed out"
+    if isinstance(exc, httpx.TransportError):
+        return "transport_error", 0, "the model network connection failed"
+    if isinstance(exc, llm.AllProvidersFailed):
+        return "not_configured", 0, "no research model is configured"
+    if isinstance(exc, (ValueError, TypeError, KeyError, IndexError)):
+        return "invalid_response", 0, "the returned structured response could not be validated"
+    return "unexpected_error", 0, "an unexpected research error occurred"
 
 
 class ResearchBudgetExceeded(Exception):
@@ -227,6 +256,21 @@ class _Research:
         self.notices: list[str] = []
         self.draft: dict | None = None
         self.verified: dict | None = None
+        self.stage_name = "research"
+        self.provider_name = "unconfigured"
+        self.last_failure: dict = {}
+        self._last_exception: Exception | None = None
+
+    def record_failure(self, exc: Exception) -> str:
+        category, status, explanation = _failure_details(exc)
+        if exc is not self._last_exception or self.last_failure.get("failure_stage") != self.stage_name:
+            self.last_failure = {"failure_stage": self.stage_name,
+                                 "failure_provider": self.provider_name,
+                                 "failure_category": category, "failure_http_status": status}
+            logger.warning("Research stage failed: stage=%s provider=%s category=%s http_status=%s",
+                           self.stage_name, self.provider_name, category, status)
+            self._last_exception = exc
+        return explanation
 
     async def check(self) -> None:
         try:
@@ -237,8 +281,9 @@ class _Research:
             raise asyncio.CancelledError("Research checkpoint stopped this run")
         self.budget.remaining()
 
-    async def stage(self, message: str) -> None:
+    async def stage(self, message: str, *, name: str = "research") -> None:
         await self.check()
+        self.stage_name = name
         await self.progress(message)
         await self.check()
 
@@ -257,6 +302,7 @@ class _Research:
             raise llm.AllProvidersFailed("No research model is configured")
         # No silent model/provider upgrades or a long fallback chain in background.
         provider, model, kind = chain[0]
+        self.provider_name = provider if provider in {"gemini", "groq", "openrouter"} else "other"
         messages = [{"role": "user", "content": json.dumps(payload, ensure_ascii=False)}]
         for attempt in range(2):
             await self.check()
@@ -287,12 +333,13 @@ class _Research:
                     raise
                 except Exception as exc:
                     self.budget.failures += 1
+                    self.record_failure(exc)
                     if attempt or not _transient(exc):
                         raise
         raise AssertionError("Unreachable")
 
     async def plan(self) -> list[str]:
-        await self.stage("Planning a bounded source search")
+        await self.stage("Planning a bounded source search", name="planner")
         try:
             raw = await self.model(_BASE_POLICY + "Propose up to three independent, focused search queries. "
                                    "Include primary-source and current-date wording when appropriate.",
@@ -300,12 +347,13 @@ class _Research:
             return validated_queries(_object(raw, {"queries"})["queries"])
         except ResearchBudgetExceeded:
             self.notices.append("The model budget was exhausted; used a direct search instead.")
-        except Exception:
-            self.notices.append("The research planner was unavailable; used a direct search instead.")
+        except Exception as exc:
+            detail = self.record_failure(exc)
+            self.notices.append(f"The research planner was unavailable ({detail}); used a direct search instead.")
         return [fallback_query(self.request)]
 
     async def gather(self, queries: list[str]) -> None:
-        await self.stage("Searching and reading source passages")
+        await self.stage("Searching and reading source passages", name="search")
         chosen = []
         for query in queries:
             key = query.casefold()
@@ -337,7 +385,7 @@ class _Research:
                 raise stop
             raise
         results = [item for task in tasks for item in task.result()]
-        candidates = ranked_candidates(results)
+        candidates = ranked_candidates(results, request=self.request)
         if not candidates:
             self.notices.append("Search returned no usable public source links.")
         existing_snippets = {s["url"] for s in self.sources if s["method"] == "search_snippet"}
@@ -355,7 +403,7 @@ class _Research:
                 continue
             await self.fetch(candidate)
 
-    async def fetch(self, candidate: dict) -> None:
+    async def fetch(self, candidate: dict, *, check_relevance: bool = True) -> None:
         url = candidate["url"]
         self.seen_pages.add(url)
         self.budget.pages += 1
@@ -394,14 +442,25 @@ class _Research:
         if final_url != url and final_url in self.seen_pages:
             return
         self.seen_pages.add(final_url)
+        title = data.get("title") if isinstance(data.get("title"), str) and data["title"] else candidate["title"]
+        if (check_relevance and len(text.strip()) >= 80
+                and not source_is_relevant({"url": final_url, "title": data.get("title", ""),
+                                            "excerpt": text}, self.request, fetched=True)):
+            # A misleading search snippet cannot survive as a cited source or
+            # an unverified lead once the fetched page contradicts its topic.
+            self.sources = [s for s in self.sources if s.get("url") not in {url, final_url}]
+            notice = "Some source pages were excluded because their text or final domain didn't match the request."
+            if notice not in self.notices:
+                self.notices.append(notice)
+            return
         self.sources.append(receipt(identifier, url=final_url,
-            title=data.get("title") if isinstance(data.get("title"), str) and data["title"] else candidate["title"],
+            title=title,
             method=method, excerpt=text, truncated=bool(data.get("truncated", True)),
             status="retrieved" if len(text.strip()) >= 80 else "unavailable",
             published_at=candidate.get("published_at")))
 
     async def solve(self) -> dict:
-        await self.stage("Comparing the retrieved evidence")
+        await self.stage("Comparing the retrieved evidence", name="solver")
         evidence = evidence_context(self.sources, max_chars=12000)
         allowed = {source["id"] for source in evidence}
         raw = await self.model(_BASE_POLICY + "Answer the request only using the fetched passages. "
@@ -412,7 +471,7 @@ class _Research:
         return _solution(raw, allowed)
 
     async def verify(self) -> dict:
-        await self.stage("Independently checking the draft against source passages")
+        await self.stage("Independently checking the draft against source passages", name="verifier")
         raw = await self.model(_BASE_POLICY + "Independently challenge the draft's factual support. "
             "Return zero-based indices only for conclusions directly supported by their cited passage IDs. "
             "Reject fabricated references, unsupported leaps, stale current claims and contradictions. "
@@ -424,9 +483,10 @@ class _Research:
     async def run(self) -> None:
         # User-provided URLs identify the intended source, so read them before
         # asking a planner or a search engine to find substitutes.
-        direct_urls = search.URL_REGEX.findall(self.request)
+        direct_urls = [match.group() for match in search.URL_REGEX.finditer(self.request)
+                       if not re.search(r"(?<![\w-])[+-]?site:$", self.request[:match.start()], re.IGNORECASE)]
         if direct_urls:
-            await self.stage("Reading the requested source passages")
+            await self.stage("Reading the requested source passages", name="reader")
             selected = list(dict.fromkeys(canonical_url(url.rstrip(".,!?:;)\"'")) for url in direct_urls))
             selected = [url for url in selected if url]
             if len(selected) > 2:
@@ -434,7 +494,7 @@ class _Research:
             for url in selected[:2]:
                 if self.budget.pages >= self.budget.max_pages:
                     break
-                await self.fetch({"url": url, "title": "Requested source"})
+                await self.fetch({"url": url, "title": "Requested source"}, check_relevance=False)
         else:
             queries = await self.plan()
             await self.gather(queries)
@@ -505,7 +565,8 @@ class _Research:
         complete = bool(self.draft and self.verified and supported and self.draft["sufficient"]
                         and len(supported) == len(self.draft["conclusions"]) and not self.notices)
         return {"answer": "\n\n".join(lines), "sources": self.sources,
-                "status": "completed" if complete else "partial", "usage": self.budget.snapshot()}
+                "status": "completed" if complete else "partial",
+                "usage": {**self.budget.snapshot(), **self.last_failure}}
 
 
 def _find_stop(group: BaseExceptionGroup) -> _CheckpointStop | None:
@@ -538,8 +599,9 @@ async def run_research(request: str, *, checkpoint: AsyncCallback, progress: Asy
         research.notices.append("The bounded research budget was exhausted; this is a partial result.")
     except ExceptionGroup:
         research.notices.append("A search operation failed; this is a partial result.")
-    except Exception:
-        research.notices.append("A research specialist or provider was unavailable; this is a partial result.")
+    except Exception as exc:
+        detail = research.record_failure(exc)
+        research.notices.append(f"The research {research.stage_name} stopped ({detail}); this is a partial result.")
     # Final stale-generation fence is deliberately outside recovery handlers.
     result = await checkpoint()
     if result is False:
