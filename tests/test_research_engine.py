@@ -171,7 +171,7 @@ def test_conflicting_fetched_evidence_reaches_solver_and_verifier(research_mocks
 
     async def page(url, max_chars):
         return {"url": url, "text": ("Current limit is 20. " if "new" in url else "Old limit is 10. ") * 10,
-                "truncated": False}
+                "title": "Release limits", "truncated": False}
 
     fetch.side_effect = page
     responses[1] = solution(text="The newer page says 20 while the older page says 10.", citations=["E1", "E2"])
@@ -217,6 +217,50 @@ def test_provider_failure_still_returns_evidence_and_no_provider_upgrade(researc
     assert web.await_count == 1
     other.assert_not_awaited()
     assert len(calls) == 2
+
+
+@pytest.mark.parametrize("status,category", [(400, "request_rejected"), (401, "access_denied"),
+                                            (403, "access_denied"), (404, "model_unavailable"),
+                                            (429, "rate_limited"), (503, "provider_unavailable")])
+def test_provider_failure_has_safe_actionable_diagnostics(status, category, research_mocks, caplog):
+    responses, calls, _, _, _ = research_mocks
+    def rejection():
+        request = httpx.Request("POST", "https://provider.example/private?key=secret-key")
+        response = httpx.Response(status, request=request, text="private provider body")
+        return httpx.HTTPStatusError("private exception message", request=request, response=response)
+    responses[:] = [rejection() for _ in range(4)]
+    result = run("Private original request about the current release")
+    assert result["status"] == "partial"
+    assert result["usage"]["failure_category"] == category
+    assert result["usage"]["failure_http_status"] == status
+    assert result["usage"]["failure_stage"] == "solver"
+    assert result["usage"]["failure_provider"] == "gemini"
+    assert f"HTTP {status}" in result["answer"]
+    assert "stage=planner provider=gemini" in caplog.text
+    assert "stage=solver provider=gemini" in caplog.text
+    for private in ("secret-key", "private provider body", "private exception message",
+                    "Private original request", "provider.example"):
+        assert private not in caplog.text
+        assert private not in result["answer"]
+    assert len(calls) == (4 if status in (429, 503) else 2)
+
+
+def test_malformed_output_is_not_labelled_provider_outage(research_mocks, caplog):
+    responses, _, _, _, _ = research_mocks
+    responses[1] = "This is not JSON and includes private data"
+    result = run()
+    assert result["usage"]["failure_category"] == "invalid_response"
+    assert "structured response could not be validated" in result["answer"]
+    assert "This is not JSON" not in caplog.text + result["answer"]
+
+
+def test_missing_model_configuration_is_explicit(research_mocks, monkeypatch):
+    monkeypatch.setattr(engine.llm, "_provider_chain", list)
+    result = run()
+    assert result["usage"]["failure_category"] == "not_configured"
+    assert result["usage"]["failure_provider"] == "unconfigured"
+    assert result["usage"]["model_calls"] == 0
+    assert "no research model is configured" in result["answer"]
 
 
 def test_transient_retry_is_counted_and_bounded(research_mocks):
@@ -552,7 +596,8 @@ def test_cancelled_ddgs_thread_keeps_its_slot_until_finished(monkeypatch):
 
 def test_verifier_approved_action_claim_never_becomes_action_receipt(research_mocks, monkeypatch):
     from app import db
-    responses, _, _, _, _ = research_mocks
+    responses, _, _, fetch, _ = research_mocks
+    fetch.return_value["text"] = "Timer documentation. " + PASSAGE
     responses[1] = solution(text="I scheduled your timer.")
     responses[2] = verification(uncertainties=["I saved your reminder too."])
     mutate = AsyncMock(side_effect=AssertionError("Research must not write tasks"))
@@ -625,3 +670,65 @@ def test_http_redirect_to_nat64_loopback_is_rejected_before_second_request():
         assert result["status"] == "unavailable" and not result["text"]
         assert len(requests) == 1
     asyncio.run(scenario())
+
+
+def test_unrelated_profile_is_not_fetched_or_presented_as_evidence(research_mocks):
+    responses, calls, web, fetch, _ = research_mocks
+    responses[0] = RuntimeError("planner unavailable")
+    web.return_value = [{"url": "https://x.com/HandyProject", "title": "HandyOfficial",
+                         "snippet": "Official account for HandyProject news and community updates"}]
+    result = run("Compare Python lists and tuples using official Python documentation")
+    assert len(calls) == 1
+    fetch.assert_not_awaited()
+    assert not result["sources"]
+    assert "HandyProject" not in result["answer"]
+    assert "couldn't retrieve enough readable evidence" in result["answer"]
+
+
+def test_matching_search_snippet_cannot_bless_off_topic_fetched_page(research_mocks):
+    _, calls, web, fetch, _ = research_mocks
+    web.return_value = [{"url": "https://example.com/python", "title": "Python lists and tuples",
+                         "snippet": "Python documentation compares lists and tuples"}]
+    fetch.return_value = {"url": "https://example.com/redirected", "title": "Celebrity gossip",
+                          "text": "The actor wore a red shirt on vacation and smiled for the cameras. " * 6,
+                          "truncated": False}
+    result = run("Compare Python lists and tuples")
+    assert len(calls) == 1
+    assert not result["sources"]
+    assert "example.com" not in result["answer"]
+    assert "excluded" in result["answer"]
+
+
+def test_explicit_requested_domain_checked_again_after_redirect(research_mocks):
+    _, calls, web, fetch, _ = research_mocks
+    web.return_value = [{"url": "https://docs.python.org/topic", "title": "Python sequences",
+                         "snippet": "Python lists and tuples"}]
+    fetch.return_value = {"url": "https://unrelated.example/python", "title": "Python sequences",
+                          "text": "Python lists and tuples are sequence containers. " * 6,
+                          "truncated": False}
+    result = run("Compare Python lists and tuples site:docs.python.org")
+    assert len(calls) == 1
+    assert not result["sources"]
+    assert "unrelated.example" not in result["answer"]
+
+
+def test_url_prefixed_site_operator_is_a_search_constraint_not_direct_url(research_mocks):
+    _, calls, web, fetch, _ = research_mocks
+    web.return_value = [{"url": "https://docs.example.com/release", "title": "Current release",
+                         "snippet": "The current release has documented limitations"}]
+    fetch.return_value = {"url": "https://elsewhere.example/release", "title": "Current release",
+                          "text": PASSAGE, "truncated": False}
+    result = run("Current release limitations site:https://docs.example.com")
+    web.assert_awaited_once()
+    fetch.assert_awaited_once_with("https://docs.example.com/release", max_chars=12000)
+    assert len(calls) == 1  # planner only; redirected page cannot enter the solver
+    assert not result["sources"]
+    assert "elsewhere.example" not in result["answer"]
+
+
+def test_negative_url_prefixed_site_operator_does_not_trigger_direct_fetch(research_mocks):
+    _, _, web, fetch, _ = research_mocks
+    result = run("Current release -site:https://excluded.example")
+    web.assert_awaited_once()
+    assert all(call.args[0] != "https://excluded.example/" for call in fetch.await_args_list)
+    assert result["status"] == "completed"
