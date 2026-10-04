@@ -124,6 +124,15 @@ sources and unsupported action-success claims are rejected. Partial results say
 what could not be established. This remains model-assisted consistency checking;
 live factual quality needs a supervised evaluation set.
 
+Search links are screened for a minimal topical match before authority/date
+ranking. Readable passages and their final domains are checked again without
+trusting the search snippet. Explicit positive `site:domain` constraints are
+respected. This lexical screen can miss relevant synonyms or accept a page with
+incidental keyword overlap; it is not semantic proof. Directly requested URLs
+are read as requested, without substituting a different source or applying this
+topic screen. The solver and verifier still decide whether passages support a
+conclusion. Pages rejected after fetching are omitted from evidence and leads.
+
 Webpages, browser observations, filenames and worker output remain untrusted.
 No specialist receives desktop, shell, account, timer, priority, message-sending
 or recursive-agent tools. Research completion never marks a user's outcome done.
@@ -148,6 +157,41 @@ tests cover policy, proxy/client handling and mocked rendering contracts; actual
 Chromium rendering and Docker firewall behavior must pass on an approved host
 before enabling the browser. The browser is not production-validated by these
 tests.
+
+## Diagnosing a fast partial result
+
+A quick partial response means the job reached a limit or unavailable stage; it
+does not establish that background responsiveness failed. Status retains the
+answer, but restarting or resending blindly can consume more model quota.
+
+The provider adapter sends JSON Schema through Gemini's `responseJsonSchema`
+field, never its legacy OpenAPI `responseSchema` field, following the
+[Gemini generation configuration contract](https://ai.google.dev/api/generate-content#v1beta.GenerationConfig).
+HTTP-wire tests exercise
+the real planner/solver/verifier adapter with mocked HTTP responses. They do not
+verify access to the model configured in Render or live factual quality.
+
+Failures now include a fixed stage and a safe category in the result and log:
+`Research stage failed: stage=solver provider=gemini category=request_rejected http_status=400`.
+This fixed diagnostic line does not include the query, source passages, provider
+error body, request URL or credentials. Saved per-job usage retains the last
+failure's stage/provider/category/status. A stage's malformed JSON is identified as `invalid_response`,
+not silently conflated with a provider outage.
+
+- `400` or another request rejection: check the request/schema compatibility
+- `401`/`403`: check the existing provider credential and model access privately
+- `404`: check the exact configured model ID and availability
+- `429`: check account quota/rate limits; do not repeatedly resubmit the same job
+- `5xx`, timeout or transport error: the provider/network was unavailable
+- `not_configured`: no research model provider key was configured
+
+Research uses only the first configured provider/model. A normal reply succeeding
+through the ordinary fallback chain does not establish that this model works.
+Share only the fixed research diagnostic line, HTTP status and non-secret model
+name for troubleshooting; never paste keys or a full environment dump. Keep the
+browser disabled while diagnosing the model; enabling it cannot repair a rejected
+model request. Neither this correction nor a passing offline test proves the
+exact cause of a previous live incident without that incident's diagnostic data.
 
 ## Staged acceptance and rollout
 
